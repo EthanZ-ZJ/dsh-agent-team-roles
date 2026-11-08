@@ -988,10 +988,30 @@ window.__ModuleLoader__.load({
       }
     }
 
+    function TeamRolesIcon({ size = 18 }) {
+      return h('svg', {
+        width: size,
+        height: size,
+        viewBox: '0 0 24 24',
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeWidth: 1.8,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+        'aria-hidden': true,
+      }, [
+        h('circle', { key: 'a', cx: 9, cy: 8, r: 3 }),
+        h('path', { key: 'b', d: 'M3.5 19c0-2.8 2.5-4.5 5.5-4.5s5.5 1.7 5.5 4.5' }),
+        h('circle', { key: 'c', cx: 17, cy: 9, r: 2.2 }),
+        h('path', { key: 'd', d: 'M14.6 14.8c2.8-.5 5.9 1 5.9 4.2' }),
+      ])
+    }
+
     return {
       inject: ['slots', 'locale', 'remote', 'remote.settings', 'remote.commands', 'sessions'],
       apply(ctx) {
         const t = ctx.locale.bind(NS)
+        const SettingsPage = createSection(ctx, t)
         ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'agent-team-roles:locale')
         ctx.effect(() => ctx.slots.inject('settings.section', () => ctx.slots.register({
           name: 'settings.section',
@@ -999,7 +1019,19 @@ window.__ModuleLoader__.load({
           order: 26,
           label: () => t('nav'),
           locale: NS,
-        }, createSection(ctx, t))), 'agent-team-roles:settings-page')
+        }, SettingsPage)), 'agent-team-roles:settings-page')
+        ctx.effect(() => ctx.slots.inject('main', () => ctx.slots.register({
+          name: 'main',
+          key: NS,
+        }, () => h('div', { style: { height: '100%', overflowY: 'auto' } }, [
+          h(SettingsPage, {}),
+        ]))), 'agent-team-roles:main-panel')
+        ctx.effect(() => ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
+          name: 'sidebar.panellist',
+          id: NS,
+          order: 25,
+          label: () => t('nav'),
+        }, TeamRolesIcon)), 'agent-team-roles:sidebar-entry')
         ctx.effect(() => ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
           name: 'conversation.input.left',
           id: 'agent-team-roles-pull',
