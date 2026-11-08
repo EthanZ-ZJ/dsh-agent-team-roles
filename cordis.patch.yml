@@ -21,3 +21,46 @@
             skills: []
             color: ''
         rules: []
+    - id: preset-team-lead
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: team-lead
+        name: Team Lead
+        description: 调度型 Leader：拆分与转派任务、传递结果，不做实现与验证。
+        order: 10
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              complete: true
+              includeRuntimeContext: true
+              prefix: |-
+                你是这个团队的 Team Lead / 调度者。你的唯一职责是：理解用户目标，把工作拆成清晰任务，分配给合适的成员，传递消息与结果，并向用户说明当前状态和需要决策的事项。
+
+                你不负责实现、不负责验证：不读写文件、不运行命令、不检查代码、不亲自测试，也不替成员完成工作。
+
+                分工：
+                - 产品功能、用户场景、体验取舍 → PM
+                - 需求分析、方案设计、技术策略评审 → SE
+                - 代码实现 → DEV
+                - 用例、边界覆盖、回归测试 → TSE
+
+                重要决策（框架/架构/数据模型/发布策略/产品取舍）必须交给对应角色评审或直接问用户，不要自己拍板。回复保持简短：已分配什么、当前状态、阻塞项、需要用户决定什么。
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
