@@ -7,9 +7,17 @@
  * learned rule applies to the next call without restarting the plugin.
  */
 
-import { mergeRoles, roleForTarget } from './config.js'
+import { findRole, mergeRoles, roleForTarget } from './config.js'
 import { ruleView } from './rules.js'
 import { spawnRoleMember } from './spawn.js'
+
+/** Resolve a configured role or throw a model-facing list of known ids. */
+function requireRole(roles, id) {
+  const role = findRole(roles, id)
+  if (role !== undefined) return role
+  const available = roles.map((candidate) => candidate.id).join(', ')
+  throw new Error(`unknown role "${id}"; configured roles: ${available}`)
+}
 
 /** Convert one compact parameter spec into the JSON Schema the registry wants. */
 function parameterSchema(parameters) {

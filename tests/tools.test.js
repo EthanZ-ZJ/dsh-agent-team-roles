@@ -130,6 +130,49 @@ test('the role service must be available for role tools', async () => {
   await assert.rejects(() => list.execute({}, {}), /service is unavailable/)
 })
 
+test('record_role_feedback validates the role and records a permanent rule', async () => {
+  const added = []
+  const tools = createTools({
+    ctx: {},
+    config: {},
+    snapshots: {},
+    rules: {
+      list: () => [],
+      add: async (input) => {
+        added.push(input)
+        return {
+          rule: {
+            id: 'rule-1',
+            roleId: input.roleId,
+            text: input.text,
+            polarity: input.polarity,
+            status: 'active',
+            evidence: 2,
+            source: 'lead',
+          },
+          promoted: true,
+          scope: input.scope,
+        }
+      },
+      forget: async () => false,
+    },
+    roles: { read: () => [GENERAL_ROLE] },
+  })
+  const tool = tools.lead.find((candidate) => candidate.name === 'record_role_feedback')
+  const result = await tool.execute(
+    { role: 'general', text: 'Brand name is 尚卫干洗店', scope: 'permanent' },
+    { agent: { id: 'lead-session' } },
+  )
+  assert.equal(added[0].roleId, 'general')
+  assert.equal(added[0].rootSessionId, 'lead-session')
+  assert.equal(result.promoted, true)
+  assert.equal(result.rule.text, 'Brand name is 尚卫干洗店')
+  await assert.rejects(
+    () => tool.execute({ role: 'missing', text: 'x' }, { agent: { id: 'lead-session' } }),
+    /unknown role/,
+  )
+})
+
 test('argument validation rejects unknown fields and wrong enums', async () => {
   const tool = build().lead.find((candidate) => candidate.name === 'record_role_feedback')
   await assert.rejects(() => tool.execute({ role: 'general', text: 'x', scope: 'forever' }, {}), /one of/)
