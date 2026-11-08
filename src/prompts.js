@@ -51,6 +51,8 @@ export function leadCatalog(roles) {
     '',
     'Route product features and user experience to PM, technical strategy and review to SE, and code implementation to DEV.',
     '',
+    'Route test design, boundary coverage, and regression to TSE; TSE reports defects but does not change production code.',
+    '',
     'When the user states a lasting requirement for one role — including "from now on", "always", or "never" — record it with `record_role_feedback`. Do not treat a task-local instruction as a lasting rule.',
   )
   return lines.join('\n')
