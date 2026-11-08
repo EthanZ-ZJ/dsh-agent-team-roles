@@ -130,19 +130,27 @@ export async function spawnRoleMember({
     frozen,
   })
 
-  // A handshake spawn has no task to report. Ask the subagent manager for
-  // caller delivery so the child's READY settlement is not injected into the
-  // Lead at all; otherwise that notice wakes the Lead into an empty turn.
+  // Members must not inherit a minimal Leader-only composition. Give every
+  // managed member the standard worker preset; the role policy still limits
+  // what that member may call. A handshake spawn additionally uses caller
+  // delivery so its READY settlement is not injected into the Lead.
   const handshake = prompt.includes('[[TEAM_HANDSHAKE]]')
-  const subagents = handshake ? ctx.get('subagents') : undefined
+  const subagents = ctx.get('subagents')
   const originalStart = subagents?.startActivation
   let restoreStart = false
   if (typeof originalStart === 'function') {
     try {
-      subagents.startActivation = async (spec) => originalStart.call(subagents, { ...spec, delivery: 'caller' })
+      subagents.startActivation = async (spec) => originalStart.call(subagents, {
+        ...spec,
+        ...(handshake ? { delivery: 'caller' } : {}),
+        request: {
+          ...(spec.request ?? {}),
+          agentPreset: 'standard',
+        },
+      })
       restoreStart = true
     } catch {
-      // A non-writable service keeps the pre-step fallback.
+      // A non-writable service keeps the role and pre-step fallbacks.
     }
   }
 

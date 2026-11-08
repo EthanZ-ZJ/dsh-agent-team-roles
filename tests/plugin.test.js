@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { isHandshakeOnly, isHandshakeSettlement } from '../src/plugin.js'
+import { isHandshakeOnly, isHandshakeSettlement, roleForMember } from '../src/plugin.js'
 
 function notice(closing = 'READY') {
   return {
@@ -16,6 +16,17 @@ function notice(closing = 'READY') {
     ],
   }
 }
+
+test('a member with a snapshot keeps its frozen role, not the general fallback', () => {
+  const frozen = { id: 'se', name: 'SE', description: 'Analysis', persona: 'Read only.' }
+  const snapshot = { roleId: 'se', frozen }
+  const catalog = [
+    { id: 'general', name: 'General', description: 'Fallback' },
+    frozen,
+  ]
+  assert.equal(roleForMember(snapshot, catalog, 'se').id, 'se')
+  assert.equal(roleForMember(undefined, catalog, 'se').id, 'se')
+})
 
 test('a background subagent READY settlement is recognized', () => {
   assert.equal(isHandshakeSettlement(notice()), true)

@@ -308,11 +308,15 @@ export function isHandshakeSettlement(message) {
 }
 
 /** Install one managed member's role configuration. */
+/** Resolve a member's installed role from its frozen snapshot or target name. */
+export function roleForMember(snapshot, catalog, name) {
+  return snapshot?.frozen ?? roleForTarget(catalog, name)
+}
+
+/** Install one member's role prompt, model route, tool policy, and skills. */
 function installMember({ agent, membership, scoped, register, tools, snapshots, ruleStore, roles }) {
   const snapshot = snapshots.get(membership.root.id, membership.name)
-  const role = snapshot !== undefined
-    ? mergeRoles([snapshot.frozen])[0]
-    : roleForTarget(tools.catalog(), membership.name)
+  const role = roleForMember(snapshot, tools.catalog(), membership.name)
   if (role === undefined) return
   const roleId = role.id
   const frozen = snapshot?.frozen ?? role

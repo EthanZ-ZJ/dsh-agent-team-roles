@@ -173,5 +173,6 @@ test('a handshake spawn asks for caller delivery and restores the service', asyn
     signal: undefined,
   })
   assert.equal(specs[0].delivery, 'caller')
+  assert.equal(specs[0].request.agentPreset, 'standard')
   assert.equal(subagents.startActivation, original)
 })
