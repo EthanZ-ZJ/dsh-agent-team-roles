@@ -138,7 +138,7 @@ export function apply(ctx, config) {
 
     try {
       if (membership.role === 'lead') {
-        installLead(scoped, register, tools)
+        installLead({ scoped, register, tools, agent, ctx })
       } else {
         installMember({
           agent,
@@ -238,7 +238,7 @@ export function apply(ctx, config) {
 }
 
 /** Install the Lead's role catalog, tools, and the official-spawn guard. */
-function installLead(scoped, register, tools) {
+function installLead({ scoped, register, tools, agent, ctx }) {
   register(scoped.systemPrompt.section({
     name: 'agent-team-roles:lead-catalog',
     order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY') + 10,
@@ -249,6 +249,40 @@ function installLead(scoped, register, tools) {
     if (exec.name !== 'spawn_teammate') return undefined
     return 'The official spawn_teammate tool is disabled in this Team. Use spawn_team_member with a configured role instead.'
   }))
+  // A handshake member's READY turn settles into a `subagent-settled` notice that
+  // wakes the Lead. That notice carries no task; suppress the model turn instead
+  // of letting the Lead analyze an empty handshake.
+  register(scoped.on('agent/pre-step', (decision, next) => {
+    if (!Array.isArray(decision.messages) || !isHandshakeOnly(ctx, agent, decision.messages)) {
+      return next()
+    }
+    return { kind: 'enter', messages: [] }
+  }))
+}
+
+/** Whether every claimed message is a handshake member's READY settlement notice. */
+export function isHandshakeOnly(ctx, lead, messages) {
+  return messages.length > 0 && messages.every((message) => isHandshakeSettlement(ctx, lead, message))
+}
+
+/** Whether one claimed message is a handshake member's READY settlement notice. */
+export function isHandshakeSettlement(ctx, lead, message) {
+  if (message?.source?.kind !== 'subagent-settled') return false
+  const sender = message.source.senderSessionId
+  if (typeof sender !== 'string') return false
+  let members
+  try {
+    members = ctx.agentTeams.listMembers(lead)
+  } catch {
+    return false
+  }
+  if (!members.some((member) => member.id === sender)) return false
+  const texts = Array.isArray(message.content)
+    ? message.content
+        .filter((block) => block?.type === 'text' && typeof block.text === 'string')
+        .map((block) => block.text.trim())
+    : []
+  return texts.includes('READY')
 }
 
 /** Install one managed member's role configuration. */
