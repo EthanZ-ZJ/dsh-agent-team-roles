@@ -58,7 +58,7 @@ If the role is already in use, the target gets a numeric suffix (`reviewer-2`), 
 
 The composer's left control row now has **Pull member**. It opens the role catalog and pulls one role directly:
 
-1. Optionally type an initial task. Leave it empty to spawn the member with a “wait for the Lead” prompt.
+1. Optionally type an initial task. Leave it empty for a **handshake-only** spawn: the member replies exactly `READY` and does not analyze, ask questions, call tools, or write a report. The roster entry is enough for the Lead to know the member exists.
 2. Click **Pull** next to a role.
 3. The button executes `/team-spawn <role> [task]` through the existing `commands` Remote, so **no model turn is involved**. The roster updates through the normal Team projection.
 

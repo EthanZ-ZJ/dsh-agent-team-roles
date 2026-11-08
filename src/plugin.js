@@ -39,7 +39,7 @@ const IMPLICIT_MEMBER_TOOLS = [
 
 /** Initial prompt used when the UI pulls a member without a task. */
 const DEFAULT_TEAM_TASK =
-  '你已加入团队。等待 Team Lead 分配任务；收到任务后按角色职责执行。'
+  '[[TEAM_HANDSHAKE]] 你已加入团队。现在只做握手：不要分析、不要提问、不要复述任务、不要给计划、不要调用任何工具。只回复 READY，然后等待 Team Lead 的下一步消息。'
 
 const RoleSchema = z.object({
   id: z.string().description('Stable role identity; also the default teammate target.'),

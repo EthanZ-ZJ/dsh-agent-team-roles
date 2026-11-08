@@ -31,4 +31,6 @@ test('member persona includes the role card and learned rules', () => {
   assert.match(text, /Reviewer/)
   assert.match(text, /Be strict about tests/)
   assert.match(text, /Do not modify tests/)
+  assert.match(text, /TEAM_HANDSHAKE/)
+  assert.match(text, /reply with exactly READY/)
 })

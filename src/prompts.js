@@ -56,6 +56,8 @@ export function memberPersona({ frozen, rulesText, target, teamDescription = '' 
   }
   lines.push(
     '',
+    'First-turn handshake rule: if the initial user message contains [[TEAM_HANDSHAKE]], reply with exactly READY and nothing else. Do not call tools, analyze, ask questions, or send a report on that turn.',
+    '',
     'Work only within this role. Report completed work, files changed, checks run, and remaining risks to the Team Lead.',
   )
   return lines.join('\n')
