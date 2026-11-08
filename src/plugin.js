@@ -15,8 +15,8 @@
  */
 
 import z from '@deepseek-ai/schemastery'
-import { mergeRoles, readConfig, roleForTarget } from './config.js'
-import { leadCatalog, memberPersona } from './prompts.js'
+import { findRole, mergeRoles, readConfig, roleForTarget } from './config.js'
+import { activeMembers, leadCatalog, memberPersona } from './prompts.js'
 import { MemberSnapshots, RoleStore, RuleStore, stateDir } from './store.js'
 import { spawnRoleMember } from './spawn.js'
 import { createTools } from './tools.js'
@@ -138,7 +138,7 @@ export function apply(ctx, config) {
 
     try {
       if (membership.role === 'lead') {
-        installLead({ scoped, register, tools })
+        installLead({ scoped, register, tools, ctx, snapshots, roles: rolesReader, agent })
       } else {
         installMember({
           agent,
@@ -246,11 +246,37 @@ export function apply(ctx, config) {
 }
 
 /** Install the Lead's role catalog, tools, and the official-spawn guard. */
-function installLead({ scoped, register, tools }) {
+function installLead({ scoped, register, tools, ctx, snapshots, roles, agent }) {
   register(scoped.systemPrompt.section({
     name: 'agent-team-roles:lead-catalog',
     order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY') + 10,
     text: () => leadCatalog(tools.catalog()),
+  }))
+  register(scoped.systemPrompt.section({
+    name: 'agent-team-roles:active-members',
+    order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY') + 11,
+    text: () => {
+      try {
+        const catalog = mergeRoles(roles.read())
+        const rows = ctx.agentTeams.listMembers(agent)
+          .filter((member) => member.role === 'teammate')
+          .map((member) => {
+            const snapshot = snapshots.get(agent.id, member.name)
+            const role = snapshot === undefined
+              ? roleForTarget(catalog, member.name)
+              : findRole(catalog, snapshot.roleId)
+            return {
+              name: member.name,
+              status: member.status,
+              description: member.description,
+              role,
+            }
+          })
+        return activeMembers(rows)
+      } catch {
+        return activeMembers([])
+      }
+    },
   }))
   for (const definition of tools.lead) register(scoped.tools.register(definition))
   register(scoped.tools.guard((exec) => {

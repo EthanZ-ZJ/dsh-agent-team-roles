@@ -59,9 +59,11 @@ If the role is already in use, the target gets a numeric suffix (`reviewer-2`), 
 The composer's left control row now has **Pull member**. It opens the role catalog and pulls one role directly:
 
 1. Optionally type an initial task. Leave it empty for a **handshake-only** spawn: the member replies exactly `READY` and does not analyze, ask questions, call tools, or write a report. The roster entry is enough for the Lead to know the member exists.
-2. The member's `READY` settlement notice is filtered on the Lead's next step, so the Lead is not woken into an unnecessary verification turn. A real user message arriving at the same time is still processed normally.
-2. Click **Pull** next to a role.
-3. The button executes `/team-spawn <role> [task]` through the existing `commands` Remote, so **no model turn is involved**. The roster updates through the normal Team projection.
+2. The member's `READY` settlement notice is not delivered to the Lead at all (handshake spawns use caller delivery), so the Lead is not woken into an unnecessary verification turn. A real user message arriving at the same time is still processed normally.
+3. Click **Pull** next to a role.
+4. The button executes `/team-spawn <role> [task]` through the existing `commands` Remote, so **no model turn is involved**. The roster updates through the normal Team projection.
+
+The Lead's system prompt also carries a live **Active team members** section, rebuilt on every step: each pulled member's name, role, one-line responsibility, and status. The Lead therefore sees who already exists and what they can do without needing a wake-up or a `list_agents` call, and is told to assign work to them instead of spawning duplicates.
 
 The same command is available from the `/` menu and by typing it:
 

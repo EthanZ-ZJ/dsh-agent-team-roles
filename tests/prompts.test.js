@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { leadCatalog, memberPersona } from '../src/prompts.js'
+import { activeMembers, leadCatalog, memberPersona } from '../src/prompts.js'
 
 test('lead catalog lists every role and disables the ad-hoc tool', () => {
   const text = leadCatalog([
@@ -14,8 +14,7 @@ test('lead catalog lists every role and disables the ad-hoc tool', () => {
   assert.match(text, /Reviews changes/)
 })
 
-test('member persona includes the role card and learned rules', () => {
-  const text = memberPersona({
+test('member persona includes the role card and learned rules', () => {  const text = memberPersona({
     target: 'reviewer-2',
     frozen: {
       id: 'reviewer',
@@ -33,4 +32,26 @@ test('member persona includes the role card and learned rules', () => {
   assert.match(text, /Do not modify tests/)
   assert.match(text, /TEAM_HANDSHAKE/)
   assert.match(text, /reply with exactly READY/)
+})
+
+test('active members section names each live teammate and its role', () => {
+  const text = activeMembers([
+    {
+      name: 'se',
+      status: 'inactive',
+      description: 'Solution engineer',
+      role: { id: 'se', name: 'SE', description: 'Analyze only; do not edit code.' },
+    },
+  ])
+  assert.match(text, /Active team members/)
+  assert.match(text, /se: SE \(se\)/)
+  assert.match(text, /Analyze only; do not edit code\./)
+  assert.match(text, /inactive/)
+  assert.match(text, /do not spawn a duplicate/i)
+})
+
+test('active members section handles an empty roster', () => {
+  const text = activeMembers([])
+  assert.match(text, /No teammates are active yet/)
+  assert.match(text, /spawn_team_member/)
 })

@@ -6,6 +6,27 @@
  * visible to the next model step without re-spawning the member.
  */
 
+/** Render the live roster rows the Lead should already know about. */
+export function activeMembers(rows) {
+  const lines = ['## Active team members', '']
+  if (rows.length === 0) {
+    lines.push('No teammates are active yet. Pull one from the composer or call `spawn_team_member` with a configured role.')
+    return lines.join('\n')
+  }
+  lines.push(
+    'These teammates already exist in this Team. Assign work to them with `send_message` or the Team task board; do not spawn a duplicate just because a member is quiet.',
+  )
+  for (const row of rows) {
+    const role = row.role
+    const label = role === undefined ? 'unmanaged role' : `${role.name} (${role.id})`
+    const description = role?.description || row.description || ''
+    const suffix = description === '' ? '' : ` — ${description}`
+    lines.push(`- ${row.name}: ${label}${suffix} [${row.status ?? 'unknown'}]`)
+  }
+  lines.push('', 'Use `list_team_roles` for full role prompts, tool policies, and skills.')
+  return lines.join('\n')
+}
+
 /** Render the Lead's role catalog and spawning instructions. */
 export function leadCatalog(roles) {
   const lines = [
