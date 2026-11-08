@@ -346,15 +346,34 @@ function installMember({ agent, membership, scoped, register, tools, snapshots, 
     }),
   }))
 
-  if (frozen.toolMode === 'custom') {
-    const allowed = new Set([...frozen.tools, ...IMPLICIT_MEMBER_TOOLS])
-    const globalNames = new Set(
-      scoped.tools.definitions().map((definition) => definition.name),
-    )
-    const visibleGlobal = [...allowed].filter((toolName) => globalNames.has(toolName))
-    if (visibleGlobal.length > 0) {
-      register(scoped.tools.restrict({ allow: visibleGlobal }))
+  const liveRole = findRole(mergeRoles(roles.read()), roleId) ?? frozen
+  if (liveRole.toolMode === 'custom') {
+    const allowed = new Set([...liveRole.tools, ...IMPLICIT_MEMBER_TOOLS])
+    let restriction
+    let masked = ''
+    let reapplying = false
+    // Preset tools can register after agent/created; recompute the visible mask
+    // whenever the global tool set changes so later-registered allow-listed
+    // tools are not permanently hidden.
+    const applyRestriction = () => {
+      if (reapplying) return
+      reapplying = true
+      try {
+        const known = new Set(scoped.tools.definitions().map((definition) => definition.name))
+        const allow = [...allowed].filter((toolName) => known.has(toolName)).sort()
+        const nextMask = allow.join('\u0000')
+        if (nextMask === masked) return
+        restriction?.()
+        restriction = undefined
+        masked = nextMask
+        if (allow.length > 0) restriction = scoped.tools.restrict({ allow })
+      } finally {
+        reapplying = false
+      }
     }
+    applyRestriction()
+    register(scoped.on('tools/change', applyRestriction))
+    register(() => restriction?.())
     register(scoped.tools.guard((exec) => {
       if (allowed.has(exec.name)) return undefined
       return `Tool "${exec.name}" is not allowed by role "${roleId}".`
