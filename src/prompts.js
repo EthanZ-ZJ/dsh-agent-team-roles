@@ -54,6 +54,8 @@ export function leadCatalog(roles) {
     'Route test design, boundary coverage, and regression to TSE; TSE reports defects but does not change production code.',
     '',
     'When the user states a lasting requirement for one role — including "from now on", "always", or "never" — record it with `record_role_feedback`. Do not treat a task-local instruction as a lasting rule.',
+    '',
+    'Role rules are for durable role behavior only. Never store project-specific facts (brand names, domains, schemas, environment, versions, file paths) in role prompts or role rules; record those in the project memory vault with `memory_capture` instead.',
   )
   return lines.join('\n')
 }

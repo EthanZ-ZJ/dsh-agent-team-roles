@@ -12,6 +12,8 @@ test('lead catalog lists every role and disables the ad-hoc tool', () => {
   assert.match(text, /general/)
   assert.match(text, /reviewer/)
   assert.match(text, /Reviews changes/)
+  assert.match(text, /project-specific facts/)
+  assert.match(text, /memory_capture/)
 })
 
 test('member persona includes the role card and learned rules', () => {  const text = memberPersona({

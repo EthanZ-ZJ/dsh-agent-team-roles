@@ -280,7 +280,7 @@ export function createTools({ ctx, config, snapshots, rules, roles }) {
   const recordRoleFeedback = defineTool({
     name: 'record_role_feedback',
     description:
-      'Record one lasting requirement for a role after the user states it. Use this for "from now on", "always", and "never" requirements; use session scope for a task-local correction. Only the Team Lead may call this tool.',
+      'Record one lasting requirement about how a role works after the user states it. Use this for "from now on", "always", and "never" requirements; use session scope for a task-local correction. Never record project-specific facts (brand names, domains, schemas, environment, versions, file paths) here — put those in the project memory vault with memory_capture. Only the Team Lead may call this tool.',
     parameters: {
       role: { type: 'string', required: true, description: 'Configured role id.' },
       text: {
@@ -470,7 +470,7 @@ export function createTools({ ctx, config, snapshots, rules, roles }) {
   const rememberRoleRule = defineTool({
     name: 'remember_role_rule',
     description:
-      'Record one lasting requirement about your own role after the user states it, so future turns and instances follow it. Use permanent only for "from now on", "always", or "never"; use session for a task-local correction; use candidate when unsure.',
+      'Record one lasting requirement about your own role after the user states it, so future turns and instances follow it. Use permanent only for "from now on", "always", or "never"; use session for a task-local correction; use candidate when unsure. Never record project-specific facts (brand names, domains, schemas, environment, versions, file paths) here — put those in the project memory vault instead.',
     parameters: {
       text: {
         type: 'string',
