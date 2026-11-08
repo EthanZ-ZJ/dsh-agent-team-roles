@@ -35,6 +35,7 @@ window.__ModuleLoader__.load({
       toolMode: '工具策略',
       toolModeAll: '所有工具',
       toolModeCustom: '自定义白名单',
+      toolModeAllHint: '当前允许全部工具；如需限制，切换到自定义白名单。',
       tools: '允许的工具（逗号或换行分隔）',
       skills: '私有技能（逗号或换行分隔；留空表示角色技能目录全部可用）',
       color: '强调色',
@@ -89,6 +90,7 @@ window.__ModuleLoader__.load({
       toolMode: 'Tool policy',
       toolModeAll: 'All tools',
       toolModeCustom: 'Custom allow-list',
+      toolModeAllHint: 'All tools are allowed. Switch to a custom allow-list to restrict them.',
       tools: 'Allowed tools (comma or newline separated)',
       skills: 'Private skills (comma or newline separated; empty exposes the whole role skill folder)',
       color: 'Accent color',
@@ -367,9 +369,11 @@ window.__ModuleLoader__.load({
           style: {
             display: 'flex',
             flexDirection: 'column',
-            gap: 16,
-            padding: '20px 24px 32px',
-            maxWidth: 960,
+            gap: 14,
+            padding: '18px 20px 32px',
+            maxWidth: 1080,
+            width: '100%',
+            boxSizing: 'border-box',
             margin: '0 auto',
             color: 'var(--dsw-alias-label-primary)',
           },
@@ -418,11 +422,11 @@ window.__ModuleLoader__.load({
     }
 
     function RolesPanel({ t, roles, selectedRole, selected, busy, onSelect, onAdd, onRemove, onEdit, onRename, onSave, onRefresh }) {
-      return h('div', { style: { display: 'grid', gridTemplateColumns: '220px minmax(0, 1fr)', gap: 16 } }, [
+      return h('div', { style: { display: 'grid', gridTemplateColumns: 'minmax(150px, 180px) minmax(0, 1fr)', gap: 14, alignItems: 'start' } }, [
         h('div', { key: 'list', style: { ...panel, ...card, gap: 8 } }, [
-          h('div', { key: 'list-head', style: { ...row, justifyContent: 'space-between' } }, [
+          h('div', { key: 'list-head', style: { display: 'flex', flexDirection: 'column', gap: 8 } }, [
             h('strong', { key: 'label', style: { fontSize: 13 } }, t('roles')),
-            h('button', { key: 'add', type: 'button', style: button, onClick: onAdd }, t('addRole')),
+            h('button', { key: 'add', type: 'button', style: { ...button, width: '100%' }, onClick: onAdd }, t('addRole')),
           ]),
           ...(roles.length === 0
             ? [h('span', { key: 'empty', style: small }, t('empty'))]
@@ -451,8 +455,26 @@ window.__ModuleLoader__.load({
                   },
                 }),
                 h('span', { key: 'name', style: { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 } }, [
-                  h('span', { key: 'n', style: { fontSize: 13, fontWeight: 500 } }, role.name || role.id),
-                  h('span', { key: 'id', style: { ...small, fontSize: 11 } }, role.id),
+                  h('span', {
+                    key: 'n',
+                    style: {
+                      fontSize: 13,
+                      fontWeight: 500,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    },
+                  }, role.name || role.id),
+                  h('span', {
+                    key: 'id',
+                    style: {
+                      ...small,
+                      fontSize: 11,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    },
+                  }, role.id),
                 ]),
               ]))),
         ]),
@@ -499,7 +521,7 @@ window.__ModuleLoader__.load({
                   onChange: (event) => onEdit({ persona: event.target.value }),
                 }),
               ]),
-              h('div', { key: 'route', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)', gap: 12 } }, [
+              h('div', { key: 'route', style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 12 } }, [
                 h('label', { key: 'provider', style: label }, [
                   h('span', { key: 'l' }, t('provider')),
                   h('input', {
@@ -528,7 +550,7 @@ window.__ModuleLoader__.load({
                   }),
                 ]),
               ]),
-              h('div', { key: 'tools', style: { display: 'grid', gridTemplateColumns: '200px minmax(0,1fr)', gap: 12 } }, [
+              h('div', { key: 'tools', style: { ...panel, gap: 10 } }, [
                 h('label', { key: 'mode', style: label }, [
                   h('span', { key: 'l' }, t('toolMode')),
                   h('select', {
@@ -541,15 +563,17 @@ window.__ModuleLoader__.load({
                     h('option', { key: 'custom', value: 'custom' }, t('toolModeCustom')),
                   ]),
                 ]),
-                h('label', { key: 'allow', style: label }, [
-                  h('span', { key: 'l' }, t('tools')),
-                  h('textarea', {
-                    key: 'i',
-                    style: { ...input, minHeight: 64, resize: 'vertical' },
-                    value: textOf(selected.tools),
-                    onChange: (event) => onEdit({ tools: listOf(event.target.value) }),
-                  }),
-                ]),
+                selected.toolMode === 'custom'
+                  ? h('label', { key: 'allow', style: label }, [
+                      h('span', { key: 'l' }, t('tools')),
+                      h('textarea', {
+                        key: 'i',
+                        style: { ...input, minHeight: 72, resize: 'vertical', lineHeight: 1.5 },
+                        value: textOf(selected.tools),
+                        onChange: (event) => onEdit({ tools: listOf(event.target.value) }),
+                      }),
+                    ])
+                  : h('span', { key: 'all-hint', style: { ...small, fontSize: 11 } }, t('toolModeAllHint')),
               ]),
               h('label', { key: 'skills', style: label }, [
                 h('span', { key: 'l' }, t('skills')),
@@ -561,7 +585,7 @@ window.__ModuleLoader__.load({
                 }),
                 h('span', { key: 'hint', style: { ...small, fontSize: 11 } }, t('roleSkillHint')),
               ]),
-              h('label', { key: 'color', style: { ...label, maxWidth: 220 } }, [
+              h('label', { key: 'color', style: { ...label, maxWidth: 180 } }, [
                 h('span', { key: 'l' }, t('color')),
                 h('input', {
                   key: 'i',
@@ -571,7 +595,7 @@ window.__ModuleLoader__.load({
                   onChange: (event) => onEdit({ color: event.target.value }),
                 }),
               ]),
-              h('div', { key: 'footer', style: { ...row, justifyContent: 'space-between', paddingTop: 4 } }, [
+              h('div', { key: 'footer', style: { ...row, justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, paddingTop: 4 } }, [
                 h('div', { key: 'left', style: row }, [
                   h('button', { key: 'refresh', type: 'button', style: button, onClick: onRefresh }, t('refresh')),
                   h('button', {
@@ -622,9 +646,9 @@ window.__ModuleLoader__.load({
       }
 
       return h('div', { style: { ...panel, ...card } }, [
-        h('div', { key: 'head', style: { ...row, justifyContent: 'space-between' } }, [
+        h('div', { key: 'head', style: { ...row, justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, [
           h('div', { key: 'left', style: row }, [
-            h('label', { key: 'filter', style: { ...label, width: 220 } }, [
+            h('label', { key: 'filter', style: { ...label, width: 200 } }, [
               h('span', { key: 'l' }, t('ruleRole')),
               h('select', {
                 key: 'i',
@@ -648,50 +672,43 @@ window.__ModuleLoader__.load({
           : visible.map((rule) => h('div', {
               key: rule.id,
               style: {
-                display: 'grid',
-                gridTemplateColumns: '120px minmax(0,1fr) 110px 100px 32px',
+                display: 'flex',
+                flexDirection: 'column',
                 gap: 8,
-                alignItems: 'center',
                 borderTop: '1px solid var(--dsw-alias-border-l1)',
-                paddingTop: 8,
+                paddingTop: 10,
               },
             }, [
-              h('span', { key: 'role', style: { ...small, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis' } }, rule.roleId),
+              h('div', { key: 'meta-row', style: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' } }, [
+                h('span', { key: 'role', style: { ...small, fontSize: 12, fontWeight: 500 } }, rule.roleId),
+                h('select', {
+                  key: 'status',
+                  style: { ...input, width: 110 },
+                  value: rule.status,
+                  onChange: (event) => editRule(rule.id, { status: event.target.value }),
+                }, [
+                  h('option', { key: 'active', value: 'active' }, t('active')),
+                  h('option', { key: 'candidate', value: 'candidate' }, t('candidate')),
+                  h('option', { key: 'superseded', value: 'superseded' }, t('superseded')),
+                ]),
+                h('span', { key: 'meta', style: { ...small, fontSize: 11 } }, `${t('evidence')} ${rule.evidence} · ${t('source')} ${rule.source}`),
+                h('span', { key: 'spacer', style: { flex: '1 1 auto' } }),
+                h('button', {
+                  key: 'delete',
+                  type: 'button',
+                  title: t('deleteRule'),
+                  style: { ...button, padding: '3px 9px', color: 'var(--dsw-alias-state-error-primary)' },
+                  onClick: () => removeRule(rule.id),
+                }, '×'),
+              ]),
               h('input', {
                 key: 'text',
                 style: input,
                 value: rule.text,
                 onChange: (event) => editRule(rule.id, { text: event.target.value }),
               }),
-              h('select', {
-                key: 'status',
-                style: input,
-                value: rule.status,
-                onChange: (event) => editRule(rule.id, { status: event.target.value }),
-              }, [
-                h('option', { key: 'active', value: 'active' }, t('active')),
-                h('option', { key: 'candidate', value: 'candidate' }, t('candidate')),
-                h('option', { key: 'superseded', value: 'superseded' }, t('superseded')),
-              ]),
-              h('span', { key: 'meta', style: { ...small, fontSize: 11, display: 'flex', flexDirection: 'column' } }, [
-                h('span', { key: 'e' }, `${t('evidence')} ${rule.evidence}`),
-                h('span', { key: 's' }, `${t('source')} ${rule.source}`),
-              ]),
-              h('button', {
-                key: 'delete',
-                type: 'button',
-                title: t('deleteRule'),
-                style: { ...button, padding: '4px 8px', color: 'var(--dsw-alias-state-error-primary)' },
-                onClick: () => removeRule(rule.id),
-              }, '×'),
             ]))),
-        h('div', { key: 'add', style: { display: 'grid', gridTemplateColumns: '150px minmax(0,1fr) 120px 120px 110px', gap: 8, borderTop: '1px solid var(--dsw-alias-border-l1)', paddingTop: 12 } }, [
-          h('select', {
-            key: 'role',
-            style: input,
-            value: draft.roleId,
-            onChange: (event) => setDraft((current) => ({ ...current, roleId: event.target.value })),
-          }, roles.map((role) => h('option', { key: role.id, value: role.id }, role.name || role.id))),
+        h('div', { key: 'add', style: { display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid var(--dsw-alias-border-l1)', paddingTop: 12 } }, [
           h('input', {
             key: 'text',
             style: input,
@@ -699,26 +716,34 @@ window.__ModuleLoader__.load({
             value: draft.text,
             onChange: (event) => setDraft((current) => ({ ...current, text: event.target.value })),
           }),
-          h('select', {
-            key: 'polarity',
-            style: input,
-            value: draft.polarity,
-            onChange: (event) => setDraft((current) => ({ ...current, polarity: event.target.value })),
-          }, [
-            h('option', { key: 'preference', value: 'preference' }, t('preference')),
-            h('option', { key: 'do', value: 'do' }, t('do')),
-            h('option', { key: 'dont', value: 'dont' }, t('dont')),
+          h('div', { key: 'controls', style: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 120px 120px auto', gap: 8 } }, [
+            h('select', {
+              key: 'role',
+              style: input,
+              value: draft.roleId,
+              onChange: (event) => setDraft((current) => ({ ...current, roleId: event.target.value })),
+            }, roles.map((role) => h('option', { key: role.id, value: role.id }, role.name || role.id))),
+            h('select', {
+              key: 'polarity',
+              style: input,
+              value: draft.polarity,
+              onChange: (event) => setDraft((current) => ({ ...current, polarity: event.target.value })),
+            }, [
+              h('option', { key: 'preference', value: 'preference' }, t('preference')),
+              h('option', { key: 'do', value: 'do' }, t('do')),
+              h('option', { key: 'dont', value: 'dont' }, t('dont')),
+            ]),
+            h('select', {
+              key: 'status',
+              style: input,
+              value: draft.status,
+              onChange: (event) => setDraft((current) => ({ ...current, status: event.target.value })),
+            }, [
+              h('option', { key: 'active', value: 'active' }, t('active')),
+              h('option', { key: 'candidate', value: 'candidate' }, t('candidate')),
+            ]),
+            h('button', { key: 'add', type: 'button', style: button, onClick: addRule }, t('addRule')),
           ]),
-          h('select', {
-            key: 'status',
-            style: input,
-            value: draft.status,
-            onChange: (event) => setDraft((current) => ({ ...current, status: event.target.value })),
-          }, [
-            h('option', { key: 'active', value: 'active' }, t('active')),
-            h('option', { key: 'candidate', value: 'candidate' }, t('candidate')),
-          ]),
-          h('button', { key: 'add', type: 'button', style: button, onClick: addRule }, t('addRule')),
         ]),
       ])
     }
