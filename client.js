@@ -63,6 +63,17 @@ window.__ModuleLoader__.load({
       settingsUnavailable: '当前环境没有暴露 settings Remote，无法编辑。',
       roleSkillHint: '私有技能放在 ~/.dsh/agent-team-roles/skills/<角色ID>/ 下，每个技能是 <名称>/SKILL.md 或 <名称>.md。',
       ruleHint: 'permanent 会立即进入提示词；candidate 需要重复或在这里确认；session 只在当前会话生效，不会出现在这里。',
+      pullMembers: '拉取成员',
+      pullTitle: '从角色预设拉取成员',
+      pullHint: '不经过模型，直接创建；可选填初始任务，留空则等待 Lead 分配。',
+      pullTaskPlaceholder: '可选：初始任务',
+      pullAction: '拉取',
+      pulling: '拉取中…',
+      pullFailed: '拉取失败：',
+      pullSuccess: '已拉取',
+      pullNoRoles: '没有可用角色。',
+      pullLoadFailed: '读取角色失败：',
+      close: '关闭',
     }
 
     const en = {
@@ -118,6 +129,17 @@ window.__ModuleLoader__.load({
       settingsUnavailable: 'This deployment does not expose the settings Remote.',
       roleSkillHint: 'Private skills live in ~/.dsh/agent-team-roles/skills/<role id>/ as <name>/SKILL.md or <name>.md.',
       ruleHint: 'permanent reaches the prompt immediately; candidate waits for a repeat or confirmation here; session rules only live in the current Session and do not appear here.',
+      pullMembers: 'Pull member',
+      pullTitle: 'Pull a teammate from a role preset',
+      pullHint: 'Creates directly without a model turn. Optionally give an initial task; leave it empty to wait for the Lead.',
+      pullTaskPlaceholder: 'Optional initial task',
+      pullAction: 'Pull',
+      pulling: 'Pulling…',
+      pullFailed: 'Pull failed: ',
+      pullSuccess: 'Pulled',
+      pullNoRoles: 'No roles available.',
+      pullLoadFailed: 'Cannot read roles: ',
+      close: 'Close',
     }
 
     const ROLE_ID = /^[a-z][a-z0-9-]{0,63}$/
@@ -748,8 +770,189 @@ window.__ModuleLoader__.load({
       ])
     }
 
+    let createPortal = null
+    try {
+      createPortal = require('react-dom').createPortal
+    } catch {
+      createPortal = null
+    }
+
+    function createPullControl(ctx, t) {
+      return function PullControl({ sessionId }) {
+        const [open, setOpen] = React.useState(false)
+        const [roles, setRoles] = React.useState([])
+        const [task, setTask] = React.useState('')
+        const [loading, setLoading] = React.useState(false)
+        const [busy, setBusy] = React.useState('')
+        const [error, setError] = React.useState('')
+        const [notice, setNotice] = React.useState('')
+
+        const openPanel = async () => {
+          setOpen(true)
+          setError('')
+          setNotice('')
+          setLoading(true)
+          try {
+            const view = await readNamespace(ctx)
+            setRoles(Array.isArray(view.value?.roles) ? view.value.roles : [])
+          } catch (caught) {
+            setError(`${t('pullLoadFailed')}${caught.message}`)
+          } finally {
+            setLoading(false)
+          }
+        }
+
+        const pull = async (role) => {
+          if (busy !== '' || sessionId === undefined) return
+          setBusy(role.id)
+          setError('')
+          setNotice('')
+          try {
+            const line = `/team-spawn ${role.id}${task.trim() === '' ? '' : ` ${task.trim()}`}`
+            const response = await ctx.remote.commands.execute(sessionId, line, [])
+            if (!response.ok) throw new Error(response.error.message)
+            if (response.value === undefined) throw new Error('team-spawn command is unavailable')
+            if (response.value.result.kind === 'error') throw new Error(response.value.result.text)
+            setNotice(`${t('pullSuccess')} ${role.name || role.id}`)
+            try {
+              await ctx.sessions?.refreshProjections(sessionId)
+            } catch {
+              // The Team projection also refreshes from its own event push.
+            }
+            setTimeout(() => {
+              setOpen(false)
+              setTask('')
+            }, 650)
+          } catch (caught) {
+            setError(`${t('pullFailed')}${caught.message}`)
+          } finally {
+            setBusy('')
+          }
+        }
+
+        const trigger = h('button', {
+          key: 'trigger',
+          type: 'button',
+          title: t('pullTitle'),
+          style: { ...button, padding: '4px 8px', fontSize: 12, whiteSpace: 'nowrap' },
+          onClick: openPanel,
+        }, `＋ ${t('pullMembers')}`)
+
+        if (!open) return trigger
+
+        const panel = h('div', {
+          key: 'panel',
+          role: 'dialog',
+          'aria-label': t('pullTitle'),
+          onClick: (event) => event.stopPropagation(),
+          style: {
+            position: 'fixed',
+            left: '50%',
+            bottom: 96,
+            transform: 'translateX(-50%)',
+            width: 'min(560px, calc(100vw - 32px))',
+            maxHeight: '70vh',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+            padding: 14,
+            background: 'var(--dsw-alias-bg-overlay)',
+            color: 'var(--dsw-alias-label-primary)',
+            border: '1px solid var(--dsw-alias-border-l2)',
+            borderRadius: 12,
+            boxShadow: '0 18px 50px rgba(0, 0, 0, 0.35)',
+            zIndex: 1001,
+          },
+        }, [
+          h('div', { key: 'head', style: { ...row, justifyContent: 'space-between', gap: 8 } }, [
+            h('div', { key: 'title', style: { display: 'flex', flexDirection: 'column', gap: 3 } }, [
+              h('strong', { key: 't', style: { fontSize: 14 } }, t('pullTitle')),
+              h('span', { key: 'h', style: { ...small, fontSize: 11 } }, t('pullHint')),
+            ]),
+            h('button', {
+              key: 'close',
+              type: 'button',
+              style: { ...button, padding: '2px 8px' },
+              onClick: () => setOpen(false),
+            }, '×'),
+          ]),
+          h('input', {
+            key: 'task',
+            style: input,
+            placeholder: t('pullTaskPlaceholder'),
+            value: task,
+            onChange: (event) => setTask(event.target.value),
+          }),
+          error !== '' ? h('div', { key: 'error', style: banner('state-error') }, error) : null,
+          notice !== '' ? h('div', { key: 'notice', style: banner('state-success') }, notice) : null,
+          h('div', {
+            key: 'list',
+            style: { display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto', minHeight: 0 },
+          }, loading
+            ? [h('span', { key: 'loading', style: small }, t('loading'))]
+            : roles.length === 0
+              ? [h('span', { key: 'empty', style: small }, t('pullNoRoles'))]
+              : roles.map((role) => h('div', {
+                  key: role.id,
+                  style: {
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '8px 10px',
+                    border: '1px solid var(--dsw-alias-border-l1)',
+                    borderRadius: 8,
+                    background: 'var(--dsw-alias-bg-layer-1)',
+                  },
+                }, [
+                  h('span', {
+                    key: 'dot',
+                    style: {
+                      width: 8,
+                      height: 8,
+                      borderRadius: 999,
+                      flex: '0 0 auto',
+                      background: role.color || 'var(--dsw-alias-brand-primary)',
+                    },
+                  }),
+                  h('span', { key: 'copy', style: { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: '1 1 auto' } }, [
+                    h('span', { key: 'name', style: { fontSize: 13, fontWeight: 500 } }, role.name || role.id),
+                    h('span', {
+                      key: 'id',
+                      style: {
+                        ...small,
+                        fontSize: 11,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      },
+                    }, `${role.id}${role.description ? ` · ${role.description}` : ''}`),
+                  ]),
+                  h('button', {
+                    key: 'pull',
+                    type: 'button',
+                    'aria-label': `${t('pullAction')} ${role.name || role.id}`,
+                    style: primaryButton,
+                    disabled: busy !== '',
+                    onClick: () => pull(role),
+                  }, busy === role.id ? t('pulling') : t('pullAction')),
+                ]))),
+        ])
+
+        const backdrop = h('div', {
+          key: 'backdrop',
+          onClick: () => { if (busy === '') setOpen(false) },
+          style: { position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0, 0, 0, 0.28)' },
+        }, [panel])
+
+        return h(React.Fragment, null, [
+          trigger,
+          createPortal === null ? backdrop : createPortal(backdrop, document.body),
+        ])
+      }
+    }
+
     return {
-      inject: ['slots', 'locale', 'remote', 'remote.settings'],
+      inject: ['slots', 'locale', 'remote', 'remote.settings', 'remote.commands', 'sessions'],
       apply(ctx) {
         const t = ctx.locale.bind(NS)
         ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'agent-team-roles:locale')
@@ -760,6 +963,13 @@ window.__ModuleLoader__.load({
           label: () => t('nav'),
           locale: NS,
         }, createSection(ctx, t))), 'agent-team-roles:settings-page')
+        ctx.effect(() => ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
+          name: 'conversation.input.left',
+          id: 'agent-team-roles-pull',
+          order: 15,
+          label: () => t('pullMembers'),
+          locale: NS,
+        }, createPullControl(ctx, t))), 'agent-team-roles:pull-control')
       },
     }
   },

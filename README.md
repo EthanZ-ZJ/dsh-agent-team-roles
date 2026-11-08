@@ -54,6 +54,22 @@ spawn_team_member({ role: "reviewer", prompt: "Review the change and report find
 
 If the role is already in use, the target gets a numeric suffix (`reviewer-2`), and the suffix maps back to the same role.
 
+## Pull a teammate from the composer
+
+The composer's left control row now has **Pull member**. It opens the role catalog and pulls one role directly:
+
+1. Optionally type an initial task. Leave it empty to spawn the member with a “wait for the Lead” prompt.
+2. Click **Pull** next to a role.
+3. The button executes `/team-spawn <role> [task]` through the existing `commands` Remote, so **no model turn is involved**. The roster updates through the normal Team projection.
+
+The same command is available from the `/` menu and by typing it:
+
+```text
+/team-spawn se 分析当前仓库的插件边界，给出实现方案
+```
+
+If the Team is at its member limit, the command result is shown inline in the pull panel.
+
 ## Agent-facing tools
 
 | Tool | Who may call it | Purpose |

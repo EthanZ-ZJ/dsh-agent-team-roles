@@ -7,16 +7,9 @@
  * learned rule applies to the next call without restarting the plugin.
  */
 
-import {
-  DESCRIPTION_LIMIT,
-  ROLE_ID,
-  findRole,
-  mergeRoles,
-  readConfig,
-  roleForTarget,
-  validateRole,
-} from './config.js'
+import { mergeRoles, roleForTarget } from './config.js'
 import { ruleView } from './rules.js'
+import { spawnRoleMember } from './spawn.js'
 
 /** Convert one compact parameter spec into the JSON Schema the registry wants. */
 function parameterSchema(parameters) {
@@ -190,31 +183,6 @@ function roleView(role) {
   }
 }
 
-/** Validate one requested teammate target. */
-function validateTarget(name) {
-  if (!ROLE_ID.test(name)) {
-    throw new Error(`teammate target "${name}" must be lowercase kebab-case, at most 64 characters`)
-  }
-  if (name === 'lead') throw new Error('teammate target "lead" is reserved for the Team Lead')
-}
-
-/** Pick a free target, appending a numeric suffix when the base is taken. */
-function freeTarget(base, used) {
-  if (!used.has(base)) return base
-  for (let index = 2; ; index += 1) {
-    const candidate = `${base}-${index}`
-    if (!used.has(candidate)) return candidate
-  }
-}
-
-/** Resolve a role or throw a model-facing list of configured ids. */
-function requireRole(roles, id) {
-  const role = findRole(roles, id)
-  if (role !== undefined) return role
-  const available = roles.map((candidate) => candidate.id).join(', ')
-  throw new Error(`unknown role "${id}"; configured roles: ${available}`)
-}
-
 /** Resolve the role a member Agent runs as. */
 export function roleIdForAgent(ctx, snapshots, roles, agent) {
   const membership = ctx.agentTeams.tryMembership(agent)
@@ -281,56 +249,20 @@ export function createTools({ ctx, config, snapshots, rules, roles }) {
     }),
     async execute(args, exec) {
       if (exec.agent === undefined) throw new Error('spawn_team_member requires a calling Agent')
-      const caller = exec.agent
-      const role = requireRole(catalog(), args.role)
-      const invalid = validateRole(role)
-      if (invalid !== undefined) throw new Error(invalid)
-
-      const used = new Set(ctx.agentTeams.listMembers(caller).map((member) => member.name))
-      const requested = typeof args.name === 'string' && args.name.trim() !== ''
-        ? args.name.trim().toLowerCase()
-        : role.id
-      validateTarget(requested)
-      const target = freeTarget(requested, used)
-      const context = args.context === 'fork' ? 'fork' : 'fresh'
-      const description = (typeof args.description === 'string' && args.description.trim() !== ''
-        ? args.description.trim()
-        : role.description || role.name
-      ).slice(0, DESCRIPTION_LIMIT)
-
-      const frozen = { ...role }
-      await snapshots.record({
-        rootSessionId: caller.id,
-        name: target,
-        roleId: role.id,
-        frozen,
+      const member = await spawnRoleMember({
+        ctx,
+        config,
+        snapshots,
+        roles: catalog(),
+        caller: exec.agent,
+        roleId: args.role,
+        prompt: args.prompt,
+        name: args.name,
+        description: args.description,
+        context: args.context,
+        signal: exec.signal,
       })
-
-      let result
-      try {
-        result = await ctx.agentTeams.spawnTeammate(caller, {
-          name: target,
-          description,
-          prompt: [{ type: 'text', text: args.prompt }],
-          context,
-          provider: readConfig(config, `${context}Provider`) ?? (context === 'fork' ? 'fork' : 'spawn'),
-          signal: exec.signal,
-        })
-      } catch (error) {
-        await snapshots.remove(caller.id, target).catch(() => undefined)
-        throw error
-      }
-
-      return {
-        member: {
-          target: result.member.name,
-          role: role.id,
-          roleName: role.name,
-          status: result.member.status,
-          context,
-          model: frozen.provider === '' ? 'session' : `${frozen.provider}/${frozen.model}`,
-        },
-      }
+      return { member }
     },
   })
 

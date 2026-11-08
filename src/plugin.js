@@ -18,6 +18,7 @@ import z from '@deepseek-ai/schemastery'
 import { mergeRoles, readConfig, roleForTarget } from './config.js'
 import { leadCatalog, memberPersona } from './prompts.js'
 import { MemberSnapshots, RoleStore, RuleStore, stateDir } from './store.js'
+import { spawnRoleMember } from './spawn.js'
 import { createTools } from './tools.js'
 import { installRoleSkills } from './skills.js'
 
@@ -25,7 +26,7 @@ import { installRoleSkills } from './skills.js'
 export const name = 'agent-team-roles'
 
 /** Services the plugin needs before it can install scoped contributions. */
-export const inject = ['agentTeams', 'agents', 'tools']
+export const inject = ['agentTeams', 'agents', 'tools', 'commands']
 
 /** Tool names a managed member always keeps, even under a custom policy. */
 const IMPLICIT_MEMBER_TOOLS = [
@@ -35,6 +36,10 @@ const IMPLICIT_MEMBER_TOOLS = [
   'create_team_role',
   'skill',
 ]
+
+/** Initial prompt used when the UI pulls a member without a task. */
+const DEFAULT_TEAM_TASK =
+  '你已加入团队。等待 Team Lead 分配任务；收到任务后按角色职责执行。'
 
 const RoleSchema = z.object({
   id: z.string().description('Stable role identity; also the default teammate target.'),
@@ -185,6 +190,42 @@ export function apply(ctx, config) {
       }
     }
   })
+
+  // The Web composer's pull control invokes this command through the existing
+  // commands Remote, so a member is created without a model turn.
+  ctx.effect(() => ctx.commands.register({
+    name: 'team-spawn',
+    description: 'Pull a configured role as a teammate without a model turn.',
+    input: { hint: '<role> [task]' },
+    handler: async ({ agent, rawInput, signal }) => {
+      const membership = ctx.agentTeams.tryMembership(agent)
+      if (membership?.role !== 'lead') {
+        return { kind: 'error', text: 'Only the Team Lead can spawn teammates.' }
+      }
+      const input = rawInput.trim()
+      const separator = input.indexOf(' ')
+      const roleId = separator < 0 ? input : input.slice(0, separator)
+      const task = separator < 0 ? '' : input.slice(separator + 1).trim()
+      if (roleId === '') {
+        return { kind: 'error', text: 'usage: /team-spawn <role> [task]' }
+      }
+      try {
+        const member = await spawnRoleMember({
+          ctx,
+          config,
+          snapshots,
+          roles: mergeRoles(readConfig(config, 'roles') ?? []),
+          caller: agent,
+          roleId,
+          prompt: task === '' ? DEFAULT_TEAM_TASK : task,
+          signal,
+        })
+        return { kind: 'success', text: `Spawned ${member.roleName} as ${member.target}.` }
+      } catch (error) {
+        return { kind: 'error', text: error instanceof Error ? error.message : String(error) }
+      }
+    },
+  }), 'agent-team-roles:team-spawn-command')
 
   // A dedicated Settings page owns this plugin's form; the generic schema form
   // would duplicate the same volatile fields.
