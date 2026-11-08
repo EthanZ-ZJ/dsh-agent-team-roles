@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Agent team roles",
+    "description": "Role presets with their own prompt, model, tools and skills, plus learned standing instructions that update while a member runs."
+  }
+}

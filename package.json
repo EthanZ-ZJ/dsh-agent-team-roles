@@ -1,0 +1,59 @@
+{
+  "name": "dsh-agent-team-roles",
+  "version": "0.1.0",
+  "description": "Role presets and self-updating role memory for DeepSeek Harness Agent Teams.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "agent-team",
+    "agent-roles",
+    "self-learning"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "src/**/*.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "README.zh.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  },
+  "engines": {
+    "dsh": ">=0.2.2-rc.1 <0.3.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.1.0",
+    "@deepseek-ai/dsh-experimental-agent-team": ">=0.2.2-rc.1 <0.3.0",
+    "@deepseek-ai/schemastery": ">=3.18.4 <4.0.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/schemastery": "3.18.5"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}

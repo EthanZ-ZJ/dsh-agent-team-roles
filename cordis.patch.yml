@@ -1,0 +1,23 @@
+# Role presets and self-updating role memory for the official Agent Teams runtime.
+# The roles and rules arrays are volatile: the Settings page edits them through
+# the live config editor without restarting this plugin.
+- insert:
+    - id: agent-team-roles
+      name: dsh-agent-team-roles
+      config:
+        roles:
+          - id: general
+            name: General
+            description: General-purpose teammate for tasks that do not match a specialized role.
+            persona: >-
+              You are a general-purpose teammate. Work directly on the task you were
+              given, keep changes focused, and report what you changed and verified.
+              Ask for clarification only when the task cannot be completed safely.
+            provider: ''
+            model: ''
+            reasoningEffort: ''
+            toolMode: all
+            tools: []
+            skills: []
+            color: ''
+        rules: []
