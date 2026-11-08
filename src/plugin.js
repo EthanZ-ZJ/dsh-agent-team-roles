@@ -251,12 +251,15 @@ function installLead({ scoped, register, tools, agent, ctx }) {
   }))
   // A handshake member's READY turn settles into a `subagent-settled` notice that
   // wakes the Lead. That notice carries no task; suppress the model turn instead
-  // of letting the Lead analyze an empty handshake.
-  register(scoped.on('agent/pre-step', (decision, next) => {
-    if (!Array.isArray(decision.messages) || !isHandshakeOnly(ctx, agent, decision.messages)) {
+  // of letting the Lead analyze an empty handshake. The first listener argument
+  // is the pre-step payload, not the decision object.
+  register(scoped.on('agent/pre-step', async ({ messages }, next) => {
+    if (!Array.isArray(messages) || !isHandshakeOnly(ctx, agent, messages)) {
       return next()
     }
-    return { kind: 'enter', messages: [] }
+    const decision = await next()
+    if (decision.kind !== 'enter') return decision
+    return { ...decision, messages: [] }
   }))
 }
 
