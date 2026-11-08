@@ -15,7 +15,7 @@ import { randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { normalizeRules, applyRule, applySessionRule, removeRule, rulesForRole, renderRules } from './rules.js'
+import { normalizeRules, applyRule, applySessionRule, retireRule, rulesForRole, renderRules } from './rules.js'
 import {
   findRole,
   mergeRoles,
@@ -193,24 +193,24 @@ export class RuleStore {
     return { rule: applied?.rule, scope: input.scope, promoted: applied?.promoted }
   }
 
-  /** Retire one persistent rule; the Settings page can restore it by editing. */
+  /** Retire one persistent rule and keep it visible in role history. */
   async forget(id) {
     if (!this.persistent) {
-      const result = removeRule(normalizeRules(this.fallbackRules), id)
+      const result = retireRule(normalizeRules(this.fallbackRules), id)
       this.fallbackRules = result.rules
-      return result.removed
+      return result.retired
     }
-    let removed = false
+    let retired = false
     this.writeQueue = this.writeQueue.catch(() => undefined).then(async () => {
       await this.editor.edit(this.entry, (current) => {
         const base = normalizeRules(rawField(current, 'rules'))
-        const result = removeRule(base, id)
-        removed = result.removed
+        const result = retireRule(base, id)
+        retired = result.retired
         return { ...current, rules: result.rules }
       })
     })
     await this.writeQueue
-    return removed
+    return retired
   }
 
   /** Session rules visible to one root Session. */

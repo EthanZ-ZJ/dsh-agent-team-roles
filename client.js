@@ -63,6 +63,9 @@ window.__ModuleLoader__.load({
       settingsUnavailable: '当前环境没有暴露 settings Remote，无法编辑。',
       roleSkillHint: '私有技能放在 ~/.dsh/agent-team-roles/skills/<角色ID>/ 下，每个技能是 <名称>/SKILL.md 或 <名称>.md。',
       ruleHint: 'permanent 会立即进入提示词；candidate 需要重复或在这里确认；session 只在当前会话生效，不会出现在这里。',
+      history: '历史记忆',
+      noHistory: '该角色还没有历史记忆。',
+      historyHint: '包含生效、候选和已退役的规则。退役只停止进入提示词，记录会保留在这里。',
       pullMembers: '拉取成员',
       pullTitle: '从角色预设拉取成员',
       pullHint: '不经过模型；同角色已有成员会复用，不再重复创建。留空只做握手（回复 READY，不分析、不提问）。',
@@ -129,6 +132,9 @@ window.__ModuleLoader__.load({
       settingsUnavailable: 'This deployment does not expose the settings Remote.',
       roleSkillHint: 'Private skills live in ~/.dsh/agent-team-roles/skills/<role id>/ as <name>/SKILL.md or <name>.md.',
       ruleHint: 'permanent reaches the prompt immediately; candidate waits for a repeat or confirmation here; session rules only live in the current Session and do not appear here.',
+      history: 'Memory history',
+      noHistory: 'No memory history for this role yet.',
+      historyHint: 'Includes active, candidate, and retired rules. Retiring only removes a rule from the prompt; the record stays here.',
       pullMembers: 'Pull member',
       pullTitle: 'Pull a teammate from a role preset',
       pullHint: 'Creates directly without a model turn. An existing member of the same role is reused instead of duplicated. Leave the task empty for a handshake only (reply READY; no analysis or questions).',
@@ -418,6 +424,7 @@ window.__ModuleLoader__.load({
                 key: 'roles',
                 t,
                 roles,
+                rules,
                 selectedRole,
                 selected,
                 busy,
@@ -443,7 +450,12 @@ window.__ModuleLoader__.load({
       }
     }
 
-    function RolesPanel({ t, roles, selectedRole, selected, busy, onSelect, onAdd, onRemove, onEdit, onRename, onSave, onRefresh }) {
+    function RolesPanel({ t, roles, rules, selectedRole, selected, busy, onSelect, onAdd, onRemove, onEdit, onRename, onSave, onRefresh }) {
+      const roleRules = roles === undefined || rules === undefined
+        ? []
+        : rules
+            .filter((rule) => rule.roleId === selectedRole)
+            .sort((left, right) => (right.updatedAt ?? right.createdAt ?? 0) - (left.updatedAt ?? left.createdAt ?? 0))
       return h('div', { style: { display: 'grid', gridTemplateColumns: 'minmax(150px, 180px) minmax(0, 1fr)', gap: 14, alignItems: 'start' } }, [
         h('div', { key: 'list', style: { ...panel, ...card, gap: 8 } }, [
           h('div', { key: 'list-head', style: { display: 'flex', flexDirection: 'column', gap: 8 } }, [
@@ -636,6 +648,49 @@ window.__ModuleLoader__.load({
                   disabled: busy,
                   onClick: onSave,
                 }, busy ? t('saving') : t('save')),
+              ]),
+              h('div', {
+                key: 'history',
+                style: {
+                  ...panel,
+                  gap: 8,
+                  borderTop: '1px solid var(--dsw-alias-border-l1)',
+                  paddingTop: 12,
+                  marginTop: 4,
+                },
+              }, [
+                h('div', { key: 'history-head', style: { ...row, flexWrap: 'wrap', gap: 8 } }, [
+                  h('strong', { key: 'title', style: { fontSize: 13 } }, t('history')),
+                  h('span', { key: 'hint', style: { ...small, fontSize: 11 } }, t('historyHint')),
+                ]),
+                ...(roleRules.length === 0
+                  ? [h('span', { key: 'empty', style: small }, t('noHistory'))]
+                  : roleRules.map((rule) => h('div', {
+                      key: rule.id,
+                      style: {
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 4,
+                        padding: '7px 0',
+                        borderTop: '1px dashed var(--dsw-alias-border-l1)',
+                      },
+                    }, [
+                      h('div', { key: 'meta', style: { ...row, flexWrap: 'wrap', gap: 8, alignItems: 'center' } }, [
+                        h('span', {
+                          key: 'status',
+                          style: {
+                            ...small,
+                            fontSize: 10,
+                            padding: '1px 7px',
+                            borderRadius: 999,
+                            background: 'var(--dsw-alias-bg-layer-2)',
+                          },
+                        }, t(rule.status) ?? rule.status),
+                        h('span', { key: 'time', style: { ...small, fontSize: 11 } }, new Date(rule.updatedAt ?? rule.createdAt ?? Date.now()).toLocaleString()),
+                        h('span', { key: 'meta', style: { ...small, fontSize: 11 } }, `${t('evidence')} ${rule.evidence} · ${t('source')} ${rule.source}`),
+                      ]),
+                      h('span', { key: 'text', style: { fontSize: 12, lineHeight: 1.55 } }, rule.text),
+                    ]))),
               ]),
             ]),
       ])

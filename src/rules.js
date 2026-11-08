@@ -226,6 +226,19 @@ export function removeRule(rules, id) {
   }
 }
 
+/** Retire one persistent rule while keeping it in history. */
+export function retireRule(rules, id, now = Date.now()) {
+  const found = findRule(rules, id)
+  if (found === undefined) return { rules, retired: false }
+  return {
+    rules: rules.map((rule) => (rule.id === id
+      ? { ...rule, status: 'superseded', updatedAt: now }
+      : rule)),
+    retired: true,
+    rule: found,
+  }
+}
+
 /** Render the active standing instructions for one role. */
 export function renderRules(rules, roleId, sessionRules = []) {
   const active = [...rulesForRole(rules, roleId, ['active']), ...sessionRules.filter(

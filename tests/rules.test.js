@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { applyRule, applySessionRule, renderRules, ruleView } from '../src/rules.js'
+import { applyRule, applySessionRule, renderRules, retireRule, ruleView } from '../src/rules.js'
 
 const base = (input) => ({
   id: `rule-${Math.random()}`,
@@ -50,6 +50,16 @@ test('superseded rules render nothing', () => {
   const text = renderRules(second.rules, 'reviewer')
   assert.match(text, /Do not modify tests/)
   assert.equal(text.match(/Do not modify tests/g)?.length, 1)
+})
+
+test('retiring a rule keeps it as superseded history', () => {
+  const created = applyRule([], base({}))
+  const result = retireRule(created.rules, created.rule.id, 12345)
+  assert.equal(result.retired, true)
+  assert.equal(result.rules.length, 1)
+  assert.equal(result.rules[0].status, 'superseded')
+  assert.equal(result.rules[0].updatedAt, 12345)
+  assert.equal(renderRules(result.rules, 'reviewer'), '')
 })
 
 test('session rules render only for their own role', () => {
