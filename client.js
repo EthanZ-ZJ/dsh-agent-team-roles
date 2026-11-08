@@ -456,61 +456,28 @@ window.__ModuleLoader__.load({
         : rules
             .filter((rule) => rule.roleId === selectedRole)
             .sort((left, right) => (right.updatedAt ?? right.createdAt ?? 0) - (left.updatedAt ?? left.createdAt ?? 0))
-      return h('div', { style: { display: 'grid', gridTemplateColumns: 'minmax(150px, 180px) minmax(0, 1fr)', gap: 14, alignItems: 'start' } }, [
-        h('div', { key: 'list', style: { ...panel, ...card, gap: 8 } }, [
-          h('div', { key: 'list-head', style: { display: 'flex', flexDirection: 'column', gap: 8 } }, [
-            h('strong', { key: 'label', style: { fontSize: 13 } }, t('roles')),
-            h('button', { key: 'add', type: 'button', style: { ...button, width: '100%' }, onClick: onAdd }, t('addRole')),
+      return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } }, [
+        h('div', {
+          key: 'picker',
+          style: {
+            ...panel,
+            ...card,
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 10,
+            alignItems: 'flex-end',
+          },
+        }, [
+          h('label', { key: 'role', style: { ...label, flex: '1 1 260px', minWidth: 0 } }, [
+            h('span', { key: 'l' }, t('roles')),
+            h('select', {
+              key: 'i',
+              style: input,
+              value: selectedRole,
+              onChange: (event) => onSelect(event.target.value),
+            }, roles.map((role) => h('option', { key: role.id, value: role.id }, `${role.name || role.id} (${role.id})`))),
           ]),
-          ...(roles.length === 0
-            ? [h('span', { key: 'empty', style: small }, t('empty'))]
-            : roles.map((role) => h('button', {
-                key: role.id,
-                type: 'button',
-                onClick: () => onSelect(role.id),
-                style: {
-                  ...button,
-                  textAlign: 'left',
-                  background: role.id === selectedRole ? 'var(--dsw-alias-bg-layer-2)' : 'transparent',
-                  borderColor: role.id === selectedRole ? 'var(--dsw-alias-border-l2)' : 'transparent',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                },
-              }, [
-                h('span', {
-                  key: 'dot',
-                  style: {
-                    width: 8,
-                    height: 8,
-                    borderRadius: 999,
-                    background: role.color || 'var(--dsw-alias-brand-primary)',
-                    flex: '0 0 auto',
-                  },
-                }),
-                h('span', { key: 'name', style: { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 } }, [
-                  h('span', {
-                    key: 'n',
-                    style: {
-                      fontSize: 13,
-                      fontWeight: 500,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    },
-                  }, role.name || role.id),
-                  h('span', {
-                    key: 'id',
-                    style: {
-                      ...small,
-                      fontSize: 11,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    },
-                  }, role.id),
-                ]),
-              ]))),
+          h('button', { key: 'add', type: 'button', style: button, onClick: onAdd }, t('addRole')),
         ]),
         h('div', { key: 'editor', style: { ...panel, ...card } }, selected === undefined
           ? [h('span', { key: 'empty', style: small }, t('empty'))]
