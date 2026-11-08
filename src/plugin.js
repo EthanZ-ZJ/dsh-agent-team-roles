@@ -148,6 +148,7 @@ export function apply(ctx, config) {
           tools,
           snapshots,
           ruleStore,
+          roles: rolesReader,
         })
       }
     } catch (error) {
@@ -307,7 +308,7 @@ export function isHandshakeSettlement(message) {
 }
 
 /** Install one managed member's role configuration. */
-function installMember({ agent, membership, scoped, register, tools, snapshots, ruleStore }) {
+function installMember({ agent, membership, scoped, register, tools, snapshots, ruleStore, roles }) {
   const snapshot = snapshots.get(membership.root.id, membership.name)
   const role = snapshot !== undefined
     ? mergeRoles([snapshot.frozen])[0]
@@ -332,7 +333,10 @@ function installMember({ agent, membership, scoped, register, tools, snapshots, 
     name: 'agent-team-roles:member-persona',
     order: scoped.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 100,
     text: () => memberPersona({
-      frozen,
+      // Prefer the live role definition so editing a role updates an existing
+      // member's persona on the next model step; the frozen snapshot stays the
+      // fallback if the role was removed.
+      frozen: findRole(mergeRoles(roles.read()), roleId) ?? frozen,
       rulesText: ruleStore.render(roleId, membership.root.id),
       target: membership.name,
     }),

@@ -47,6 +47,8 @@ export function leadCatalog(roles) {
     '',
     'Use the role id as the teammate name when the role has no other instance. If a healthy member of the requested role already exists, `spawn_team_member` reuses it and sends the prompt as a task; it creates a new member only when that role has no healthy member. A taken name then gets a numeric suffix.',
     '',
+    'When DEV reports a framework or important strategy change, have SE review the technical strategy first; the Lead makes the final decision.',
+    '',
     'When the user states a lasting requirement for one role — including "from now on", "always", or "never" — record it with `record_role_feedback`. Do not treat a task-local instruction as a lasting rule.',
   )
   return lines.join('\n')
