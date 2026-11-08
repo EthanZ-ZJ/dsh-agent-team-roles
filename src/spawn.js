@@ -12,6 +12,7 @@ import {
   findRole,
   mergeRoles,
   readConfig,
+  roleForTarget,
   validateRole,
 } from './config.js'
 
@@ -40,6 +41,26 @@ function requireRole(roles, id) {
   throw new Error(`unknown role "${id}"; configured roles: ${available}`)
 }
 
+/** Find a healthy existing member of one role in caller's Team. */
+function existingRoleMember({ ctx, snapshots, roles, caller, roleId }) {
+  const members = ctx.agentTeams.listMembers(caller)
+    .filter((member) => member.role === 'teammate' && member.status !== 'failed')
+    .map((member) => {
+      const snapshot = snapshots.get(caller.id, member.name)
+      const role = snapshot === undefined
+        ? roleForTarget(roles, member.name)
+        : findRole(roles, snapshot.roleId)
+      return { member, snapshot, roleId: role?.id ?? snapshot?.roleId }
+    })
+    .filter((candidate) => candidate.roleId === roleId)
+  if (members.length === 0) return undefined
+  return members.sort((left, right) => {
+    const leftExact = left.member.name === roleId ? 0 : 1
+    const rightExact = right.member.name === roleId ? 0 : 1
+    return leftExact - rightExact
+  })[0]
+}
+
 /**
  * Create one teammate from a role preset.
  *
@@ -61,9 +82,33 @@ export async function spawnRoleMember({
   context,
   signal,
 }) {
-  const role = requireRole(mergeRoles(roles), roleId)
+  const catalog = mergeRoles(roles)
+  const role = requireRole(catalog, roleId)
   const invalid = validateRole(role)
   if (invalid !== undefined) throw new Error(invalid)
+
+  const existing = existingRoleMember({ ctx, snapshots, roles: catalog, caller, roleId: role.id })
+  if (existing !== undefined) {
+    const handshake = prompt.includes('[[TEAM_HANDSHAKE]]')
+    if (!handshake) {
+      await ctx.agentTeams.sendMessage(caller, {
+        target: existing.member.name,
+        content: [{ type: 'text', text: prompt }],
+        signal: signal ?? new AbortController().signal,
+      })
+    }
+    const reusedRole = existing.snapshot?.frozen ?? role
+    return {
+      target: existing.member.name,
+      role: role.id,
+      roleName: role.name,
+      status: existing.member.status,
+      context: existing.member.context ?? 'fresh',
+      model: reusedRole.provider === '' ? 'session' : `${reusedRole.provider}/${reusedRole.model}`,
+      reused: true,
+      taskSent: !handshake,
+    }
+  }
 
   const used = new Set(ctx.agentTeams.listMembers(caller).map((member) => member.name))
   const requested = typeof name === 'string' && name.trim() !== ''
@@ -131,5 +176,7 @@ export async function spawnRoleMember({
     status: result.member.status,
     context: kind,
     model: frozen.provider === '' ? 'session' : `${frozen.provider}/${frozen.model}`,
+    reused: false,
+    taskSent: false,
   }
 }

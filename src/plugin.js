@@ -228,7 +228,12 @@ export function apply(ctx, config) {
           prompt: task === '' ? DEFAULT_TEAM_TASK : task,
           signal,
         })
-        return { kind: 'success', text: `Spawned ${member.roleName} as ${member.target}.` }
+        const text = member.reused
+          ? (member.taskSent
+              ? `Reused existing ${member.roleName} as ${member.target}; task sent.`
+              : `Reused existing ${member.roleName} as ${member.target}; no duplicate created.`)
+          : `Spawned ${member.roleName} as ${member.target}.`
+        return { kind: 'success', text }
       } catch (error) {
         return { kind: 'error', text: error instanceof Error ? error.message : String(error) }
       }

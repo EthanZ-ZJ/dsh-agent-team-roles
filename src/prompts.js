@@ -45,7 +45,7 @@ export function leadCatalog(roles) {
     '',
     'Use `list_team_roles` to inspect the full role definitions. Create a missing role with `create_team_role`; update and delete are Lead-only.',
     '',
-    'Use the role id as the teammate name when the role has no other instance. When a role is reused, `spawn_team_member` adds a numeric suffix automatically.',
+    'Use the role id as the teammate name when the role has no other instance. If a healthy member of the requested role already exists, `spawn_team_member` reuses it and sends the prompt as a task; it creates a new member only when that role has no healthy member. A taken name then gets a numeric suffix.',
     '',
     'When the user states a lasting requirement for one role — including "from now on", "always", or "never" — record it with `record_role_feedback`. Do not treat a task-local instruction as a lasting rule.',
   )

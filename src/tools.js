@@ -131,6 +131,8 @@ const MEMBER_VIEW = {
     status: { type: 'string', required: true },
     context: { type: 'string', required: true },
     model: { type: 'string', required: true },
+    reused: { type: 'boolean', required: true },
+    taskSent: { type: 'boolean', required: true },
   },
 }
 
@@ -210,11 +212,11 @@ export function createTools({ ctx, config, snapshots, rules, roles }) {
     return api
   }
 
-  /** Create one role-based teammate. */
+  /** Create or reuse one role-based teammate. */
   const spawnTeamMember = defineTool({
     name: 'spawn_team_member',
     description:
-      'Create one teammate from a configured role preset. Applies the role prompt, model route, tool policy, skills, and learned rules. Only the Team Lead may call this tool.',
+      'Get a teammate for a configured role. If that role already has a healthy member in this Team, reuse it and send the prompt as a task; otherwise create one. Applies the role prompt, model route, tool policy, skills, and learned rules. Only the Team Lead may call this tool.',
     parameters: {
       role: {
         type: 'string',
@@ -224,12 +226,12 @@ export function createTools({ ctx, config, snapshots, rules, roles }) {
       prompt: {
         type: 'string',
         required: true,
-        description: 'Complete initial task for the teammate.',
+        description: 'Complete initial task for the teammate, or the task sent to an existing member of that role.',
       },
       name: {
         type: 'string',
         description:
-          'Teammate target. Defaults to the role id; a numeric suffix is added when it is already used.',
+          'Teammate target for a new member. Defaults to the role id; a numeric suffix is added when the name is already used. An existing member of the same role is reused instead.',
       },
       description: {
         type: 'string',
