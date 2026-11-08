@@ -85,6 +85,22 @@ export async function spawnRoleMember({
     frozen,
   })
 
+  // A handshake spawn has no task to report. Ask the subagent manager for
+  // caller delivery so the child's READY settlement is not injected into the
+  // Lead at all; otherwise that notice wakes the Lead into an empty turn.
+  const handshake = prompt.includes('[[TEAM_HANDSHAKE]]')
+  const subagents = handshake ? ctx.get('subagents') : undefined
+  const originalStart = subagents?.startActivation
+  let restoreStart = false
+  if (typeof originalStart === 'function') {
+    try {
+      subagents.startActivation = async (spec) => originalStart.call(subagents, { ...spec, delivery: 'caller' })
+      restoreStart = true
+    } catch {
+      // A non-writable service keeps the pre-step fallback.
+    }
+  }
+
   let result
   try {
     result = await ctx.agentTeams.spawnTeammate(caller, {
@@ -98,6 +114,14 @@ export async function spawnRoleMember({
   } catch (error) {
     await snapshots.remove(caller.id, target).catch(() => undefined)
     throw error
+  } finally {
+    if (restoreStart) {
+      try {
+        subagents.startActivation = originalStart
+      } catch {
+        // The service will be recreated with the plugin scope.
+      }
+    }
   }
 
   return {

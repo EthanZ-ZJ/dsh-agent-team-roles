@@ -92,3 +92,34 @@ test('an unknown role is refused before a snapshot is written', async () => {
   }), /unknown role/)
   assert.equal(harness.recorded.length, 0)
 })
+
+test('a handshake spawn asks for caller delivery and restores the service', async () => {
+  const specs = []
+  const original = async (spec) => {
+    specs.push(spec)
+    return { member: { name: 'se', status: 'running' } }
+  }
+  const subagents = { startActivation: original }
+  const ctx = {
+    get: (name) => (name === 'subagents' ? subagents : undefined),
+    agentTeams: {
+      listMembers: () => [],
+      spawnTeammate: async (_caller, request) => {
+        await subagents.startActivation({ request: { prompt: request.prompt } })
+        return { member: { name: request.name, status: 'running' } }
+      },
+    },
+  }
+  await spawnRoleMember({
+    ctx,
+    config: {},
+    snapshots: { record: async () => undefined, remove: async () => undefined },
+    roles: [role],
+    caller: { id: 'lead-session' },
+    roleId: 'se',
+    prompt: '[[TEAM_HANDSHAKE]] reply READY',
+    signal: undefined,
+  })
+  assert.equal(specs[0].delivery, 'caller')
+  assert.equal(subagents.startActivation, original)
+})

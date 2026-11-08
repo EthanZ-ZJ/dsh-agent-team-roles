@@ -26,7 +26,7 @@ import { installRoleSkills } from './skills.js'
 export const name = 'agent-team-roles'
 
 /** Services the plugin needs before it can install scoped contributions. */
-export const inject = ['agentTeams', 'agents', 'tools', 'commands']
+export const inject = ['agentTeams', 'agents', 'tools', 'commands', 'subagents']
 
 /** Tool names a managed member always keeps, even under a custom policy. */
 const IMPLICIT_MEMBER_TOOLS = [
@@ -192,9 +192,8 @@ export function apply(ctx, config) {
   })
 
   ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, messages }, next) => {
-    const membership = ctx.agentTeams.tryMembership(agent)
-    if (membership?.role !== 'lead') return next()
-    if (!Array.isArray(messages) || !isHandshakeOnly(messages)) return next()
+    const handshake = Array.isArray(messages) && isHandshakeOnly(messages)
+    if (!handshake) return next()
     const decision = await next()
     if (decision.kind !== 'enter') return decision
     return { ...decision, messages: [] }
