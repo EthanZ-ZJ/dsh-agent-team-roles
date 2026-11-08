@@ -56,6 +56,11 @@ export function leadCatalog(roles) {
     'When the user states a lasting requirement for one role — including "from now on", "always", or "never" — record it with `record_role_feedback`. Do not treat a task-local instruction as a lasting rule.',
     '',
     'Role rules are for durable role behavior only. Never store project-specific facts (brand names, domains, schemas, environment, versions, file paths) in role prompts or role rules; record those in the project memory vault with `memory_capture` instead.',
+    '',
+    '## Scheduling and waiting',
+    'Dispatch every independent task first. Multiple spawn_team_member / send_message calls may run in one step; do not wait for one member before dispatching the next.',
+    'After dispatching, end your turn instead of calling wait_agent; teammate messages and status changes wake you.',
+    'Use wait_agent only when the next action truly depends on a member result and nothing else can be dispatched. Keep timeout_ms at or below 30000 and never poll with repeated long waits.',
   )
   return lines.join('\n')
 }

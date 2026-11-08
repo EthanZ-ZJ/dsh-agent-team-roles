@@ -12,6 +12,8 @@ test('the bundle ships a Team Lead agent preset', () => {
   assert.match(preset, /dsh-persona/)
   assert.match(preset, /dsh-tool-ask-user/)
   assert.match(preset, /dsh-compaction/)
+  assert.match(preset, /wait_agent/)
+  assert.match(preset, /并发派发/)
 })
 
 test('the Team Lead preset exposes no shell, filesystem, web, or subagent tools', () => {
