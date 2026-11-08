@@ -463,9 +463,13 @@ window.__ModuleLoader__.load({
             ...panel,
             ...card,
             display: 'flex',
+            flexDirection: 'row',
             flexWrap: 'wrap',
+            flex: '0 0 auto',
+            height: 'auto',
             gap: 8,
             alignItems: 'center',
+            justifyContent: 'flex-start',
             padding: '8px 10px',
           },
         }, [
