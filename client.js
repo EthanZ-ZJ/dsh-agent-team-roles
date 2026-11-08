@@ -398,8 +398,8 @@ window.__ModuleLoader__.load({
             display: 'flex',
             flexDirection: 'column',
             gap: 14,
-            padding: '18px 20px 32px',
-            maxWidth: 1080,
+            padding: '14px 16px 28px',
+            maxWidth: 1200,
             width: '100%',
             boxSizing: 'border-box',
             margin: '0 auto',
@@ -464,15 +464,26 @@ window.__ModuleLoader__.load({
             ...card,
             display: 'flex',
             flexWrap: 'wrap',
-            gap: 10,
-            alignItems: 'flex-end',
+            gap: 8,
+            alignItems: 'center',
+            padding: '8px 10px',
           },
         }, [
-          h('label', { key: 'role', style: { ...label, flex: '1 1 260px', minWidth: 0 } }, [
-            h('span', { key: 'l' }, t('roles')),
+          h('label', {
+            key: 'role',
+            style: {
+              ...label,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+              flex: '1 1 260px',
+              minWidth: 0,
+            },
+          }, [
+            h('span', { key: 'l', style: { flex: '0 0 auto' } }, t('roles')),
             h('select', {
               key: 'i',
-              style: input,
+              style: { ...input, flex: '1 1 auto', minWidth: 0 },
               value: selectedRole,
               onChange: (event) => onSelect(event.target.value),
             }, roles.map((role) => h('option', { key: role.id, value: role.id }, `${role.name || role.id} (${role.id})`))),
