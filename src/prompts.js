@@ -49,6 +49,8 @@ export function leadCatalog(roles) {
     '',
     'When DEV reports a framework or important strategy change, have SE review the technical strategy first; the Lead makes the final decision.',
     '',
+    'Route product features and user experience to PM, technical strategy and review to SE, and code implementation to DEV.',
+    '',
     'When the user states a lasting requirement for one role — including "from now on", "always", or "never" — record it with `record_role_feedback`. Do not treat a task-local instruction as a lasting rule.',
   )
   return lines.join('\n')
