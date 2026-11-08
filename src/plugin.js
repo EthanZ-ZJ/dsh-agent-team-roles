@@ -17,7 +17,7 @@
 import z from '@deepseek-ai/schemastery'
 import { mergeRoles, readConfig, roleForTarget } from './config.js'
 import { leadCatalog, memberPersona } from './prompts.js'
-import { MemberSnapshots, RuleStore, stateDir } from './store.js'
+import { MemberSnapshots, RoleStore, RuleStore, stateDir } from './store.js'
 import { createTools } from './tools.js'
 import { installRoleSkills } from './skills.js'
 
@@ -28,7 +28,13 @@ export const name = 'agent-team-roles'
 export const inject = ['agentTeams', 'agents', 'tools']
 
 /** Tool names a managed member always keeps, even under a custom policy. */
-const IMPLICIT_MEMBER_TOOLS = ['remember_role_rule', 'list_my_rules', 'skill']
+const IMPLICIT_MEMBER_TOOLS = [
+  'remember_role_rule',
+  'list_my_rules',
+  'list_team_roles',
+  'create_team_role',
+  'skill',
+]
 
 const RoleSchema = z.object({
   id: z.string().description('Stable role identity; also the default teammate target.'),
@@ -72,6 +78,11 @@ export function apply(ctx, config) {
     editor: ctx.get('configEditor'),
     entry: ctx.fiber.entry,
   })
+  const roleStore = new RoleStore({
+    readRoles: () => readConfig(config, 'roles') ?? [],
+    editor: ctx.get('configEditor'),
+    entry: ctx.fiber.entry,
+  })
   const rolesReader = { read: () => readConfig(config, 'roles') ?? [] }
   const tools = createTools({
     ctx,
@@ -79,6 +90,16 @@ export function apply(ctx, config) {
     snapshots,
     rules: ruleStore,
     roles: rolesReader,
+  })
+
+  // A trusted in-process API for other plugins. Agent-facing writes go through
+  // the tools above, where the Lead/member boundary is enforced by scope.
+  ctx.provide('agentTeamRoles', {
+    list: () => roleStore.list(),
+    get: (id) => roleStore.get(id),
+    create: (role) => roleStore.create(role),
+    update: (id, patch) => roleStore.update(id, patch),
+    remove: (id) => roleStore.remove(id),
   })
 
   /** One disposer per installed Agent scope. */

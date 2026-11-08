@@ -27,6 +27,7 @@ function parameterSchema(parameters) {
       type: spec.type,
       ...(spec.description === undefined ? {} : { description: spec.description }),
       ...(spec.enum === undefined ? {} : { enum: spec.enum }),
+      ...(spec.items === undefined ? {} : { items: spec.items }),
     }
     if (spec.required === true) required.push(name)
   }
@@ -54,6 +55,13 @@ function validateArguments(parameters, args) {
     }
     if (spec.type === 'integer' && !Number.isSafeInteger(value)) {
       throw new Error(`argument "${name}" must be an integer`)
+    }
+    if (spec.type === 'array') {
+      if (!Array.isArray(value)) throw new Error(`argument "${name}" must be an array`)
+      const itemType = spec.items?.type
+      if (itemType === 'string' && value.some((item) => typeof item !== 'string')) {
+        throw new Error(`argument "${name}" must contain only strings`)
+      }
     }
     if (spec.enum !== undefined && !spec.enum.includes(value)) {
       throw new Error(`argument "${name}" must be one of ${spec.enum.join(', ')}`)
@@ -147,6 +155,41 @@ const RULE_VIEW = {
   },
 }
 
+const ROLE_VIEW = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'string', required: true },
+    name: { type: 'string', required: true },
+    description: { type: 'string', required: true },
+    persona: { type: 'string', required: true },
+    provider: { type: 'string', required: true },
+    model: { type: 'string', required: true },
+    reasoningEffort: { type: 'string', required: true },
+    toolMode: { type: 'string', required: true },
+    tools: { type: 'array', required: true, items: { type: 'string' } },
+    skills: { type: 'array', required: true, items: { type: 'string' } },
+    color: { type: 'string', required: true },
+  },
+}
+
+/** Project one role for a model-facing result. */
+function roleView(role) {
+  return {
+    id: role.id,
+    name: role.name,
+    description: role.description,
+    persona: role.persona,
+    provider: role.provider,
+    model: role.model,
+    reasoningEffort: role.reasoningEffort,
+    toolMode: role.toolMode,
+    tools: [...role.tools],
+    skills: [...role.skills],
+    color: role.color,
+  }
+}
+
 /** Validate one requested teammate target. */
 function validateTarget(name) {
   if (!ROLE_ID.test(name)) {
@@ -191,6 +234,13 @@ export function roleIdForAgent(ctx, snapshots, roles, agent) {
 export function createTools({ ctx, config, snapshots, rules, roles }) {
   /** Read the live role catalog. */
   const catalog = () => mergeRoles(roles.read())
+
+  /** Resolve the role-management service exposed to tools and other plugins. */
+  const rolesApi = () => {
+    const api = ctx.get?.('agentTeamRoles')
+    if (api === undefined) throw new Error('agentTeamRoles service is unavailable')
+    return api
+  }
 
   /** Create one role-based teammate. */
   const spawnTeamMember = defineTool({
@@ -369,6 +419,104 @@ export function createTools({ ctx, config, snapshots, rules, roles }) {
     },
   })
 
+  const ROLE_FIELD_SPECS = {
+    name: { type: 'string', description: 'Display name; defaults to the role id.' },
+    description: { type: 'string', description: 'One-line responsibility shown to the Lead.' },
+    persona: { type: 'string', description: 'Standing role prompt.' },
+    provider: { type: 'string', description: 'LLM provider route; empty inherits the Session route.' },
+    model: { type: 'string', description: 'Provider-owned model id; empty inherits the Session model.' },
+    reasoningEffort: { type: 'string', description: 'Reasoning effort; empty keeps the adapter default.' },
+    toolMode: {
+      type: 'string',
+      enum: ['all', 'custom'],
+      description: 'all, or custom with an explicit allow-list.',
+    },
+    tools: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Allowed tool names when toolMode is custom.',
+    },
+    skills: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Private skill names; empty exposes the whole role skill folder.',
+    },
+    color: { type: 'string', description: 'Accent color for the roster.' },
+  }
+
+  const ROLE_ID_SPEC = {
+    type: 'string',
+    required: true,
+    description: 'Lowercase kebab-case role id; also the default teammate target.',
+  }
+
+  /** List every role available for spawning. */
+  const listTeamRoles = defineTool({
+    name: 'list_team_roles',
+    description: 'List the configured Agent Team roles, including their prompt, model route, tool policy, and private skills.',
+    parameters: {},
+    output: jsonOutput({
+      type: 'object',
+      additionalProperties: false,
+      properties: { roles: { type: 'array', required: true, items: ROLE_VIEW } },
+    }),
+    execute() {
+      return { roles: rolesApi().list().map(roleView) }
+    },
+  })
+
+  /** Create one role from any Team member. */
+  const createTeamRole = defineTool({
+    name: 'create_team_role',
+    description:
+      'Create one reusable Agent Team role. Available to the Lead and to every managed teammate; the role becomes available for future spawns.',
+    parameters: { id: ROLE_ID_SPEC, ...ROLE_FIELD_SPECS },
+    output: jsonOutput({
+      type: 'object',
+      additionalProperties: false,
+      properties: { role: ROLE_VIEW },
+    }),
+    async execute(args) {
+      const role = await rolesApi().create(args)
+      return { role: roleView(role) }
+    },
+  })
+
+  /** Update one role; Lead only. */
+  const updateTeamRole = defineTool({
+    name: 'update_team_role',
+    description:
+      'Update one configured Agent Team role. The role id is immutable. Only the Team Lead may call this tool.',
+    parameters: { id: ROLE_ID_SPEC, ...ROLE_FIELD_SPECS },
+    output: jsonOutput({
+      type: 'object',
+      additionalProperties: false,
+      properties: { role: ROLE_VIEW },
+    }),
+    async execute(args) {
+      const { id, ...patch } = args
+      const role = await rolesApi().update(id, patch)
+      return { role: roleView(role) }
+    },
+  })
+
+  /** Delete one role; Lead only. */
+  const deleteTeamRole = defineTool({
+    name: 'delete_team_role',
+    description:
+      'Delete one configured Agent Team role. The built-in general role cannot be deleted. Only the Team Lead may call this tool.',
+    parameters: { id: ROLE_ID_SPEC },
+    output: jsonOutput({
+      type: 'object',
+      additionalProperties: false,
+      properties: { removed: { type: 'boolean', required: true } },
+    }),
+    async execute(args) {
+      await rolesApi().remove(args.id)
+      return { removed: true }
+    },
+  })
+
   /** Read the member's own role identity. */
   const ownRole = (agent) => {
     const roleId = roleIdForAgent(ctx, snapshots, catalog(), agent)
@@ -447,8 +595,17 @@ export function createTools({ ctx, config, snapshots, rules, roles }) {
   })
 
   return {
-    lead: [spawnTeamMember, recordRoleFeedback, listRoleRules, forgetRoleRule],
-    member: [rememberRoleRule, listMyRules],
+    lead: [
+      spawnTeamMember,
+      recordRoleFeedback,
+      listRoleRules,
+      forgetRoleRule,
+      listTeamRoles,
+      createTeamRole,
+      updateTeamRole,
+      deleteTeamRole,
+    ],
+    member: [rememberRoleRule, listMyRules, listTeamRoles, createTeamRole],
     spawnTeamMember,
     roleIdForAgent: (agent) => roleIdForAgent(ctx, snapshots, catalog(), agent),
     catalog,

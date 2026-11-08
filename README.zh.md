@@ -54,6 +54,36 @@ spawn_team_member({ role: "reviewer", prompt: "审查这次改动并报告问题
 
 角色已被使用时，目标会自动加数字后缀（`reviewer-2`），后缀会映射回同一个角色。
 
+## 面向 Agent 的工具
+
+| 工具 | 可调用者 | 用途 |
+|---|---|---|
+| `spawn_team_member` | Lead | 按角色召唤成员。 |
+| `list_team_roles` | Lead 与所有受管成员 | 读取角色目录。 |
+| `create_team_role` | Lead 与所有受管成员 | 创建新的可复用角色。 |
+| `update_team_role` | Lead | 更新角色；id 不可改。 |
+| `delete_team_role` | Lead | 删除角色；`general` 受保护。 |
+| `record_role_feedback` | Lead | 记录某角色的长期要求。 |
+| `list_role_rules` / `forget_role_rule` | Lead | 查看或移除已学规则。 |
+| `remember_role_rule` / `list_my_rules` | 受管成员 | 学习并读取自己角色的规则。 |
+
+受管成员即使处于自定义工具策略下也能创建角色：`list_team_roles` 与 `create_team_role` 是隐式能力。成员不能更新或删除角色。新建角色在下一次 `spawn_team_member` 时可用。
+
+## 给其他插件：`agentTeamRoles`
+
+Host 暴露一个受信任的进程内服务：
+
+```js
+const roles = ctx.get('agentTeamRoles')
+await roles.create({ id: 'reviewer', name: 'Reviewer', persona: '审查改动。' })
+await roles.update('reviewer', { persona: '严格审查改动。' })
+roles.list()          // 含内置 general 的合并目录
+roles.get('reviewer')
+await roles.remove('reviewer')
+```
+
+该服务刻意按“受信任插件 API”设计，不校验调用方 Agent 身份。Agent 侧写入应走上面的工具，由作用域区分 Lead 与成员。写入通过实时配置编辑器持久化，并会出现在设置页。
+
 ## 学到的规则
 
 两个工具负责写入：

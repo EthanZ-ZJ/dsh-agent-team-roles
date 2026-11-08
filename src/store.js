@@ -16,6 +16,12 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { normalizeRules, applyRule, applySessionRule, removeRule, rulesForRole, renderRules } from './rules.js'
+import {
+  findRole,
+  mergeRoles,
+  normalizeRole,
+  validateRole,
+} from './config.js'
 
 const STORE_VERSION = 1
 
@@ -220,5 +226,82 @@ export class RuleStore {
   /** Drop one Session's in-memory rules. */
   releaseSession(rootSessionId) {
     this.sessionRules.delete(rootSessionId)
+  }
+}
+
+/** Read and write the role catalog through the live config editor. */
+export class RoleStore {
+  /**
+   * @param options - volatile Config reader, config editor, and loader entry.
+   */
+  constructor({ readRoles, editor, entry }) {
+    this.readRoles = readRoles
+    this.editor = editor
+    this.entry = entry
+    this.fallbackRoles = []
+    this.writeQueue = Promise.resolve()
+  }
+
+  /** Whether writes reach the profile Config. */
+  get persistent() {
+    return this.editor !== undefined && this.entry !== undefined
+  }
+
+  /** The current catalog, including the built-in fallback. */
+  list() {
+    return mergeRoles(this.persistent ? this.readRoles() : this.fallbackRoles)
+  }
+
+  /** Resolve one role by identity. */
+  get(id) {
+    return findRole(this.list(), id)
+  }
+
+  /** Create one role and return the stored definition. */
+  async create(input) {
+    const role = normalizeRole(input)
+    const invalid = validateRole(role)
+    if (invalid !== undefined) throw new Error(invalid)
+    if (findRole(this.list(), role.id) !== undefined) {
+      throw new Error(`role "${role.id}" already exists`)
+    }
+    await this.write((roles) => [...roles, role])
+    return role
+  }
+
+  /** Update one role; the identity itself is immutable. */
+  async update(id, patch) {
+    const current = this.get(id)
+    if (current === undefined) throw new Error(`unknown role "${id}"`)
+    if (patch?.id !== undefined && patch.id !== id) {
+      throw new Error('role id cannot be changed; create a new role instead')
+    }
+    const merged = normalizeRole({ ...current, ...patch, id })
+    const invalid = validateRole(merged)
+    if (invalid !== undefined) throw new Error(invalid)
+    await this.write((roles) => roles.map((role) => (role.id === id ? merged : role)))
+    return merged
+  }
+
+  /** Delete one role. The built-in `general` fallback is protected. */
+  async remove(id) {
+    if (id === 'general') throw new Error('the built-in general role cannot be deleted')
+    if (this.get(id) === undefined) throw new Error(`unknown role "${id}"`)
+    await this.write((roles) => roles.filter((role) => role.id !== id))
+  }
+
+  /** Apply one mutation, serialized with every other role write. */
+  async write(mutator) {
+    if (!this.persistent) {
+      this.fallbackRoles = mutator(mergeRoles(this.fallbackRoles))
+      return
+    }
+    this.writeQueue = this.writeQueue.catch(() => undefined).then(async () => {
+      await this.editor.edit(this.entry, (current) => {
+        const base = mergeRoles(rawField(current, 'roles'))
+        return { ...current, roles: mutator(base) }
+      })
+    })
+    await this.writeQueue
   }
 }

@@ -54,6 +54,36 @@ spawn_team_member({ role: "reviewer", prompt: "Review the change and report find
 
 If the role is already in use, the target gets a numeric suffix (`reviewer-2`), and the suffix maps back to the same role.
 
+## Agent-facing tools
+
+| Tool | Who may call it | Purpose |
+|---|---|---|
+| `spawn_team_member` | Lead | Create a teammate from a role. |
+| `list_team_roles` | Lead and every managed member | Read the role catalog. |
+| `create_team_role` | Lead and every managed member | Create a new reusable role. |
+| `update_team_role` | Lead | Update a role; the id is immutable. |
+| `delete_team_role` | Lead | Delete a role; `general` is protected. |
+| `record_role_feedback` | Lead | Record a lasting requirement for a role. |
+| `list_role_rules` / `forget_role_rule` | Lead | Inspect or retire learned rules. |
+| `remember_role_rule` / `list_my_rules` | Managed member | Learn about and read its own role. |
+
+A managed member can create a role even under a custom tool policy: `list_team_roles` and `create_team_role` are implicit capabilities. Members cannot update or delete roles. A newly created role is available to the next `spawn_team_member` call.
+
+## Other plugins: `agentTeamRoles`
+
+The Host exposes a trusted in-process service for other plugins:
+
+```js
+const roles = ctx.get('agentTeamRoles')
+await roles.create({ id: 'reviewer', name: 'Reviewer', persona: 'Review changes.' })
+await roles.update('reviewer', { persona: 'Review changes strictly.' })
+roles.list()          // merged catalog, including the built-in general role
+roles.get('reviewer')
+await roles.remove('reviewer')
+```
+
+The service is intentionally trusted: it does not check a caller's Agent identity. Agent-facing writes should go through the tools above, where the Lead/member boundary is enforced by scope. Changes persist through the live config editor and show up in Settings.
+
 ## Learned rules
 
 Two tools write rules:
