@@ -138,7 +138,7 @@ export function apply(ctx, config) {
 
     try {
       if (membership.role === 'lead') {
-        installLead({ scoped, register, tools, agent, ctx })
+        installLead({ scoped, register, tools })
       } else {
         installMember({
           agent,
@@ -191,6 +191,15 @@ export function apply(ctx, config) {
     }
   })
 
+  ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, messages }, next) => {
+    const membership = ctx.agentTeams.tryMembership(agent)
+    if (membership?.role !== 'lead') return next()
+    if (!Array.isArray(messages) || !isHandshakeOnly(messages)) return next()
+    const decision = await next()
+    if (decision.kind !== 'enter') return decision
+    return { ...decision, messages: [] }
+  }), 'agent-team-roles:handshake-pre-step')
+
   // The Web composer's pull control invokes this command through the existing
   // commands Remote, so a member is created without a model turn.
   ctx.effect(() => ctx.commands.register({
@@ -238,7 +247,7 @@ export function apply(ctx, config) {
 }
 
 /** Install the Lead's role catalog, tools, and the official-spawn guard. */
-function installLead({ scoped, register, tools, agent, ctx }) {
+function installLead({ scoped, register, tools }) {
   register(scoped.systemPrompt.section({
     name: 'agent-team-roles:lead-catalog',
     order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY') + 10,
@@ -249,43 +258,22 @@ function installLead({ scoped, register, tools, agent, ctx }) {
     if (exec.name !== 'spawn_teammate') return undefined
     return 'The official spawn_teammate tool is disabled in this Team. Use spawn_team_member with a configured role instead.'
   }))
-  // A handshake member's READY turn settles into a `subagent-settled` notice that
-  // wakes the Lead. That notice carries no task; suppress the model turn instead
-  // of letting the Lead analyze an empty handshake. The first listener argument
-  // is the pre-step payload, not the decision object.
-  register(scoped.on('agent/pre-step', async ({ messages }, next) => {
-    if (!Array.isArray(messages) || !isHandshakeOnly(ctx, agent, messages)) {
-      return next()
-    }
-    const decision = await next()
-    if (decision.kind !== 'enter') return decision
-    return { ...decision, messages: [] }
-  }))
 }
 
 /** Whether every claimed message is a handshake member's READY settlement notice. */
-export function isHandshakeOnly(ctx, lead, messages) {
-  return messages.length > 0 && messages.every((message) => isHandshakeSettlement(ctx, lead, message))
+export function isHandshakeOnly(messages) {
+  return messages.length > 0 && messages.every((message) => isHandshakeSettlement(message))
 }
 
 /** Whether one claimed message is a handshake member's READY settlement notice. */
-export function isHandshakeSettlement(ctx, lead, message) {
+export function isHandshakeSettlement(message) {
   if (message?.source?.kind !== 'subagent-settled') return false
-  const sender = message.source.senderSessionId
-  if (typeof sender !== 'string') return false
-  let members
-  try {
-    members = ctx.agentTeams.listMembers(lead)
-  } catch {
-    return false
-  }
-  if (!members.some((member) => member.id === sender)) return false
   const texts = Array.isArray(message.content)
     ? message.content
         .filter((block) => block?.type === 'text' && typeof block.text === 'string')
         .map((block) => block.text.trim())
     : []
-  return texts.includes('READY')
+  return texts.includes('READY') && texts.some((text) => text.startsWith('Background subagent'))
 }
 
 /** Install one managed member's role configuration. */
