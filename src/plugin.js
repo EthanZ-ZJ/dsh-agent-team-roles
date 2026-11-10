@@ -211,6 +211,18 @@ export function apply(ctx, config) {
       if (membership?.role !== 'lead') {
         return { kind: 'error', text: 'Only the Team Lead can spawn teammates.' }
       }
+      const presets = ctx.get('agentPresets')
+      const candidates = [
+        presets?.composedPreset?.(agent.ctx),
+        presets?.presetForSession?.(agent.session),
+        agent.session?.header?.agentPreset,
+      ]
+      if (!candidates.includes('team-lead')) {
+        return {
+          kind: 'error',
+          text: 'Manual member pull is available only in a session using the Team Lead preset.',
+        }
+      }
       const input = rawInput.trim()
       const separator = input.indexOf(' ')
       const roleId = separator < 0 ? input : input.slice(0, separator)

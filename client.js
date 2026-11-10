@@ -815,7 +815,7 @@ window.__ModuleLoader__.load({
     }
 
     function createPullControl(ctx, t) {
-      return function PullControl({ sessionId }) {
+      return function PullControl({ sessionId, useSessions }) {
         const [open, setOpen] = React.useState(false)
         const [roles, setRoles] = React.useState([])
         const [task, setTask] = React.useState('')
@@ -823,6 +823,13 @@ window.__ModuleLoader__.load({
         const [busy, setBusy] = React.useState('')
         const [error, setError] = React.useState('')
         const [notice, setNotice] = React.useState('')
+        const preset = useSessions === undefined
+          ? undefined
+          : useSessions((state) => {
+              const value = state.byId?.[sessionId]?.projectionValues?.agentPreset
+              return typeof value === 'string' ? value : undefined
+            })
+        if (useSessions !== undefined && preset !== 'team-lead') return null
 
         const openPanel = async () => {
           setOpen(true)
