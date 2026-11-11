@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { isHandshakeOnly, isHandshakeSettlement, roleForMember } from '../src/plugin.js'
+import { isHandshakeOnly, isHandshakeSettlement, isTeamLeadPreset, roleForMember } from '../src/plugin.js'
 
 function notice(closing = 'READY') {
   return {
@@ -26,6 +26,14 @@ test('a member with a snapshot keeps its frozen role, not the general fallback',
   ]
   assert.equal(roleForMember(snapshot, catalog, 'se').id, 'se')
   assert.equal(roleForMember(undefined, catalog, 'se').id, 'se')
+})
+
+test('only the team-lead preset counts as a Team Lead session', () => {
+  const agent = (preset) => ({ session: { header: { agentPreset: preset } } })
+  assert.equal(isTeamLeadPreset(agent('team-lead')), true)
+  assert.equal(isTeamLeadPreset(agent('standard')), false)
+  assert.equal(isTeamLeadPreset(agent(undefined)), false)
+  assert.equal(isTeamLeadPreset(undefined), false)
 })
 
 test('a background subagent READY settlement is recognized', () => {

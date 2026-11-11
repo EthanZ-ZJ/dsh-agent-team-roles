@@ -263,8 +263,17 @@ export function apply(ctx, config) {
   })
 }
 
+/** Whether this session runs the Team Lead preset. */
+export function isTeamLeadPreset(agent) {
+  const candidates = [agent?.session?.header?.agentPreset]
+  return candidates.includes('team-lead')
+}
+
 /** Install the Lead's role catalog, tools, and the official-spawn guard. */
 function installLead({ scoped, register, tools, ctx, snapshots, roles, agent }) {
+  // Manual pulls and the team description are Team-Lead-preset features; other
+  // presets run plain sessions and must not carry the roster catalog.
+  if (!isTeamLeadPreset(agent)) return
   register(scoped.systemPrompt.section({
     name: 'agent-team-roles:lead-catalog',
     order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY') + 10,
