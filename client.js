@@ -28,6 +28,10 @@ window.__ModuleLoader__.load({
       freshProvider: 'fresh 成员后端',
       forkProvider: 'fork 成员后端',
       backendHint: '可选值：spawn（全新子 Agent）/ fork（继承 Lead 已完成回合）。留空回退默认。',
+      gates: '工序闸门（JSON）',
+      gatesHint: 'GateSchema 数组：{ id, deny:{role,tool,commandPattern?}, require:{event|commandSuccess,...} }。一般由 /team-template apply 写入；也可在这里直接编辑。',
+      gatesDisabled: '停用的 gate id',
+      gatesDisabledHint: '逗号或换行分隔；对应 /team-gates disable。',
       engineHint: 'playbook 非空时追加到 Lead 提示词；activeTemplate 命中的模板 playbook 优先。模板用 /team-template apply 应用。',
       addRole: '新建角色',
       deleteRole: '删除角色',
@@ -108,6 +112,10 @@ window.__ModuleLoader__.load({
       freshProvider: 'Fresh member backend',
       forkProvider: 'Fork member backend',
       backendHint: 'Values: spawn (brand-new child agent) / fork (inherits the Lead\'s completed turns). Empty falls back to the default.',
+      gates: 'Workflow gates (JSON)',
+      gatesHint: 'GateSchema array: { id, deny:{role,tool,commandPattern?}, require:{event|commandSuccess,...} }. Usually written by /team-template apply; editable here too.',
+      gatesDisabled: 'Disabled gate ids',
+      gatesDisabledHint: 'Comma or newline separated; mirrors /team-gates disable.',
       engineHint: 'A non-empty playbook is appended to the Lead prompt; the active template\'s playbook wins. Apply templates with /team-template apply.',
       addRole: 'New role',
       deleteRole: 'Delete role',
@@ -300,7 +308,14 @@ window.__ModuleLoader__.load({
         const [roles, setRoles] = React.useState([])
         const [rules, setRules] = React.useState([])
         const [selectedRole, setSelectedRole] = React.useState('general')
-        const [engine, setEngine] = React.useState({ leadPlaybook: '', activeTemplate: '', freshProvider: 'spawn', forkProvider: 'fork' })
+        const [engine, setEngine] = React.useState({
+          leadPlaybook: '',
+          activeTemplate: '',
+          freshProvider: 'spawn',
+          forkProvider: 'fork',
+          gatesText: '[]',
+          gatesDisabledText: '',
+        })
 
         const load = React.useCallback(async () => {
           setLoading(true)
@@ -316,6 +331,8 @@ window.__ModuleLoader__.load({
               activeTemplate: typeof view.value?.activeTemplate === 'string' ? view.value.activeTemplate : '',
               freshProvider: typeof view.value?.freshProvider === 'string' && view.value.freshProvider !== '' ? view.value.freshProvider : 'spawn',
               forkProvider: typeof view.value?.forkProvider === 'string' && view.value.forkProvider !== '' ? view.value.forkProvider : 'fork',
+              gatesText: JSON.stringify(Array.isArray(view.value?.gates) ? view.value.gates : [], null, 2),
+              gatesDisabledText: (Array.isArray(view.value?.gatesDisabled) ? view.value.gatesDisabled : []).join(', '),
             })
             if (!nextRoles.some((role) => role.id === selectedRole)) {
               setSelectedRole(nextRoles[0]?.id ?? 'general')
@@ -422,6 +439,21 @@ window.__ModuleLoader__.load({
         const saveEngine = async () => {
           setError('')
           setNotice('')
+          let gates
+          try {
+            gates = engine.gatesText.trim() === '' ? [] : JSON.parse(engine.gatesText)
+          } catch (caught) {
+            setError(`${t('saveFailed')}gates: ${caught.message}`)
+            return
+          }
+          if (!Array.isArray(gates)) {
+            setError(`${t('saveFailed')}gates must be a JSON array`)
+            return
+          }
+          const gatesDisabled = String(engine.gatesDisabledText ?? '')
+            .split(/[\n,]/)
+            .map((entry) => entry.trim())
+            .filter(Boolean)
           setBusy(true)
           try {
             let view = await writeNamespace(ctx, revision, 'leadPlaybook', engine.leadPlaybook)
@@ -432,10 +464,16 @@ window.__ModuleLoader__.load({
             setRevision(view.revision)
             view = await writeNamespace(ctx, view.revision, 'forkProvider', engine.forkProvider.trim() || 'fork')
             setRevision(view.revision)
+            view = await writeNamespace(ctx, view.revision, 'gates', gates)
+            setRevision(view.revision)
+            view = await writeNamespace(ctx, view.revision, 'gatesDisabled', gatesDisabled)
+            setRevision(view.revision)
             setEngine((current) => ({
               ...current,
               freshProvider: engine.freshProvider.trim() || 'spawn',
               forkProvider: engine.forkProvider.trim() || 'fork',
+              gatesText: JSON.stringify(gates, null, 2),
+              gatesDisabledText: gatesDisabled.join(', '),
             }))
             setNotice(t('saved'))
           } catch (caught) {
@@ -573,6 +611,27 @@ window.__ModuleLoader__.load({
             }),
           ]),
           h('span', { key: 'backend-hint', style: { ...small, fontSize: 11, alignSelf: 'end' } }, t('backendHint')),
+        ]),
+        h('label', { key: 'gates', style: label }, [
+          h('span', { key: 'l' }, t('gates')),
+          h('textarea', {
+            key: 'i',
+            style: { ...input, minHeight: 180, resize: 'vertical', lineHeight: 1.5, fontFamily: 'monospace' },
+            value: engine.gatesText,
+            onChange: (event) => edit({ gatesText: event.target.value }),
+          }),
+          h('span', { key: 'hint', style: { ...small, fontSize: 11 } }, t('gatesHint')),
+        ]),
+        h('label', { key: 'gates-disabled', style: label }, [
+          h('span', { key: 'l' }, t('gatesDisabled')),
+          h('input', {
+            key: 'i',
+            style: input,
+            value: engine.gatesDisabledText,
+            placeholder: 'gate-one, gate-two',
+            onChange: (event) => edit({ gatesDisabledText: event.target.value }),
+          }),
+          h('span', { key: 'hint', style: { ...small, fontSize: 11 } }, t('gatesDisabledHint')),
         ]),
       ])
     }
