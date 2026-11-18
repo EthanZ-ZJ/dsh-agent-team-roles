@@ -8,6 +8,7 @@ window.__ModuleLoader__.load({
     const TABS = [
       { id: 'roles', label: 'roles' },
       { id: 'rules', label: 'rules' },
+      { id: 'engine', label: 'engine' },
     ]
 
     const zh = {
@@ -17,6 +18,14 @@ window.__ModuleLoader__.load({
       loading: '正在读取角色配置…',
       roles: '角色',
       rules: '规则',
+      engine: '引擎',
+      denyCommands: '命令拒绝策略',
+      denyHint: 'RegExp 源列表（逗号或换行分隔）：该角色调用 bash/pwsh 且命令命中时被拒绝。≤20 条、单条 ≤200 字符。',
+      leadPlaybook: 'Lead 编排 playbook',
+      activeTemplate: '当前模板 ID',
+      freshProvider: 'fresh 成员后端',
+      forkProvider: 'fork 成员后端',
+      engineHint: 'playbook 非空时追加到 Lead 提示词；activeTemplate 命中的模板 playbook 优先。模板用 /team-template apply 应用。',
       addRole: '新建角色',
       deleteRole: '删除角色',
       save: '保存',
@@ -86,6 +95,14 @@ window.__ModuleLoader__.load({
       loading: 'Reading role configuration…',
       roles: 'Roles',
       rules: 'Rules',
+      engine: 'Engine',
+      denyCommands: 'Denied commands',
+      denyHint: 'RegExp sources (comma or newline separated): matching bash/pwsh commands are denied for this role. At most 20 patterns of 200 characters.',
+      leadPlaybook: 'Lead orchestration playbook',
+      activeTemplate: 'Active template id',
+      freshProvider: 'Fresh member backend',
+      forkProvider: 'Fork member backend',
+      engineHint: 'A non-empty playbook is appended to the Lead prompt; the active template\'s playbook wins. Apply templates with /team-template apply.',
       addRole: 'New role',
       deleteRole: 'Delete role',
       save: 'Save',
@@ -277,6 +294,7 @@ window.__ModuleLoader__.load({
         const [roles, setRoles] = React.useState([])
         const [rules, setRules] = React.useState([])
         const [selectedRole, setSelectedRole] = React.useState('general')
+        const [engine, setEngine] = React.useState({ leadPlaybook: '', activeTemplate: '', freshProvider: 'spawn', forkProvider: 'fork' })
 
         const load = React.useCallback(async () => {
           setLoading(true)
@@ -287,6 +305,12 @@ window.__ModuleLoader__.load({
             const nextRoles = Array.isArray(view.value?.roles) ? view.value.roles : []
             setRoles(nextRoles)
             setRules(Array.isArray(view.value?.rules) ? view.value.rules : [])
+            setEngine({
+              leadPlaybook: typeof view.value?.leadPlaybook === 'string' ? view.value.leadPlaybook : '',
+              activeTemplate: typeof view.value?.activeTemplate === 'string' ? view.value.activeTemplate : '',
+              freshProvider: typeof view.value?.freshProvider === 'string' && view.value.freshProvider !== '' ? view.value.freshProvider : 'spawn',
+              forkProvider: typeof view.value?.forkProvider === 'string' && view.value.forkProvider !== '' ? view.value.forkProvider : 'fork',
+            })
             if (!nextRoles.some((role) => role.id === selectedRole)) {
               setSelectedRole(nextRoles[0]?.id ?? 'general')
             }
@@ -389,6 +413,33 @@ window.__ModuleLoader__.load({
           }
         }
 
+        const saveEngine = async () => {
+          setError('')
+          setNotice('')
+          setBusy(true)
+          try {
+            let view = await writeNamespace(ctx, revision, 'leadPlaybook', engine.leadPlaybook)
+            setRevision(view.revision)
+            view = await writeNamespace(ctx, view.revision, 'activeTemplate', engine.activeTemplate)
+            setRevision(view.revision)
+            view = await writeNamespace(ctx, view.revision, 'freshProvider', engine.freshProvider.trim() || 'spawn')
+            setRevision(view.revision)
+            view = await writeNamespace(ctx, view.revision, 'forkProvider', engine.forkProvider.trim() || 'fork')
+            setRevision(view.revision)
+            setEngine((current) => ({
+              ...current,
+              freshProvider: engine.freshProvider.trim() || 'spawn',
+              forkProvider: engine.forkProvider.trim() || 'fork',
+            }))
+            setNotice(t('saved'))
+          } catch (caught) {
+            setError(`${t('saveFailed')}${caught.message}`)
+            await load()
+          } finally {
+            setBusy(false)
+          }
+        }
+
         if (loading) {
           return h('div', { style: { padding: 24, color: 'var(--dsw-alias-label-secondary)' } }, t('loading'))
         }
@@ -436,18 +487,85 @@ window.__ModuleLoader__.load({
                 onSave: saveRoles,
                 onRefresh: load,
               })
-            : h(RulesPanel, {
-                key: 'rules',
-                t,
-                roles,
-                rules,
-                busy,
-                setRules,
-                onSave: saveRules,
-                onRefresh: load,
-              }),
+            : tab === 'engine'
+              ? h(EnginePanel, {
+                  key: 'engine',
+                  t,
+                  engine,
+                  setEngine,
+                  busy,
+                  onSave: saveEngine,
+                  onRefresh: load,
+                })
+              : h(RulesPanel, {
+                  key: 'rules',
+                  t,
+                  roles,
+                  rules,
+                  busy,
+                  setRules,
+                  onSave: saveRules,
+                  onRefresh: load,
+                }),
         ])
       }
+    }
+
+    function EnginePanel({ t, engine, setEngine, busy, onSave, onRefresh }) {
+      const edit = (patch) => setEngine((current) => ({ ...current, ...patch }))
+      return h('div', { style: { ...panel, ...card, maxWidth: 860 } }, [
+        h('div', { key: 'head', style: { ...row, justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, [
+          h('strong', { key: 'title', style: { fontSize: 13 } }, t('engine')),
+          h('div', { key: 'actions', style: row }, [
+            h('button', { key: 'refresh', type: 'button', style: button, onClick: onRefresh }, t('refresh')),
+            h('button', { key: 'save', type: 'button', style: primaryButton, disabled: busy, onClick: onSave }, busy ? t('saving') : t('save')),
+          ]),
+        ]),
+        h('span', { key: 'hint', style: small }, t('engineHint')),
+        h('label', { key: 'playbook', style: label }, [
+          h('span', { key: 'l' }, t('leadPlaybook')),
+          h('textarea', {
+            key: 'i',
+            style: { ...input, minHeight: 140, resize: 'vertical', lineHeight: 1.5, fontFamily: 'monospace' },
+            value: engine.leadPlaybook,
+            onChange: (event) => edit({ leadPlaybook: event.target.value }),
+          }),
+        ]),
+        h('div', { key: 'row', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 12 } }, [
+          h('label', { key: 'template', style: label }, [
+            h('span', { key: 'l' }, t('activeTemplate')),
+            h('input', {
+              key: 'i',
+              style: input,
+              value: engine.activeTemplate,
+              placeholder: 'software-dev',
+              onChange: (event) => edit({ activeTemplate: event.target.value }),
+            }),
+          ]),
+        ]),
+        h('div', { key: 'backends', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 12 } }, [
+          h('label', { key: 'fresh', style: label }, [
+            h('span', { key: 'l' }, t('freshProvider')),
+            h('input', {
+              key: 'i',
+              style: input,
+              value: engine.freshProvider,
+              placeholder: 'spawn',
+              onChange: (event) => edit({ freshProvider: event.target.value }),
+            }),
+          ]),
+          h('label', { key: 'fork', style: label }, [
+            h('span', { key: 'l' }, t('forkProvider')),
+            h('input', {
+              key: 'i',
+              style: input,
+              value: engine.forkProvider,
+              placeholder: 'fork',
+              onChange: (event) => edit({ forkProvider: event.target.value }),
+            }),
+          ]),
+        ]),
+      ])
     }
 
     function RolesPanel({ t, roles, rules, selectedRole, selected, busy, onSelect, onAdd, onRemove, onEdit, onRename, onSave, onRefresh }) {
@@ -590,6 +708,16 @@ window.__ModuleLoader__.load({
                       }),
                     ])
                   : h('span', { key: 'all-hint', style: { ...small, fontSize: 11 } }, t('toolModeAllHint')),
+              ]),
+              h('label', { key: 'deny', style: label }, [
+                h('span', { key: 'l' }, t('denyCommands')),
+                h('textarea', {
+                  key: 'i',
+                  style: { ...input, minHeight: 60, resize: 'vertical', lineHeight: 1.5, fontFamily: 'monospace' },
+                  value: textOf(selected.denyCommands),
+                  onChange: (event) => onEdit({ denyCommands: listOf(event.target.value) }),
+                }),
+                h('span', { key: 'hint', style: { ...small, fontSize: 11 } }, t('denyHint')),
               ]),
               h('label', { key: 'skills', style: label }, [
                 h('span', { key: 'l' }, t('skills')),
