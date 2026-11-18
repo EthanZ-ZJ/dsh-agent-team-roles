@@ -3,6 +3,42 @@
   "name": "Software Development Team",
   "description": "Contract-driven development: PM requirements, SE architecture contracts, DEV implementation, parallel CR static review + TSE dynamic testing.",
   "leadPlaybook": "分工与流程：\n- 需求与体验取舍 → PM；跨模块改动、接口契约、架构决策 → 先交 SE 出契约并评审，Lead 拍板。\n- 代码实现 → DEV（实现前必须先读契约文档）。\n- diff 完成后 → CR（静态检视）与 TSE（动态测试）并行派发，两者独立执行、不互相等待。\n- 缺陷处理：CR/TSE 报告给 Lead → 派回 DEV 修复 → 修复后重新走 CR+TSE。\n- 单模块小改动可跳过 SE，直接派对应 dev；跨模块必须先过 SE。",
+  "gates": [
+    {
+      "id": "review-before-commit",
+      "description": "dev 提交前需 CR 检视批准；dev 再次改码即作废",
+      "deny": {
+        "role": "dev",
+        "tool": ["bash", "pwsh"],
+        "commandPattern": "\\bgit(\\.exe)?\\s+commit\\b"
+      },
+      "require": {
+        "event": "review-approved",
+        "byRoles": ["cr"],
+        "freshFor": 14400,
+        "invalidateOn": { "role": "dev", "tool": ["write", "edit"] }
+      }
+    },
+    {
+      "id": "tests-green-before-commit",
+      "description": "dev 提交前需 TSE 有一轮通过的测试命令",
+      "deny": {
+        "role": "dev",
+        "tool": ["bash", "pwsh"],
+        "commandPattern": "\\bgit(\\.exe)?\\s+commit\\b"
+      },
+      "require": {
+        "commandSuccess": {
+          "role": "tse",
+          "tool": ["pwsh"],
+          "pattern": "\\b(pnpm|npm|npx)\\s+(test\\b|run\\s+test)"
+        },
+        "byRoles": ["tse"],
+        "freshFor": 14400,
+        "invalidateOn": { "role": "dev", "tool": ["write", "edit"] }
+      }
+    }
+  ],
   "roles": [
     {
       "id": "general",

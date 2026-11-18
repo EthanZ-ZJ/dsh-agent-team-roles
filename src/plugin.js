@@ -20,6 +20,15 @@ import { fileURLToPath } from 'node:url'
 import { findRole, mergeRoles, readConfig, roleForTarget } from './config.js'
 import { activeMembers, leadCatalog, memberPersona } from './prompts.js'
 import { evaluateDeny } from './policy.js'
+import {
+  GateSchema,
+  commandFromArgs,
+  commandSuccessEvent,
+  evaluateGates,
+  gateRequirement,
+  normalizeGates,
+} from './gates.js'
+import { GateLedger } from './ledger.js'
 import { copyTemplateSkills, discoverTemplates, seedTemplates, templatesRoot, upsertRoles } from './templates.js'
 import { MemberSnapshots, RoleStore, RuleStore, stateDir } from './store.js'
 import { spawnRoleMember } from './spawn.js'
@@ -39,6 +48,11 @@ const IMPLICIT_MEMBER_TOOLS = [
   'list_team_roles',
   'create_team_role',
   'skill',
+  // Gate participation must not be lockable by a misconfigured whitelist: any
+  // member may report an event. Safety is unaffected because the evaluator
+  // only accepts events whose producer role is in a gate's byRoles; events from
+  // unrelated roles satisfy nothing.
+  'report_gate_event',
 ]
 
 /** Initial prompt used when the UI pulls a member without a task. */
@@ -83,6 +97,10 @@ export const Config = z.object({
     .description('Optional orchestration playbook appended to the Lead prompt after the role catalog.'),
   activeTemplate: z.string().default('').volatile()
     .description('Identifier of the applied team template; its playbook overrides leadPlaybook when present.'),
+  gates: z.array(GateSchema).default([]).volatile()
+    .description('Stateful workflow gates: conditionally deny a role tool call until a fresh event exists.'),
+  gatesDisabled: z.array(z.string()).default([]).volatile()
+    .description('Gate ids manually disabled from /team-gates.'),
 })
 
 /** Install the plugin's runtime contributions. */
@@ -99,12 +117,16 @@ export function apply(ctx, config) {
     entry: ctx.fiber.entry,
   })
   const rolesReader = { read: () => readConfig(config, 'roles') ?? [] }
+  // Gate events are process-local: a restart empties every bucket, which is the
+  // deliberate safe default (no stale approval survives a restart).
+  const gateLedger = new GateLedger()
   const tools = createTools({
     ctx,
     config,
     snapshots,
     rules: ruleStore,
     roles: rolesReader,
+    ledger: gateLedger,
   })
 
   // Team templates: built-ins are seeded into the state dir once (missing dirs
@@ -133,6 +155,82 @@ export function apply(ctx, config) {
     }
     return readConfig(config, 'leadPlaybook') ?? ''
   }
+
+  /** Resolve the gate caller's team and role; undefined for non-members. */
+  const gateCaller = (agent) => {
+    if (agent === undefined) return undefined
+    const membership = ctx.agentTeams.tryMembership(agent)
+    if (membership === undefined) return undefined
+    const roles = mergeRoles(rolesReader.read())
+    const snapshot = snapshots.get(membership.root.id, membership.name)
+    const role = snapshot?.frozen ?? roleForTarget(roles, membership.name)
+    if (role === undefined) return undefined
+    return { membership, roleId: role.id }
+  }
+
+  // Host-wide gate enforcement. With no configured gates both listeners return
+  // immediately, so existing flows pay nothing and behave identically.
+  //
+  // Failure philosophy: an evaluator exception fails OPEN (allow + warn). Only
+  // a valid configuration whose state is definitely unsatisfied may deny.
+  ctx.effect(() => ctx.on('tools/pre-execute', async (exec, next) => {
+    let gates
+    try {
+      gates = normalizeGates(readConfig(config, 'gates') ?? [])
+    } catch {
+      return next()
+    }
+    if (gates.length === 0) return next()
+    try {
+      const caller = gateCaller(exec.agent)
+      if (caller === undefined) return next()
+      const decision = evaluateGates({
+        gates,
+        disabled: readConfig(config, 'gatesDisabled') ?? [],
+        role: caller.roleId,
+        tool: exec.name,
+        args: exec.arguments,
+        ledger: gateLedger,
+        teamId: caller.membership.root.id,
+      })
+      return decision ?? next()
+    } catch (error) {
+      ctx.logger?.warn(`[agent-team-roles] gate evaluation failed open: ${error.message}`)
+      return next()
+    }
+  }), 'agent-team-roles:gates-pre-execute')
+
+  ctx.effect(() => ctx.on('tools/post-execute', async (exec, result, next) => {
+    const downstream = await next()
+    try {
+      const gates = normalizeGates(readConfig(config, 'gates') ?? [])
+      if (gates.length === 0) return downstream
+      const caller = gateCaller(exec.agent)
+      if (caller === undefined) return downstream
+      const teamId = caller.membership.root.id
+      for (const gate of gates) {
+        const invalidateOn = gate.require.invalidateOn
+        if (invalidateOn !== undefined
+          && (invalidateOn.role === undefined || invalidateOn.role === caller.roleId)
+          && invalidateOn.tool.includes(exec.name)) {
+          // A watched tool was used: every prior key in this team is stale.
+          gateLedger.invalidate(teamId)
+        }
+        const commandSuccess = gate.require.commandSuccess
+        if (commandSuccess === undefined
+          || commandSuccess.role !== caller.roleId
+          || !commandSuccess.tool.includes(exec.name)
+          || result?.isError === true) continue
+        const command = commandFromArgs(exec.arguments)
+        if (typeof command !== 'string') continue
+        if (!new RegExp(commandSuccess.pattern).test(command)) continue
+        gateLedger.record(teamId, commandSuccessEvent(gate.id), caller.roleId)
+      }
+    } catch (error) {
+      ctx.logger?.warn(`[agent-team-roles] gate bookkeeping failed: ${error.message}`)
+    }
+    return downstream
+  }), 'agent-team-roles:gates-post-execute')
 
   // A trusted in-process API for other plugins. Agent-facing writes go through
   // the tools above, where the Lead/member boundary is enforced by scope.
@@ -333,20 +431,113 @@ export function apply(ctx, config) {
       try {
         const applied = await upsertRoles(roleStore, template.roles)
         const editor = ctx.get('configEditor')
-        await editor.edit(ctx.fiber.entry, (current) => ({ ...current, activeTemplate: template.id }))
+        const templateGates = Array.isArray(template.gates) ? template.gates : []
+        const gateIds = new Set(templateGates.map((gate) => gate.id))
+        await editor.edit(ctx.fiber.entry, (current) => ({
+          ...current,
+          activeTemplate: template.id,
+          ...(templateGates.length === 0
+            ? {}
+            : {
+                gates: [
+                  ...(Array.isArray(current.gates) ? current.gates : []).filter((gate) => !gateIds.has(gate.id)),
+                  ...templateGates,
+                ],
+              }),
+        }))
         const skills = await copyTemplateSkills(template.dir, path.join(stateDir(), 'skills'))
         await loadTemplates(true)
         const parts = applied.map((item) => `${item.id} (${item.action})`)
         const skillNote = skills.copied.length === 0 ? 'no skill dirs' : `skills merged: ${skills.copied.join(', ')}`
+        const gateNote = templateGates.length === 0 ? 'no gates' : `gates installed: ${templateGates.map((gate) => gate.id).join(', ')}`
         return {
           kind: 'success',
-          text: `Applied template "${template.id}". Roles: ${parts.join(', ')}. Playbook active. ${skillNote}.`,
+          text: `Applied template "${template.id}". Roles: ${parts.join(', ')}. Playbook active. ${gateNote}. ${skillNote}.`,
         }
       } catch (error) {
         return { kind: 'error', text: error instanceof Error ? error.message : String(error) }
       }
     },
   }), 'agent-team-roles:team-template-command')
+
+  // Workflow gates: inspect configured gates, show live key state, toggle them.
+  ctx.effect(() => ctx.commands.register({
+    name: 'team-gates',
+    description: 'Inspect or toggle workflow gates (stateful conditional denial).',
+    input: { hint: 'list | status | enable <gate id> | disable <gate id>' },
+    handler: async ({ agent, rawInput }) => {
+      const membership = ctx.agentTeams.tryMembership(agent)
+      if (membership?.role !== 'lead') {
+        return { kind: 'error', text: 'Only the Team Lead can manage workflow gates.' }
+      }
+      const presets = ctx.get('agentPresets')
+      const presetCandidates = [
+        presets?.composedPreset?.(agent.ctx),
+        presets?.presetForSession?.(agent.session),
+        agent.session?.header?.agentPreset,
+      ]
+      if (!presetCandidates.includes('team-lead')) {
+        return {
+          kind: 'error',
+          text: 'Workflow gates are available only in a session using the Team Lead preset.',
+        }
+      }
+      const gates = normalizeGates(readConfig(config, 'gates') ?? [])
+      const disabled = new Set(readConfig(config, 'gatesDisabled') ?? [])
+      const teamId = membership.root.id
+      const [action, argument] = rawInput.trim().split(/\s+/, 2)
+      if (action === 'enable' || action === 'disable') {
+        if (argument === undefined || !gates.some((gate) => gate.id === argument)) {
+          return { kind: 'error', text: `unknown gate "${argument ?? ''}"` }
+        }
+        const editor = ctx.get('configEditor')
+        await editor.edit(ctx.fiber.entry, (current) => {
+          const next = new Set(Array.isArray(current.gatesDisabled) ? current.gatesDisabled : [])
+          if (action === 'enable') next.delete(argument)
+          else next.add(argument)
+          return { ...current, gatesDisabled: [...next] }
+        })
+        return { kind: 'success', text: `Gate "${argument}" ${action === 'enable' ? 'enabled' : 'disabled'}.` }
+      }
+      if (gates.length === 0) return { kind: 'success', text: 'No workflow gates configured.' }
+      if (action === undefined || action === '' || action === 'list') {
+        const lines = gates.map((gate) => {
+          const pattern = gate.deny.commandPattern === undefined ? '' : ` /${gate.deny.commandPattern}/`
+          const requirement = gate.require.commandSuccess
+            ? `successful ${gate.require.commandSuccess.tool.join('/')} command from ${gate.require.commandSuccess.role}`
+            : `event "${gate.require.event}" from ${gate.require.byRoles.join('/')}` +
+              (gate.require.freshFor === undefined ? '' : ` (fresh ${gate.require.freshFor}s)`)
+          const description = gate.description === '' ? '' : ` — ${gate.description}`
+          return `${disabled.has(gate.id) ? '[off]' : '[on] '} ${gate.id}: deny ${gate.deny.role} ` +
+            `${gate.deny.tool.join('/')}${pattern} ← ${requirement}${description}`
+        })
+        return { kind: 'success', text: lines.join('\n') }
+      }
+      if (action !== 'status') {
+        return { kind: 'error', text: 'usage: /team-gates list | status | enable <id> | disable <id>' }
+      }
+      const lines = gates.map((gate) => {
+        const requirement = gateRequirement(gate)
+        if (requirement === undefined) return `${gate.id}: invalid requirement`
+        const event = requirement.commandSuccess !== undefined
+          ? commandSuccessEvent(gate.id)
+          : requirement.event
+        const byRoles = requirement.commandSuccess !== undefined
+          ? [requirement.commandSuccess.role]
+          : requirement.byRoles
+        const fresh = gateLedger.fresh(teamId, event, byRoles, requirement.freshFor)
+        const latest = gateLedger.latest(teamId, event, byRoles)
+        const state = fresh !== undefined
+          ? `satisfied (${event} by ${fresh.role} at ${new Date(fresh.at).toISOString()})`
+          : latest === undefined
+            ? 'unsatisfied (no event recorded)'
+            : `unsatisfied (last ${event} by ${latest.role} at ${new Date(latest.at).toISOString()}` +
+              `${requirement.freshFor === undefined ? '' : `, expired after ${requirement.freshFor}s`})`
+        return `${disabled.has(gate.id) ? '[off]' : '[on] '} ${gate.id}: ${state}`
+      })
+      return { kind: 'success', text: lines.join('\n') }
+    },
+  }), 'agent-team-roles:team-gates-command')
 
   // A dedicated Settings page owns this plugin's form; the generic schema form
   // would duplicate the same volatile fields.

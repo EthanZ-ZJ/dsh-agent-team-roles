@@ -73,6 +73,34 @@ test('readTemplate skips broken templates with an error, never throwing', async 
   assert.match((await readTemplate(badRegex)).error, /role invalid/)
 })
 
+test('readTemplate parses and validates gates alongside roles', async () => {
+  const root = await makeRoot()
+  const withGates = {
+    ...validTemplate,
+    gates: [{
+      id: 'review-before-commit',
+      deny: { role: 'dev', tool: ['bash', 'pwsh'], commandPattern: '\\bgit\\s+commit\\b' },
+      require: { event: 'review-approved', byRoles: ['cr'], freshFor: 3600 },
+      description: 'example',
+    }],
+  }
+  const dir = await writeTemplate(root, 'with-gates', withGates)
+  const { template, error } = await readTemplate(dir)
+  assert.equal(error, undefined)
+  assert.equal(template.gates.length, 1)
+  assert.equal(template.gates[0].id, 'review-before-commit')
+
+  const badGate = await writeTemplate(root, 'bad-gate', {
+    ...validTemplate,
+    id: 'bad-gate',
+    gates: [{ id: 'bad-gate', deny: { role: 'dev', tool: ['bash'], commandPattern: '([bad' }, require: { event: 'x', byRoles: ['cr'] } }],
+  })
+  assert.match((await readTemplate(badGate)).error, /gate invalid/)
+
+  const noGates = await writeTemplate(root, 'no-gates', { ...validTemplate, id: 'no-gates' })
+  assert.deepEqual((await readTemplate(noGates)).template.gates, [])
+})
+
 test('discoverTemplates returns only valid templates sorted by id', async () => {
   const root = await makeRoot()
   await writeTemplate(root, 'b-template', { ...validTemplate, id: 'b-template', name: 'Beta' })

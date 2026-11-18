@@ -14,6 +14,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { normalizeRole, validateRole } from './config.js'
+import { MAX_GATES, normalizeGate, validateGate } from './gates.js'
 
 /** Filename of the template descriptor inside a template directory. */
 export const TEMPLATE_FILE = 'template.json'
@@ -59,6 +60,20 @@ export async function readTemplate(dir) {
     seen.add(role.id)
     roles.push(role)
   }
+  const gates = []
+  if (parsed.gates !== undefined) {
+    if (!Array.isArray(parsed.gates)) return { error: 'gates must be an array' }
+    if (parsed.gates.length > MAX_GATES) return { error: `gates exceeds ${MAX_GATES} entries` }
+    const seenGates = new Set()
+    for (const candidate of parsed.gates) {
+      const gate = normalizeGate(candidate)
+      const invalid = validateGate(gate)
+      if (invalid !== undefined) return { error: `gate invalid: ${invalid}` }
+      if (seenGates.has(gate.id)) return { error: `duplicate gate id "${gate.id}"` }
+      seenGates.add(gate.id)
+      gates.push(gate)
+    }
+  }
   return {
     template: {
       id,
@@ -66,6 +81,7 @@ export async function readTemplate(dir) {
       description: typeof parsed.description === 'string' ? parsed.description : '',
       leadPlaybook: typeof parsed.leadPlaybook === 'string' ? parsed.leadPlaybook : '',
       roles,
+      gates,
       dir,
     },
   }

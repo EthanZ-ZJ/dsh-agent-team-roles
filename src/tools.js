@@ -209,9 +209,16 @@ export function roleIdForAgent(ctx, snapshots, roles, agent) {
  * @param options - plugin context, live Config readers, stores, and catalog.
  * @returns the Lead and member tool definitions.
  */
-export function createTools({ ctx, config, snapshots, rules, roles }) {
+export function createTools({ ctx, config, snapshots, rules, roles, ledger }) {
   /** Read the live role catalog. */
   const catalog = () => mergeRoles(roles.read())
+
+  /** Gate event ledger; absent in some unit tests that never report events. */
+  const gateLedger = ledger ?? {
+    record: () => {
+      throw new Error('gate ledger is unavailable in this deployment')
+    },
+  }
 
   /** Resolve the role-management service exposed to tools and other plugins. */
   const rolesApi = () => {
@@ -536,6 +543,45 @@ export function createTools({ ctx, config, snapshots, rules, roles }) {
     },
   })
 
+  /** Record a gate event on behalf of the caller's role. */
+  const reportGateEvent = defineTool({
+    name: 'report_gate_event',
+    description:
+      'Record a workflow gate event for your role. Call this when a gate demands an event from your role (the rejection message names the event). Events from roles outside a gate\'s byRoles are recorded but satisfy nothing.',
+    parameters: {
+      event: {
+        type: 'string',
+        required: true,
+        description: 'Kebab-case event name from the rejection message, e.g. checks-passed.',
+      },
+      note: {
+        type: 'string',
+        description: 'Optional note stored alongside the record.',
+      },
+    },
+    output: jsonOutput({
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        recorded: { type: 'boolean', required: true },
+        event: { type: 'string', required: true },
+        role: { type: 'string', required: true },
+      },
+    }),
+    async execute(args, exec) {
+      if (exec.agent === undefined) throw new Error('report_gate_event requires a calling Agent')
+      if (!/^[a-z][a-z0-9-]{0,63}$/.test(args.event)) {
+        throw new Error('event must be lowercase kebab-case (letters, digits, hyphens; at most 64 characters)')
+      }
+      const membership = ctx.agentTeams.tryMembership(exec.agent)
+      if (membership === undefined) throw new Error('report_gate_event requires a Team member')
+      const role = roleIdForAgent(ctx, snapshots, catalog(), exec.agent)
+      if (role === undefined) throw new Error('this member has no managed role')
+      gateLedger.record(membership.root.id, args.event, role, undefined, args.note)
+      return { recorded: true, event: args.event, role }
+    },
+  })
+
   return {
     lead: [
       spawnTeamMember,
@@ -547,7 +593,7 @@ export function createTools({ ctx, config, snapshots, rules, roles }) {
       updateTeamRole,
       deleteTeamRole,
     ],
-    member: [rememberRoleRule, listMyRules, listTeamRoles, createTeamRole],
+    member: [rememberRoleRule, listMyRules, listTeamRoles, createTeamRole, reportGateEvent],
     spawnTeamMember,
     roleIdForAgent: (agent) => roleIdForAgent(ctx, snapshots, catalog(), agent),
     catalog,

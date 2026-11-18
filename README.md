@@ -156,6 +156,69 @@ Team Lead 会话中使用命令：
 - 只匹配 shell 命令参数；其它工具不受影响。
 - 非 Team 成员不受该策略影响；策略数据属于角色定义，可在设置页对应的角色 JSON 中维护。
 
+## 工序闸门（gates）
+
+denyCommands 是**无条件**拒绝；gates 是**有状态的条件拒绝**：角色 R 执行操作 X 前，必须存在一份由角色集合 Y 最近产生、未过期且未被作废的“钥匙”事件 E，否则调用被拒。
+
+### 三要素模型
+
+```json
+{
+  "id": "review-before-commit",
+  "description": "可选的人类可读说明，/team-gates 展示用",
+  "deny": {
+    "role": "dev",
+    "tool": ["bash", "pwsh"],
+    "commandPattern": "\\bgit(\\.exe)?\\s+commit\\b"
+  },
+  "require": {
+    "event": "review-approved",
+    "byRoles": ["cr"],
+    "freshFor": 14400,
+    "invalidateOn": { "role": "dev", "tool": ["write", "edit"] }
+  }
+}
+```
+
+- `deny.role` / `deny.tool`：拦谁、拦哪个工具（1–8 个）。带 `commandPattern` 时只拦匹配的 shell 命令；不带时整工具拦截（write/edit 类）。
+- `require.event` + `byRoles`：钥匙事件名与可产生钥匙的角色（1–8 个）。
+- `freshFor`：秒；缺省表示永久有效，直到被作废。
+- `invalidateOn`：当匹配角色使用匹配工具成功后，清空该团队已记录的事件（改码即让旧批准失效）。
+- 或者用 `require.commandSuccess = { role, tool, pattern }`：以“某角色成功执行了匹配命令”为钥匙，与 `event` 二选一。
+
+### 两个事件源
+
+1. **上报工具** `report_gate_event({ event, note? })`：任何受管成员都可调用（隐式工具，不受白名单影响）。安全性由评估器保证：事件只有在产生者角色 ∈ 该 gate 的 `byRoles` 时才算数，无关角色发的事件是废纸。
+2. **命令成功**：`require.commandSuccess` 配置后，post-execute 监听器在匹配命令成功返回时自动记账。
+
+### /team-gates 命令
+
+Team Lead（且 Team Lead 预设会话）可用：
+
+```text
+/team-gates list                 # 每条 gate 一行：状态、deny 摘要、require 摘要
+/team-gates status               # 实时钥匙状态：最新事件由谁在何时产生、是否过期/不存在
+/team-gates enable <id>
+/team-gates disable <id>
+```
+
+### 与 denyCommands 的关系
+
+| 机制 | 条件 | 数据位置 |
+|---|---|---|
+| denyCommands | 无条件：命令匹配即拒 | 角色字段 |
+| gates | 有状态：缺少合格事件才拒 | Config.gates（由模板 apply 写入） |
+
+### 已知限制
+
+- **内存态**：事件不持久化，宿主重启即清空，所有闸门回到“未满足”——刻意的安全默认。
+- **fail-open**：评估器内部异常时放行并记 warn 日志；只有配置合法且状态明确不满足才拒绝。
+- **单事件条件**：v1 不做 AND/OR 组合、分支或编排 DSL；多条 gate 各自独立（对同一调用可能依次拒绝，理由分别说明）。
+- **事件源有限**：任务板事件、消息、文件变更暂不作为事件源；只有上报工具与命令成功两种。
+- **仅受管成员**：没有 Team 成员身份或角色解析失败时直接放行。
+- **作废粒度**：事件不携带工具信息，`invalidateOn` 命中即清空整个团队的事件桶。
+- **空配置零行为**：`gates` 为空时 pre/post-execute 监听器立即返回，不引入可感知开销。
+
 ## 面向 Agent 的工具
 
 | 工具 | 可调用者 | 用途 |

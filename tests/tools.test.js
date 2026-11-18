@@ -47,13 +47,46 @@ test('the Lead tool set uses standard JSON Schema for arguments and output', () 
   }
 })
 
-test('member tools include self-learning and role creation', () => {
+test('member tools include self-learning, role creation, and gate reporting', () => {
   assert.deepEqual(build().member.map((tool) => tool.name).sort(), [
     'create_team_role',
     'list_my_rules',
     'list_team_roles',
     'remember_role_rule',
+    'report_gate_event',
   ])
+})
+
+test('report_gate_event validates the event name and records into the ledger', async () => {
+  const recorded = []
+  const ledger = { record: (...args) => recorded.push(args) }
+  const tools = createTools({
+    ctx: {
+      agentTeams: {
+        tryMembership: () => ({ role: 'teammate', name: 'general', root: { id: 'team-1' } }),
+      },
+    },
+    config: {},
+    snapshots: { get: () => undefined },
+    rules: {},
+    roles: { read: () => [GENERAL_ROLE] },
+    ledger,
+  })
+  const tool = tools.member.find((candidate) => candidate.name === 'report_gate_event')
+  const result = await tool.execute(
+    { event: 'review-approved', note: 'looks good' },
+    { agent: { id: 'child-1' } },
+  )
+  assert.deepEqual(result, { recorded: true, event: 'review-approved', role: 'general' })
+  assert.equal(recorded.length, 1)
+  assert.equal(recorded[0][0], 'team-1')
+  assert.equal(recorded[0][1], 'review-approved')
+  assert.equal(recorded[0][2], 'general')
+  assert.equal(recorded[0][4], 'looks good')
+  await assert.rejects(
+    () => tool.execute({ event: 'Bad Event' }, { agent: { id: 'child-1' } }),
+    /kebab-case/,
+  )
 })
 
 test('list_role_rules returns rule views through the registered execute', async () => {
