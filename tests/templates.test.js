@@ -143,3 +143,32 @@ test('upsertRoles creates missing roles and updates existing ones', async () => 
   assert.equal(created.length, 1)
   assert.deepEqual(updated[0], ['existing', { id: 'existing', name: 'Updated' }])
 })
+
+test('upsertRoles rolls back applied changes when a later write fails', async () => {
+  const removed = []
+  const updates = []
+  const created = []
+  const store = {
+    get: (id) => (id === 'existing' || id === 'second'
+      ? { id, name: 'Before' }
+      : undefined),
+    create: async (role) => { created.push(role.id) },
+    update: async (id, patch) => {
+      if (id === 'second') throw new Error('backend exploded')
+      updates.push([id, patch])
+    },
+    remove: async (id) => { removed.push(id) },
+  }
+  await assert.rejects(
+    () => upsertRoles(store, [
+      { id: 'existing', name: 'After' },
+      { id: 'fresh', name: 'Created' },
+      { id: 'second', name: 'Never' },
+    ]),
+    /backend exploded.*rolled back/,
+  )
+  // Rollback removes the created role and restores the updated ones.
+  assert.deepEqual(removed, ['fresh'])
+  assert.deepEqual(updates.at(-1), ['existing', { id: 'existing', name: 'Before' }])
+  assert.equal(created.length, 1)
+})

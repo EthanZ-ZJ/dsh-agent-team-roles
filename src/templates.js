@@ -147,20 +147,43 @@ export async function copyTemplateSkills(templateDir, skillsRoot) {
 
 /**
  * Upsert template roles into a live role store (get/create/update interface).
- * Returns per-role results; a failed role aborts the whole apply so the
- * catalog cannot end up half-updated.
+ *
+ * Best-effort transactional: any failure rolls back the already-applied changes
+ * in reverse order (created roles are removed, updated roles are restored to
+ * their previous value). A rollback itself can fail — the original error is
+ * rethrown either way, with the rollback state noted for the caller to report.
  */
 export async function upsertRoles(store, roles) {
   const applied = []
-  for (const role of roles) {
-    const existing = store.get(role.id)
-    if (existing === undefined) {
-      await store.create(role)
-      applied.push({ id: role.id, action: 'created' })
-    } else {
-      await store.update(role.id, role)
-      applied.push({ id: role.id, action: 'updated' })
+  const undo = []
+  try {
+    for (const role of roles) {
+      const existing = store.get(role.id)
+      if (existing === undefined) {
+        await store.create(role)
+      } else {
+        await store.update(role.id, role)
+      }
+      undo.push({ id: role.id, existing })
+      applied.push({ id: role.id, action: existing === undefined ? 'created' : 'updated' })
     }
+    return applied
+  } catch (error) {
+    let rollbackFailures = 0
+    for (const entry of undo.reverse()) {
+      try {
+        if (entry.existing === undefined) {
+          if (typeof store.remove === 'function') await store.remove(entry.id)
+        } else {
+          await store.update(entry.id, entry.existing)
+        }
+      } catch {
+        rollbackFailures += 1
+      }
+    }
+    const note = rollbackFailures === 0
+      ? 'applied changes were rolled back'
+      : `applied changes were rolled back with ${rollbackFailures} rollback failure(s); check the catalog`
+    throw new Error(`${error.message} (${note})`)
   }
-  return applied
 }

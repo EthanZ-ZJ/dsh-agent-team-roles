@@ -302,6 +302,19 @@ export function apply(ctx, config) {
       if (membership?.role !== 'lead') {
         return { kind: 'error', text: 'Only the Team Lead can manage team templates.' }
       }
+      // Align with /team-spawn: template management is a Team-Lead-preset feature.
+      const presets = ctx.get('agentPresets')
+      const presetCandidates = [
+        presets?.composedPreset?.(agent.ctx),
+        presets?.presetForSession?.(agent.session),
+        agent.session?.header?.agentPreset,
+      ]
+      if (!presetCandidates.includes('team-lead')) {
+        return {
+          kind: 'error',
+          text: 'Team templates are available only in a session using the Team Lead preset.',
+        }
+      }
       const [action, argument] = rawInput.trim().split(/\s+/, 2)
       const templates = await loadTemplates(true)
       if (action === 'list' || action === undefined || action === '') {
