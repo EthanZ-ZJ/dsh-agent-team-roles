@@ -135,7 +135,7 @@ $DSH_HOME/agent-team-roles/templates/<模板 id>/
 
 ### 内置模板
 
-插件激活时把包内 `templates/software-dev/` **播种**到状态目录（只创建缺失目录，永不覆盖用户改动）。`software-dev` 是软件开发部模板：PM/SE/DEV/TSE/CR 五角色 + 并行检视 playbook；DEV 与 TSE 带 `denyCommands` 禁止 `git push`。
+插件激活时把包内 `templates/software-dev/` **播种**到状态目录（只创建缺失目录，永不覆盖用户改动）。因此内置模板后续更新（例如新增 gates）不会自动写入已有状态目录；需要删除 `<stateDir>/templates/<id>/` 后重载插件重新播种。`software-dev` 是软件开发部模板：PM/SE/DEV/TSE/CR 五角色 + 并行检视 playbook + 两条提交前闸门；DEV 与 TSE 带 `denyCommands` 禁止 `git push`。
 
 ### 应用模板
 
