@@ -1,8 +1,10 @@
 # dsh-agent-team-roles
 
-面向 DeepSeek Harness 官方 Agent Teams 运行时的**角色预设 + 自更新角色记忆**插件。
+面向 DeepSeek Harness 官方 Agent Teams 运行时的**通用团队引擎 + 领域模板包**。
 
-这是一个**伴生插件**：`@deepseek-ai/dsh-experimental-agent-team` 继续负责成员名册（roster）、成员间消息、共享任务板和成员生命周期；本插件补上官方运行时没有的部分——可复用的角色定义、按角色召唤，以及成员运行中持续更新的“已学规则”层。
+这是一个**伴生插件**：`@deepseek-ai/dsh-experimental-agent-team` 继续负责成员名册（roster）、成员间消息、共享任务板和成员生命周期；本插件补上官方运行时没有的部分——可复用的角色定义、按角色召唤、命令级命令策略（denyCommands），以及成员运行中持续更新的“已学规则”层。
+
+**引擎与领域分离**：插件本体（`src/`）只包含对任何领域都成立的机制——召唤与复用、握手协议、工具守卫、并发调度纪律、规则学习；具体流程（谁检视谁、谁先谁后、禁止什么命令）全部是数据，来自内置的 `software-dev` 模板包或你自己编写的模板。不应用任何模板、`leadPlaybook` 为空时，插件退化为纯通用调度引擎，完全可用。
 
 ## 功能
 
@@ -103,6 +105,56 @@ Lead 的系统提示里还有一段动态的 **Active team members**：每个已
 - **注入边界**：角色目录、成员描述等团队信息只注入 Team Lead 预设的会话；其他预设会话是干净的普通工作会话，没有团队调度内容，也不能拉取成员。
 
 左侧主导航中的 **Agent 团队角色** 入口打开同一个角色管理页（角色编辑 + 历史记忆），无需进入设置。
+
+## 团队模板包
+
+模板 = 角色目录 + Lead 编排 playbook + 私有技能，作为纯数据分发，可携带任意领域流程。
+
+### 目录结构
+
+```text
+$DSH_HOME/agent-team-roles/templates/<模板 id>/
+  template.json          # 模板描述（必需）
+  skills/<角色 id>/       # 可选：该模板角色的私有技能
+    <技能名>/SKILL.md
+```
+
+### template.json schema
+
+```json
+{
+  "id": "software-dev",              // 必需；小写字母开头的 kebab-case，≤64 字符
+  "name": "Software Development Team", // 必填
+  "description": "……",               // 可选
+  "leadPlaybook": "……",              // 可选；应用后追加到 Lead 提示词
+  "roles": [ /* 同设置页角色结构，可含 denyCommands */ ]
+}
+```
+
+`roles` 复用角色的 `normalizeRole`/`validateRole` 校验：任一角色非法即整个模板无效，发现的坏模板会被跳过（不报错、不影响其它模板）。
+
+### 内置模板
+
+插件激活时把包内 `templates/software-dev/` **播种**到状态目录（只创建缺失目录，永不覆盖用户改动）。`software-dev` 是软件开发部模板：PM/SE/DEV/TSE/CR 五角色 + 并行检视 playbook；DEV 与 TSE 带 `denyCommands` 禁止 `git push`。
+
+### 应用模板
+
+Team Lead 会话中使用命令：
+
+```text
+/team-template list          # 列出发现的模板
+/team-template apply software-dev
+```
+
+`apply` 做三件事：把模板 roles **upsert** 进角色目录（已有的更新、缺失的创建）；设置 `activeTemplate` 使其 playbook 生效（覆盖 `leadPlaybook` 配置）；把模板 `skills/<角色 id>/` 合并复制到 `stateDir/skills/<角色 id>/`（覆盖同名文件，不删除其它文件）。
+
+## denyCommands：命令级策略
+
+角色可选字段 `denyCommands` 是一个 RegExp source 数组（≤20 条，单条 ≤200 字符，必须能编译为正则）。成员以该角色运行时，调用 `bash` / `pwsh` 且 `command` 参数命中任一模式即被拒绝，错误信息包含角色 id 与命中的规则。
+
+- **独立于工具白名单**：`toolMode: all` 与 `custom` 都生效。典型用法——DEV/TSE 有终端工具但禁止 `git push`（推送由 Lead 流程统一处理）。
+- 只匹配 shell 命令参数；其它工具不受影响。
+- 非 Team 成员不受该策略影响；策略数据属于角色定义，可在设置页对应的角色 JSON 中维护。
 
 ## 面向 Agent 的工具
 

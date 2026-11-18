@@ -15,8 +15,12 @@
  */
 
 import z from '@deepseek-ai/schemastery'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { findRole, mergeRoles, readConfig, roleForTarget } from './config.js'
 import { activeMembers, leadCatalog, memberPersona } from './prompts.js'
+import { evaluateDeny } from './policy.js'
+import { copyTemplateSkills, discoverTemplates, seedTemplates, templatesRoot, upsertRoles } from './templates.js'
 import { MemberSnapshots, RoleStore, RuleStore, stateDir } from './store.js'
 import { spawnRoleMember } from './spawn.js'
 import { createTools } from './tools.js'
@@ -51,6 +55,8 @@ const RoleSchema = z.object({
   reasoningEffort: z.string().default('').description('Reasoning effort; empty keeps the adapter default.'),
   toolMode: z.string().default('all').description('Tool policy: all, or a custom allow-list.'),
   tools: z.array(z.string()).default([]).description('Allowed tool names when toolMode is custom.'),
+  denyCommands: z.array(z.string()).default([]).volatile()
+    .description('Optional RegExp sources denying matching shell commands for this role (at most 20 patterns of 200 characters).'),
   skills: z.array(z.string()).default([]).description('Private skill names; empty exposes the whole role skill folder.'),
   color: z.string().default('').description('Accent color for the roster.'),
 })
@@ -73,6 +79,10 @@ export const Config = z.object({
   rules: z.array(RuleSchema).default([]).volatile().description('Learned standing rules.'),
   freshProvider: z.string().default('spawn').description('Subagent backend for fresh teammates.'),
   forkProvider: z.string().default('fork').description('Subagent backend for forked teammates.'),
+  leadPlaybook: z.string().default('').volatile()
+    .description('Optional orchestration playbook appended to the Lead prompt after the role catalog.'),
+  activeTemplate: z.string().default('').volatile()
+    .description('Identifier of the applied team template; its playbook overrides leadPlaybook when present.'),
 })
 
 /** Install the plugin's runtime contributions. */
@@ -96,6 +106,33 @@ export function apply(ctx, config) {
     rules: ruleStore,
     roles: rolesReader,
   })
+
+  // Team templates: built-ins are seeded into the state dir once (missing dirs
+  // only), and discovered templates are cached for the synchronous Lead-prompt
+  // callback. /team-template apply refreshes the cache.
+  const builtinTemplatesDir = fileURLToPath(new URL('../templates/', import.meta.url))
+  const templateRoot = templatesRoot(stateDir())
+  const templateCache = { at: 0, items: [] }
+  const loadTemplates = async (force = false) => {
+    if (!force && Date.now() - templateCache.at < 5000) return templateCache.items
+    templateCache.items = await discoverTemplates(templateRoot)
+    templateCache.at = Date.now()
+    return templateCache.items
+  }
+  void seedTemplates(templateRoot, builtinTemplatesDir)
+    .then(() => loadTemplates(true))
+    .catch((error) => ctx.logger?.warn(`[agent-team-roles] template seeding failed: ${error.message}`))
+
+  // Effective Lead playbook: activeTemplate's playbook wins over the plain
+  // config value; both may be empty, leaving purely generic scheduling rules.
+  const leadPlaybook = () => {
+    const active = readConfig(config, 'activeTemplate') ?? ''
+    if (active !== '') {
+      const template = templateCache.items.find((item) => item.id === active)
+      if (template !== undefined && template.leadPlaybook.trim() !== '') return template.leadPlaybook
+    }
+    return readConfig(config, 'leadPlaybook') ?? ''
+  }
 
   // A trusted in-process API for other plugins. Agent-facing writes go through
   // the tools above, where the Lead/member boundary is enforced by scope.
@@ -138,7 +175,7 @@ export function apply(ctx, config) {
 
     try {
       if (membership.role === 'lead') {
-        installLead({ scoped, register, tools, ctx, snapshots, roles: rolesReader, agent })
+        installLead({ scoped, register, tools, ctx, snapshots, roles: rolesReader, agent, playbook: leadPlaybook })
       } else {
         installMember({
           agent,
@@ -253,6 +290,51 @@ export function apply(ctx, config) {
     },
   }), 'agent-team-roles:team-spawn-command')
 
+  // Team template management: list discovered packs, apply one by upserting its
+  // roles into the live catalog, activating its playbook, and merging its
+  // private skills. Lead-only, like every catalog mutation.
+  ctx.effect(() => ctx.commands.register({
+    name: 'team-template',
+    description: 'List or apply team templates (role catalog + Lead playbook).',
+    input: { hint: 'list | apply <template id>' },
+    handler: async ({ agent, rawInput }) => {
+      const membership = ctx.agentTeams.tryMembership(agent)
+      if (membership?.role !== 'lead') {
+        return { kind: 'error', text: 'Only the Team Lead can manage team templates.' }
+      }
+      const [action, argument] = rawInput.trim().split(/\s+/, 2)
+      const templates = await loadTemplates(true)
+      if (action === 'list' || action === undefined || action === '') {
+        const lines = templates.map((template) =>
+          `- ${template.id}: ${template.name} — ${template.description} (${template.roles.length} roles)`)
+        return { kind: 'success', text: lines.length === 0 ? 'No templates discovered.' : lines.join('\n') }
+      }
+      if (action !== 'apply' || argument === undefined) {
+        return { kind: 'error', text: 'usage: /team-template list | apply <template id>' }
+      }
+      const template = templates.find((item) => item.id === argument)
+      if (template === undefined) {
+        const known = templates.map((item) => item.id).join(', ')
+        return { kind: 'error', text: `unknown template "${argument}"; discovered templates: ${known || '(none)'}` }
+      }
+      try {
+        const applied = await upsertRoles(roleStore, template.roles)
+        const editor = ctx.get('configEditor')
+        await editor.edit(ctx.fiber.entry, (current) => ({ ...current, activeTemplate: template.id }))
+        const skills = await copyTemplateSkills(template.dir, path.join(stateDir(), 'skills'))
+        await loadTemplates(true)
+        const parts = applied.map((item) => `${item.id} (${item.action})`)
+        const skillNote = skills.copied.length === 0 ? 'no skill dirs' : `skills merged: ${skills.copied.join(', ')}`
+        return {
+          kind: 'success',
+          text: `Applied template "${template.id}". Roles: ${parts.join(', ')}. Playbook active. ${skillNote}.`,
+        }
+      } catch (error) {
+        return { kind: 'error', text: error instanceof Error ? error.message : String(error) }
+      }
+    },
+  }), 'agent-team-roles:team-template-command')
+
   // A dedicated Settings page owns this plugin's form; the generic schema form
   // would duplicate the same volatile fields.
   ctx.inject(['settings'], (scope) => {
@@ -270,14 +352,14 @@ export function isTeamLeadPreset(agent) {
 }
 
 /** Install the Lead's role catalog, tools, and the official-spawn guard. */
-function installLead({ scoped, register, tools, ctx, snapshots, roles, agent }) {
+function installLead({ scoped, register, tools, ctx, snapshots, roles, agent, playbook }) {
   // Manual pulls and the team description are Team-Lead-preset features; other
   // presets run plain sessions and must not carry the roster catalog.
   if (!isTeamLeadPreset(agent)) return
   register(scoped.systemPrompt.section({
     name: 'agent-team-roles:lead-catalog',
     order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY') + 10,
-    text: () => leadCatalog(tools.catalog()),
+    text: () => leadCatalog(tools.catalog(), typeof playbook === 'function' ? playbook() : ''),
   }))
   register(scoped.systemPrompt.section({
     name: 'agent-team-roles:active-members',
@@ -368,6 +450,9 @@ function installMember({ agent, membership, scoped, register, tools, snapshots, 
   }))
 
   const liveRole = findRole(mergeRoles(roles.read()), roleId) ?? frozen
+  // denyCommands sits at the front of the guard chain and applies to both tool
+  // modes: it is a command-level policy, independent of the tool whitelist.
+  register(scoped.tools.guard((exec) => evaluateDeny(liveRole, exec.name, exec.arguments)))
   if (liveRole.toolMode === 'custom') {
     // Preset tools can register after agent/created. A visibility mask computed
     // here would permanently hide later-registered tools, so visibility is left

@@ -27,10 +27,28 @@ test('the Team Lead preset has fallback filesystem and shell tools', () => {
   assert.doesNotMatch(preset, /dsh-skill-filesystem/)
 })
 
-test('the Lead persona routes diffs through parallel CR and TSE', () => {
-  assert.match(preset, /diff 完成后 → CR（静态检视）与 TSE（动态测试）并行派发，两者独立执行/)
-  assert.match(preset, /CR 与 TSE 对同一 diff 并行派发，不互相等待/)
-  assert.match(preset, /缺陷闭环：CR\/TSE 把缺陷报告给 Lead → Lead 派回 DEV 修复 → 修复后重新走 CR \+ TSE/)
+test('the Lead persona is domain-neutral with generic scheduling discipline', () => {
+  assert.match(preset, /wait_agent/)
+  assert.match(preset, /并发派发/)
+  assert.match(preset, /权限兜底/)
+  assert.doesNotMatch(preset, /分工：/)
+  assert.doesNotMatch(preset, /→ (PM|SE|DEV|TSE|CR)/)
+})
+
+test('the seeded leadPlaybook and software-dev template carry the domain flow', () => {
+  assert.match(patch, /leadPlaybook: >-/)
+  assert.match(patch, /activeTemplate: software-dev/)
+  const template = JSON.parse(
+    fs.readFileSync(new URL('../templates/software-dev/template.json', import.meta.url), 'utf8'),
+  )
+  assert.match(template.leadPlaybook, /CR（静态检视）与 TSE（动态测试）并行派发/)
+  assert.match(template.leadPlaybook, /派回 DEV 修复 → 修复后重新走 CR\+TSE/)
+  const roles = Object.fromEntries(template.roles.map((role) => [role.id, role]))
+  const pushDeny = '\\bgit(\\.exe)?\\s+push\\b'
+  assert.deepEqual(roles.dev.denyCommands, [pushDeny])
+  assert.deepEqual(roles.tse.denyCommands, [pushDeny])
+  assert.equal(roles.se.denyCommands, undefined)
+  assert.equal(roles.cr.denyCommands, undefined)
 })
 
 /**

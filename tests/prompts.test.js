@@ -59,3 +59,15 @@ test('active members section handles an empty roster', () => {
   assert.match(text, /No teammates are active yet/)
   assert.match(text, /spawn_team_member/)
 })
+
+test('leadCatalog omits the playbook section when empty', () => {
+  const text = leadCatalog([{ id: 'reviewer', name: 'Reviewer', description: 'Reviews' }])
+  assert.doesNotMatch(text, /Orchestration playbook/)
+})
+
+test('leadCatalog renders a non-empty playbook after the catalog', () => {
+  const text = leadCatalog([{ id: 'reviewer', name: 'Reviewer', description: 'Reviews' }], '  Route diffs to reviewers.  ')
+  assert.match(text, /## Orchestration playbook/)
+  assert.match(text, /Route diffs to reviewers\./)
+  assert.ok(text.indexOf('Configured roles:') < text.indexOf('## Orchestration playbook'))
+})

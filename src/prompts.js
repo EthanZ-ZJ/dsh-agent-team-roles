@@ -28,7 +28,7 @@ export function activeMembers(rows) {
 }
 
 /** Render the Lead's role catalog and spawning instructions. */
-export function leadCatalog(roles) {
+export function leadCatalog(roles, playbook = '') {
   const lines = [
     '## Role-based teammate spawning',
     '',
@@ -47,12 +47,6 @@ export function leadCatalog(roles) {
     '',
     'Use the role id as the teammate name when the role has no other instance. If a healthy member of the requested role already exists, `spawn_team_member` reuses it and sends the prompt as a task; it creates a new member only when that role has no healthy member. A taken name then gets a numeric suffix.',
     '',
-    'When DEV reports a framework or important strategy change, have SE review the technical strategy first; the Lead makes the final decision.',
-    '',
-    'Route product features and user experience to PM, technical strategy and review to SE, and code implementation to DEV.',
-    '',
-    'Route test design, boundary coverage, and regression to TSE; TSE reports defects but does not change production code.',
-    '',
     'When the user states a lasting requirement for one role — including "from now on", "always", or "never" — record it with `record_role_feedback`. Do not treat a task-local instruction as a lasting rule.',
     '',
     'Role rules are for durable role behavior only. Never store project-specific facts (brand names, domains, schemas, environment, versions, file paths) in role prompts or role rules; record those in the project memory vault with `memory_capture` instead.',
@@ -62,6 +56,9 @@ export function leadCatalog(roles) {
     'After dispatching, end your turn instead of calling wait_agent; teammate messages and status changes wake you.',
     'Use wait_agent only when the next action truly depends on a member result and nothing else can be dispatched. Keep timeout_ms at or below 30000 and never poll with repeated long waits.',
   )
+  if (typeof playbook === 'string' && playbook.trim() !== '') {
+    lines.push('', '## Orchestration playbook', '', playbook.trim())
+  }
   return lines.join('\n')
 }
 

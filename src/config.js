@@ -62,6 +62,9 @@ export function normalizeRole(input) {
       ? [...new Set(role.tools.map(text).filter(Boolean))]
       : [],
     skills: Array.isArray(role.skills) ? [...new Set(role.skills.map(text).filter(Boolean))] : [],
+    denyCommands: Array.isArray(role.denyCommands)
+      ? [...new Set(role.denyCommands.map(text).filter(Boolean))]
+      : [],
     color: text(role.color),
   }
 }
@@ -133,6 +136,18 @@ export function validateRole(role) {
   }
   if (role.toolMode === 'custom' && role.tools.length === 0) {
     return `role "${role.id}" uses a custom tool policy but lists no tools`
+  }
+  if (role.denyCommands.length > 20) {
+    return `role "${role.id}" lists more than 20 denyCommands patterns`
+  }
+  for (const pattern of role.denyCommands) {
+    if (pattern.length > 200) return `role "${role.id}" has a denyCommands pattern longer than 200 characters`
+    try {
+      // eslint-disable-next-line no-new
+      new RegExp(pattern)
+    } catch {
+      return `role "${role.id}" has a denyCommands pattern that is not a valid regex: ${pattern}`
+    }
   }
   return undefined
 }
