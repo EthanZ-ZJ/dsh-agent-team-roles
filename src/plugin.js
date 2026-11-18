@@ -55,7 +55,7 @@ const RoleSchema = z.object({
   reasoningEffort: z.string().default('').description('Reasoning effort; empty keeps the adapter default.'),
   toolMode: z.string().default('all').description('Tool policy: all, or a custom allow-list.'),
   tools: z.array(z.string()).default([]).description('Allowed tool names when toolMode is custom.'),
-  denyCommands: z.array(z.string()).default([]).volatile()
+  denyCommands: z.array(z.string()).default([])
     .description('Optional RegExp sources denying matching shell commands for this role (at most 20 patterns of 200 characters).'),
   skills: z.array(z.string()).default([]).description('Private skill names; empty exposes the whole role skill folder.'),
   color: z.string().default('').description('Accent color for the roster.'),
