@@ -29,6 +29,8 @@ export const GENERAL_ROLE = Object.freeze({
   toolMode: 'all',
   tools: [],
   skills: [],
+  denyCommands: [],
+  codexSandbox: '',
   color: '',
 })
 
@@ -65,6 +67,7 @@ export function normalizeRole(input) {
     denyCommands: Array.isArray(role.denyCommands)
       ? [...new Set(role.denyCommands.map(text).filter(Boolean))]
       : [],
+    codexSandbox: text(role.codexSandbox),
     color: text(role.color),
   }
 }
@@ -139,6 +142,9 @@ export function validateRole(role) {
   }
   if (role.denyCommands.length > 20) {
     return `role "${role.id}" lists more than 20 denyCommands patterns`
+  }
+  if (role.codexSandbox !== '' && !['read-only', 'workspace-write', 'danger-full-access'].includes(role.codexSandbox)) {
+    return `role "${role.id}" has an invalid codexSandbox; use read-only, workspace-write, danger-full-access or empty`
   }
   for (const pattern of role.denyCommands) {
     if (pattern.length > 200) return `role "${role.id}" has a denyCommands pattern longer than 200 characters`

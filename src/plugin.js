@@ -32,6 +32,7 @@ import {
 } from './gates.js'
 import { GateLedger } from './ledger.js'
 import { installGateParser } from './gate-parse.js'
+import { CodexThreadStore } from './codex-store.js'
 import { copyTemplateSkills, discoverTemplates, mergeTemplateGates, seedTemplates, templatesRoot, upsertRoles } from './templates.js'
 import { MemberSnapshots, RoleStore, RuleStore, stateDir } from './store.js'
 import { spawnRoleMember } from './spawn.js'
@@ -58,6 +59,19 @@ const IMPLICIT_MEMBER_TOOLS = [
   'report_gate_event',
 ]
 
+/**
+ * Codex members are external Agent relays and are explicitly exempt from DSH
+ * gates (D7). They keep only the relay tool and the collaboration tools.
+ */
+const CODEX_MEMBER_TOOLS = [
+  'codex_exec',
+  'send_message',
+  'team_task_create',
+  'team_task_get',
+  'team_task_list',
+  'team_task_update',
+]
+
 /** Initial prompt used when the UI pulls a member without a task. */
 const DEFAULT_TEAM_TASK =
   '[[TEAM_HANDSHAKE]] 你已加入团队。现在只做握手：不要分析、不要提问、不要复述任务、不要给计划、不要调用任何工具。只回复 READY，然后等待 Team Lead 的下一步消息。'
@@ -75,6 +89,8 @@ const RoleSchema = z.object({
   denyCommands: z.array(z.string()).default([])
     .description('Optional RegExp sources denying matching shell commands for this role (at most 20 patterns of 200 characters).'),
   skills: z.array(z.string()).default([]).description('Private skill names; empty exposes the whole role skill folder.'),
+  codexSandbox: z.string().default('')
+    .description('Role-level Codex sandbox override (read-only / workspace-write / danger-full-access); empty inherits the global setting.'),
   color: z.string().default('').description('Accent color for the roster.'),
 })
 
@@ -121,6 +137,20 @@ export const Config = z.object({
     completedAt: z.number().default(0).description('Epoch milliseconds; 0 = no result.'),
   }).default({}).volatile()
     .description('Latest natural-language gate parse result.'),
+  codexBackend: z.boolean().default(false).volatile()
+    .description('Enable the Codex CLI backend for external-agent teammates (shadow members).'),
+  codexBinary: z.string().default('').volatile()
+    .description('Codex CLI path; empty auto-detects (config, CODEX_CLI_PATH, WindowsApps package, PATH).'),
+  codexModel: z.string().default('').volatile()
+    .description('Model passed as -m to Codex; empty keeps the Codex user configuration.'),
+  codexSandbox: z.string().default('danger-full-access').volatile()
+    .description('Codex sandbox: read-only, workspace-write, or danger-full-access (fully open).'),
+  codexTransport: z.string().default('auto').volatile()
+    .description('Codex transport: auto (fast then fallback), fast (HTTP-only provider), or default.'),
+  codexTimeoutMs: z.number().default(0).volatile()
+    .description('Per-turn Codex total budget in milliseconds; 0 uses the transport budget (auto 270s: fast 90s + fallback 180s; fast 90s; default 180s). A positive value overrides the total budget.'),
+  codexExtraArgs: z.array(z.string()).default([]).volatile()
+    .description('Extra Codex flags (at most 20); controlled arguments such as sandbox/model/cwd are rejected.'),
 })
 
 /** Install the plugin's runtime contributions. */
@@ -140,6 +170,7 @@ export function apply(ctx, config) {
   // Gate events are process-local: a restart empties every bucket, which is the
   // deliberate safe default (no stale approval survives a restart).
   const gateLedger = new GateLedger()
+  const codexThreads = new CodexThreadStore()
   const tools = createTools({
     ctx,
     config,
@@ -147,6 +178,7 @@ export function apply(ctx, config) {
     rules: ruleStore,
     roles: rolesReader,
     ledger: gateLedger,
+    codexThreads,
   })
 
   // The Settings page writes a natural-language request into the volatile
@@ -211,6 +243,9 @@ export function apply(ctx, config) {
     if (membership === undefined) return undefined
     const roles = mergeRoles(rolesReader.read())
     const snapshot = snapshots.get(membership.root.id, membership.name)
+    // D7: Codex-backed members are external Agents and skip gate evaluation
+    // entirely, including the user-facing `deny.tool` checks on `codex_exec`.
+    if (snapshot?.executor === 'codex') return undefined
     const role = snapshot?.frozen ?? roleForTarget(roles, membership.name)
     if (role === undefined) return undefined
     return { membership, roleId: role.id }
@@ -352,6 +387,7 @@ export function apply(ctx, config) {
           snapshots,
           ruleStore,
           roles: rolesReader,
+          ctx,
         })
       }
     } catch (error) {
@@ -692,8 +728,15 @@ export function roleForMember(snapshot, catalog, name) {
 }
 
 /** Install one member's role prompt, model route, tool policy, and skills. */
-function installMember({ agent, membership, scoped, register, tools, snapshots, ruleStore, roles }) {
+function installMember({ agent, membership, scoped, register, tools, snapshots, ruleStore, roles, ctx }) {
   const snapshot = snapshots.get(membership.root.id, membership.name)
+  // D7: Codex members are relay Agents for an external process. They keep only
+  // codex_exec + collaboration tools, get the relay persona, and never register
+  // report_gate_event or any role denyCommands guard.
+  if (snapshot?.executor === 'codex') {
+    installCodexMember({ agent, membership, scoped, register, tools, snapshots, roles, ctx })
+    return
+  }
   const role = roleForMember(snapshot, tools.catalog(), membership.name)
   if (role === undefined) return
   const roleId = role.id
@@ -751,6 +794,36 @@ function installMember({ agent, membership, scoped, register, tools, snapshots, 
   } catch (error) {
     ctxWarn(agent, `cannot install private skills for role "${roleId}": ${error.message}`)
   }
+}
+
+/**
+ * Install a Codex-backed relay member (D7).
+ *
+ * Codex members get the relay persona, only the `codex_exec` + collaboration
+ * tools, and **no** gate participation: no `report_gate_event`, no role tool
+ * whitelist, no denyCommands guard, no private skills.
+ */
+function installCodexMember({ agent, membership, scoped, register, tools, snapshots, roles }) {
+  const snapshot = snapshots.get(membership.root.id, membership.name)
+  const frozen = snapshot?.frozen ?? findRole(mergeRoles(roles.read()), roleForTarget(mergeRoles(roles.read()), membership.name)?.id ?? '')
+    ?? findRole(mergeRoles(roles.read()), membership.name)
+    ?? { id: snapshot?.roleId ?? membership.name, name: membership.name, description: '', persona: '', provider: '', model: '' }
+  register(scoped.systemPrompt.section({
+    name: 'agent-team-roles:member-persona',
+    order: scoped.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 100,
+    text: () => memberPersona({
+      frozen: findRole(mergeRoles(roles.read()), frozen.id) ?? frozen,
+      rulesText: '',
+      target: membership.name,
+      executor: 'codex',
+    }),
+  }))
+  const allowed = new Set(CODEX_MEMBER_TOOLS)
+  register(scoped.tools.guard((exec) => {
+    if (allowed.has(exec.name)) return undefined
+    return `Tool "${exec.name}" is not available to a Codex-backed member; use codex_exec, send_message, or team_task_*.`
+  }))
+  for (const definition of tools.codexMember) register(scoped.tools.register(definition))
 }
 
 /** Warn through the Agent's logger when one is reachable. */

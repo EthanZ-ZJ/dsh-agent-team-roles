@@ -92,13 +92,15 @@ export class MemberSnapshots {
   }
 
   /** Record one member's frozen configuration before creation. */
-  async record({ rootSessionId, name, roleId, frozen }) {
+  async record({ rootSessionId, name, roleId, frozen, executor = 'native', codex }) {
     const now = Date.now()
     const record = {
       version: STORE_VERSION,
       rootSessionId,
       name,
       roleId,
+      executor: executor === 'codex' ? 'codex' : 'native',
+      ...(executor === 'codex' && codex !== undefined ? { codex } : {}),
       frozen,
       createdAt: now,
       updatedAt: now,

@@ -10,6 +10,25 @@
 import { findRole, mergeRoles, roleForTarget } from './config.js'
 import { ruleView } from './rules.js'
 import { spawnRoleMember } from './spawn.js'
+import {
+  CODEX_CODES,
+  buildCodexPrompt,
+  checkCodexLogin,
+  codexError,
+  limitDiagnostic,
+  mapCodexFailure,
+  needsRotation,
+  pushLastAnswer,
+  readCodexConfig,
+  redactCodexText,
+  resolveCodexBinary,
+  resolveSandbox,
+  validateCodexConfig,
+} from './codex-cli.js'
+import { runTask } from './codex-runner.js'
+import { stateDir } from './store.js'
+import fs from 'node:fs/promises'
+import path from 'node:path'
 
 /** Resolve a configured role or throw a model-facing list of known ids. */
 function requireRole(roles, id) {
@@ -141,6 +160,9 @@ const MEMBER_VIEW = {
     model: { type: 'string', required: true },
     reused: { type: 'boolean', required: true },
     taskSent: { type: 'boolean', required: true },
+    executor: { type: 'string', required: true },
+    sandbox: { type: 'string', required: true },
+    threadId: { type: 'string', required: true },
   },
 }
 
@@ -172,6 +194,7 @@ const ROLE_VIEW = {
     toolMode: { type: 'string', required: true },
     tools: { type: 'array', required: true, items: { type: 'string' } },
     skills: { type: 'array', required: true, items: { type: 'string' } },
+    codexSandbox: { type: 'string', required: true },
     color: { type: 'string', required: true },
   },
 }
@@ -189,6 +212,7 @@ function roleView(role) {
     toolMode: role.toolMode,
     tools: [...role.tools],
     skills: [...role.skills],
+    codexSandbox: role.codexSandbox ?? '',
     color: role.color,
   }
 }
@@ -209,9 +233,145 @@ export function roleIdForAgent(ctx, snapshots, roles, agent) {
  * @param options - plugin context, live Config readers, stores, and catalog.
  * @returns the Lead and member tool definitions.
  */
-export function createTools({ ctx, config, snapshots, rules, roles, ledger }) {
+export function createTools({ ctx, config, snapshots, rules, roles, ledger, codexThreads }) {
   /** Read the live role catalog. */
   const catalog = () => mergeRoles(roles.read())
+
+  /** One in-flight Codex process per member (contract §5.7 single-flight). */
+  const codexBusy = new Set()
+
+  /** Resolve the caller's Codex membership/snapshot or throw. */
+  const codexMember = (agent) => {
+    if (agent === undefined) throw new Error('codex_exec requires a calling Agent')
+    const membership = ctx.agentTeams.tryMembership(agent)
+    if (membership === undefined || membership.role !== 'teammate') {
+      throw codexError(CODEX_CODES.DENIED_BY_CONFIG, 'disabled', 'codex_exec is available only to a Codex-backed teammate')
+    }
+    const snapshot = snapshots.get(membership.root.id, membership.name)
+    if (snapshot?.executor !== 'codex') {
+      throw codexError(CODEX_CODES.DENIED_BY_CONFIG, 'disabled', 'this member is not backed by Codex')
+    }
+    const role = findRole(catalog(), snapshot.roleId) ?? snapshot.frozen
+    return { membership, snapshot, role }
+  }
+
+  /** Execute one `codex_exec` turn, including thread reuse and one fallback. */
+  const runCodexTurn = async (args, exec) => {
+    const { membership, snapshot, role } = codexMember(exec.agent)
+    const codex = readCodexConfig(config)
+    if (!codex.backend) {
+      throw codexError(CODEX_CODES.DENIED_BY_CONFIG, 'disabled', 'Codex backend is disabled (codexBackend=false)')
+    }
+    const invalid = validateCodexConfig(codex)
+    if (invalid !== undefined) throw invalid
+    const sandbox = resolveSandbox(role, codex)
+    const detected = await resolveCodexBinary(codex)
+    if (detected.error !== undefined) throw detected.error
+    const login = await checkCodexLogin(detected.path)
+    if (!login.loggedIn) {
+      throw codexError(CODEX_CODES.NOT_LOGGED_IN, '', 'Codex CLI is not logged in; run `codex login` first')
+    }
+    const cwd = snapshot.codex?.cwd ?? snapshot.cwd ?? ''
+    let cwdStat
+    try {
+      cwdStat = await fs.stat(cwd)
+    } catch {
+      cwdStat = undefined
+    }
+    if (cwd === '' || cwdStat?.isDirectory() !== true) {
+      throw codexError(CODEX_CODES.DENIED_BY_CONFIG, 'invalid-cwd', `member workspace "${cwd}" is not a directory`)
+    }
+
+    const key = `${membership.root.id}\u0000${membership.name}`
+    if (codexBusy.has(key)) {
+      throw codexError(CODEX_CODES.BUSY, '', 'a Codex turn is already running for this member')
+    }
+    codexBusy.add(key)
+    const thread = codexThreads?.get(membership.root.id, membership.name)
+    const forceNew = args.resume === false || needsRotation(thread, sandbox)
+    const resumeThreadId = forceNew ? '' : (thread?.threadId ?? '')
+    if (forceNew && thread !== undefined) {
+      await codexThreads?.clearThread(membership.root.id, membership.name, {
+        rotatedFrom: thread.threadId,
+      })
+    }
+    const prompt = buildCodexPrompt({
+      role,
+      member: membership.name,
+      cwd,
+      task: args.task,
+      resumed: resumeThreadId !== '',
+      transport: codex.transport,
+      rotationSummary: forceNew && thread?.lastAnswers?.length > 0
+        ? `新线程接续。最近答复：\n${thread.lastAnswers.join('\n')}`
+        : '',
+    })
+    const lastMessageFile = path.join(stateDir(), 'tmp', `codex-last-${process.pid}-${Date.now()}.txt`)
+    await fs.mkdir(path.dirname(lastMessageFile), { recursive: true })
+    const runOnce = (threadId) => runTask({
+      binary: detected.path,
+      cwd,
+      prompt,
+      sandbox,
+      transport: codex.transport,
+      ...(codex.timeoutMs > 0 ? { timeoutMs: codex.timeoutMs } : {}),
+      resumeThreadId: threadId,
+      model: codex.model,
+      extraArgs: codex.extraArgs,
+      outputLastMessage: lastMessageFile,
+      signal: exec.signal,
+    })
+    try {
+      let result = await runOnce(resumeThreadId)
+      if (result.failure?.code === 'resume-not-found' && resumeThreadId !== '') {
+        await codexThreads?.clearThread(membership.root.id, membership.name, {
+          rotatedFrom: resumeThreadId,
+        })
+        result = await runOnce('')
+      }
+      if (result.ok !== true) {
+        const mapped = mapCodexFailure(result.failure)
+        // A captured thread id stays resumable even when the turn failed.
+        if (result.threadId !== '') {
+          await codexThreads?.record({
+            rootSessionId: membership.root.id,
+            name: membership.name,
+            roleId: snapshot.roleId,
+            threadId: result.threadId,
+            cwd,
+            sandbox,
+            transport: codex.transport,
+          }).catch(() => undefined)
+        }
+        throw codexError(mapped.code, mapped.reason, mapped.message)
+      }
+      const threadId = result.threadId !== '' ? result.threadId : resumeThreadId
+      await codexThreads?.record({
+        rootSessionId: membership.root.id,
+        name: membership.name,
+        roleId: snapshot.roleId,
+        threadId,
+        cwd,
+        sandbox,
+        transport: codex.transport,
+        turns: (forceNew ? 0 : (thread?.turns ?? 0)) + 1,
+        lastAnswers: pushLastAnswer(thread?.lastAnswers, result.text),
+      })
+      return {
+        ok: true,
+        text: redactCodexText(result.text),
+        threadId,
+        activities: result.activities.map((activity) => ({
+          ...activity,
+          ...(typeof activity.command === 'string' ? { command: redactCodexText(activity.command) } : {}),
+        })),
+        ms: result.ms,
+      }
+    } finally {
+      codexBusy.delete(key)
+      await fs.rm(lastMessageFile, { force: true }).catch(() => undefined)
+    }
+  }
 
   /** Gate event ledger; absent in some unit tests that never report events. */
   const gateLedger = ledger ?? {
@@ -256,7 +416,13 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger }) {
         type: 'string',
         enum: ['fresh', 'fork'],
         description:
-          'fresh starts without Lead history; fork inherits completed Lead turns. Defaults to fresh.',
+          'fresh starts without Lead history; fork inherits completed Lead turns. Defaults to fresh. Codex-backed members are always fresh.',
+      },
+      backend: {
+        type: 'string',
+        enum: ['native', 'codex'],
+        description:
+          'Execution backend. native (default) runs the member as a local DSH Agent; codex relays each turn to the local Codex CLI. codex does not support context:"fork".',
       },
     },
     output: jsonOutput({
@@ -277,6 +443,7 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger }) {
         name: args.name,
         description: args.description,
         context: args.context,
+        backend: args.backend,
         signal: exec.signal,
       })
       return { member }
@@ -389,6 +556,10 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger }) {
       type: 'array',
       items: { type: 'string' },
       description: 'Private skill names; empty exposes the whole role skill folder.',
+    },
+    codexSandbox: {
+      type: 'string',
+      description: 'Codex sandbox override for this role (read-only / workspace-write / danger-full-access); empty inherits the global setting.',
     },
     color: { type: 'string', description: 'Accent color for the roster.' },
   }
@@ -582,6 +753,50 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger }) {
     },
   })
 
+  /** Run one Codex CLI turn and return the relayed result. */
+  const codexExec = defineTool({
+    name: 'codex_exec',
+    description:
+      'Relay this round\'s task to the local Codex CLI and return its final answer and activity summary. The plugin keeps the Codex thread and resumes it automatically. Available only to Codex-backed members; the task text is forwarded verbatim.',
+    parameters: {
+      task: {
+        type: 'string',
+        required: true,
+        description: 'The new task text for this round, forwarded to Codex verbatim.',
+      },
+      resume: {
+        type: 'boolean',
+        description: 'false starts a new Codex thread; omitted/true resumes the recorded thread when possible.',
+      },
+    },
+    output: jsonOutput({
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        ok: { type: 'boolean', required: true },
+        text: { type: 'string', required: true },
+        threadId: { type: 'string', required: true },
+        activities: {
+          type: 'array',
+          required: true,
+          items: {
+            type: 'object',
+            properties: {
+              type: { type: 'string' },
+              status: { type: 'string' },
+              command: { type: 'string' },
+              exitCode: { type: 'integer' },
+            },
+          },
+        },
+        ms: { type: 'integer', required: true },
+      },
+    }),
+    execute(args, exec) {
+      return runCodexTurn(args, exec)
+    },
+  })
+
   return {
     lead: [
       spawnTeamMember,
@@ -594,6 +809,7 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger }) {
       deleteTeamRole,
     ],
     member: [rememberRoleRule, listMyRules, listTeamRoles, createTeamRole, reportGateEvent],
+    codexMember: [codexExec],
     spawnTeamMember,
     roleIdForAgent: (agent) => roleIdForAgent(ctx, snapshots, catalog(), agent),
     catalog,

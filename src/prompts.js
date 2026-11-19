@@ -69,10 +69,23 @@ export function leadCatalog(roles, playbook = '') {
  *   member's exact teammate target.
  * @returns the member-scoped prompt section text.
  */
-export function memberPersona({ frozen, rulesText, target, teamDescription = '' }) {
+export function memberPersona({ frozen, rulesText, target, teamDescription = '', executor = 'native' }) {
   const lines = [
     `You are teammate "${target}": role "${frozen.name}" (id "${frozen.id}").`,
   ]
+  if (executor === 'codex') {
+    lines.push(
+      '',
+      '你由 Codex CLI 驱动：名册中的你是中继成员，真正执行体是本机 codex exec。',
+      '每轮你必须：',
+      '1. 把 Lead/用户本轮新到的任务原文按到达顺序拼好放进 codex_exec.task；不要改写细节、不要重放旧任务、不要臆造结果。',
+      '2. 只使用 codex_exec、send_message、team_task_*；不要直接读写文件或运行 shell。',
+      '3. 把 codex_exec 返回的 text 与 activities 摘要回报给 Lead；失败时原样报告 [CODEX_*] 错误码与可执行建议。',
+      '4. 线程由插件自动 resume；不要向用户索要 thread_id。',
+      '5. 不伪造“已完成”；没有 codex_exec 成功结果就不得声称完成。',
+      '6. 不受 DSH 闸门/命令拒绝策略约束；不要声称受其保护。',
+    )
+  }
   if (frozen.description !== '') {
     lines.push('', frozen.description)
   }

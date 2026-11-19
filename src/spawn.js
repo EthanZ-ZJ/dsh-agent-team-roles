@@ -6,6 +6,7 @@
  * the snapshot so a failed creation cannot leave a phantom managed member.
  */
 
+import fs from 'node:fs/promises'
 import {
   DESCRIPTION_LIMIT,
   ROLE_ID,
@@ -15,6 +16,43 @@ import {
   roleForTarget,
   validateRole,
 } from './config.js'
+import {
+  CODEX_CODES,
+  codexError,
+  readCodexConfig,
+  resolveCodexBinary,
+  resolveSandbox,
+  validateCodexConfig,
+} from './codex-cli.js'
+
+/** Resolve a Codex member's execution context, or throw a closed-code error. */
+async function precheckCodex({ config, role, caller }) {
+  const codex = readCodexConfig(config)
+  if (!codex.backend) {
+    throw codexError(CODEX_CODES.DENIED_BY_CONFIG, 'disabled', 'Codex backend is disabled (codexBackend=false)')
+  }
+  const invalid = validateCodexConfig(codex)
+  if (invalid !== undefined) throw invalid
+  const sandbox = resolveSandbox(role, codex)
+  const detected = await resolveCodexBinary(codex)
+  if (detected.error !== undefined) throw detected.error
+  const cwd = typeof caller?.session?.header?.cwd === 'string' && caller.session.header.cwd.trim() !== ''
+    ? caller.session.header.cwd
+    : process.cwd()
+  if (!cwd.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(cwd)) {
+    throw codexError(CODEX_CODES.DENIED_BY_CONFIG, 'invalid-cwd', `session cwd "${cwd}" is not absolute`)
+  }
+  let stat
+  try {
+    stat = await fs.stat(cwd)
+  } catch {
+    throw codexError(CODEX_CODES.DENIED_BY_CONFIG, 'invalid-cwd', `session cwd "${cwd}" does not exist`)
+  }
+  if (!stat.isDirectory()) {
+    throw codexError(CODEX_CODES.DENIED_BY_CONFIG, 'invalid-cwd', `session cwd "${cwd}" is not a directory`)
+  }
+  return { codex, sandbox, cwd, binary: detected.path, version: detected.version }
+}
 
 /** Validate one requested teammate target. */
 function validateTarget(name) {
@@ -41,8 +79,8 @@ function requireRole(roles, id) {
   throw new Error(`unknown role "${id}"; configured roles: ${available}`)
 }
 
-/** Find a healthy existing member of one role in caller's Team. */
-function existingRoleMember({ ctx, snapshots, roles, caller, roleId }) {
+/** Find a healthy existing member of one role and executor in caller's Team. */
+function existingRoleMember({ ctx, snapshots, roles, caller, roleId, executor }) {
   const members = ctx.agentTeams.listMembers(caller)
     .filter((member) => member.role === 'teammate' && member.status !== 'failed')
     .map((member) => {
@@ -50,9 +88,14 @@ function existingRoleMember({ ctx, snapshots, roles, caller, roleId }) {
       const role = snapshot === undefined
         ? roleForTarget(roles, member.name)
         : findRole(roles, snapshot.roleId)
-      return { member, snapshot, roleId: role?.id ?? snapshot?.roleId }
+      return {
+        member,
+        snapshot,
+        roleId: role?.id ?? snapshot?.roleId,
+        executor: snapshot?.executor ?? 'native',
+      }
     })
-    .filter((candidate) => candidate.roleId === roleId)
+    .filter((candidate) => candidate.roleId === roleId && candidate.executor === executor)
   if (members.length === 0) return undefined
   return members.sort((left, right) => {
     const leftExact = left.member.name === roleId ? 0 : 1
@@ -80,14 +123,27 @@ export async function spawnRoleMember({
   name,
   description,
   context,
+  backend = 'native',
   signal,
 }) {
   const catalog = mergeRoles(roles)
   const role = requireRole(catalog, roleId)
   const invalid = validateRole(role)
   if (invalid !== undefined) throw new Error(invalid)
+  const executor = backend === 'codex' ? 'codex' : 'native'
+  if (executor === 'codex' && context === 'fork') {
+    throw codexError(CODEX_CODES.UNSUPPORTED_CONTEXT, '', 'backend:"codex" does not support context:"fork"')
+  }
+  const codex = executor === 'codex' ? await precheckCodex({ config, role, caller }) : undefined
 
-  const existing = existingRoleMember({ ctx, snapshots, roles: catalog, caller, roleId: role.id })
+  const existing = existingRoleMember({
+    ctx,
+    snapshots,
+    roles: catalog,
+    caller,
+    roleId: role.id,
+    executor,
+  })
   if (existing !== undefined) {
     const handshake = prompt.includes('[[TEAM_HANDSHAKE]]')
     if (!handshake) {
@@ -105,6 +161,9 @@ export async function spawnRoleMember({
       status: existing.member.status,
       context: existing.member.context ?? 'fresh',
       model: reusedRole.provider === '' ? 'session' : `${reusedRole.provider}/${reusedRole.model}`,
+      executor,
+      sandbox: existing.snapshot?.codex?.sandbox ?? codex?.sandbox ?? '',
+      threadId: '',
       reused: true,
       taskSent: !handshake,
     }
@@ -116,7 +175,7 @@ export async function spawnRoleMember({
     : role.id
   validateTarget(requested)
   const target = freeTarget(requested, used)
-  const kind = context === 'fork' ? 'fork' : 'fresh'
+  const kind = executor === 'codex' ? 'fresh' : context === 'fork' ? 'fork' : 'fresh'
   const label = (typeof description === 'string' && description.trim() !== ''
     ? description.trim()
     : role.description || role.name
@@ -127,6 +186,10 @@ export async function spawnRoleMember({
     rootSessionId: caller.id,
     name: target,
     roleId: role.id,
+    executor,
+    ...(executor === 'codex'
+      ? { codex: { cwd: codex.cwd, sandbox: codex.sandbox, transport: codex.codex.transport, binary: codex.binary } }
+      : {}),
     frozen,
   })
 
@@ -184,6 +247,9 @@ export async function spawnRoleMember({
     status: result.member.status,
     context: kind,
     model: frozen.provider === '' ? 'session' : `${frozen.provider}/${frozen.model}`,
+    executor,
+    sandbox: codex?.sandbox ?? '',
+    threadId: '',
     reused: false,
     taskSent: false,
   }
