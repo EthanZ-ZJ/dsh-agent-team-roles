@@ -79,6 +79,16 @@ test('auditGateList warns once per id even when several raw entries share it', (
   assert.equal(warnings.filter((message) => message.includes('same-broken')).length, 1, 'a repeated bad id is warned once')
 })
 
+test('auditGateList de-duplicates warnings per id even for different defects (v5)', () => {
+  const warnings = []
+  const base = { id: 'multi-defect', require: { event: 'ok', byRoles: ['checker'] } }
+  const badRole = { ...base, deny: { role: '', tool: ['bash'] } }
+  const badRegex = { ...base, deny: { role: 'worker', tool: ['bash'], commandPattern: '([bad' } }
+  const result = auditGateList([badRole, badRegex], (message) => warnings.push(message))
+  assert.ok(result.invalid.length >= 1)
+  assert.equal(warnings.filter((message) => message.includes('multi-defect')).length, 1, 'one warning per gate id')
+})
+
 test('a bad gate does not change a valid gate decision (fail-open)', () => {
   const ledger = new GateLedger()
   const decision = evaluateGates({
@@ -150,8 +160,33 @@ test('mergeTemplateGates rejects duplicate incoming ids and invalid template gat
   assert.deepEqual(invalid.gates, [])
 })
 
-test('the template apply handler uses the pure merge helper (D9 wiring)', () => {
-  assert.match(pluginSrc, /mergeTemplateGates\s*\(/, 'the command must delegate to mergeTemplateGates')
+test('mergeTemplateGates keeps an existing invalid gate with warnings but rejects invalid incoming (v5)', () => {
+  const invalidExisting = [{ id: 'legacy-bad', deny: { role: 'worker', tool: [] }, require: { event: 'ok', byRoles: ['checker'] } }]
+  const result = mergeTemplateGates(invalidExisting, [gate({ id: 'newcomer' })])
+  assert.equal(result.error, undefined, 'a legacy defect must not block a valid template apply')
+  assert.equal(result.gates.length, 2, 'the existing gate is kept and counted toward the cap')
+  assert.ok(result.warnings.some((warning) => warning.includes('legacy-bad')), 'the legacy defect is reported')
+  assert.ok(result.gates.some((entry) => normalizeGate(entry).id === 'newcomer'))
+
+  const badIncoming = mergeTemplateGates([], [{
+    id: 'template-bad',
+    deny: { role: 'worker', tool: [] },
+    require: { event: 'ok', byRoles: ['checker'] },
+  }])
+  assert.ok(badIncoming.error, 'invalid incoming gates still reject the whole apply')
+  assert.deepEqual(badIncoming.gates, [])
+})
+
+test('the template apply handler validates/merges gates before writing roles (v5)', () => {
+  const start = pluginSrc.indexOf("name: 'team-template'")
+  assert.ok(start >= 0)
+  const region = pluginSrc.slice(start, start + 4500)
+  const mergeAt = region.indexOf('mergeTemplateGates')
+  const rolesAt = region.indexOf('upsertRoles')
+  assert.ok(mergeAt >= 0, 'the handler must call mergeTemplateGates')
+  assert.ok(rolesAt > mergeAt, 'gates must be validated before roles are written')
+  assert.match(region, /warnings: \$\{/, 'success text reports warnings')
+  assert.match(region, /replaced: \$\{/, 'success text reports replaced ids')
 })
 
 // ---------------------------------------------------------------------------

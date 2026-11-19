@@ -184,8 +184,11 @@ function createRuntime(overrides = {}) {
       const call = stats.edits
       // The real editor's callback is synchronous; awaiting tolerates both.
       const next = await mutate(config)
-      if (typeof overrides.failEdit === 'function' && overrides.failEdit(call)) {
-        throw new Error(`injected configEditor failure on edit #${call}`)
+      if (typeof overrides.failEdit === 'function') {
+        const failure = overrides.failEdit(call)
+        if (failure === true) throw new Error(`injected configEditor failure on edit #${call}`)
+        if (failure instanceof Error) throw failure
+        if (typeof failure === 'string' && failure !== '') throw new Error(failure)
       }
       if (next === undefined || next === config) return
       const gatesBefore = JSON.stringify(config.gates)
@@ -1205,4 +1208,207 @@ test('the result gates count is 1..5 for status=ok', async (t) => {
   const result = runtime.config.gateParseResult
   assert.equal(result.status, 'ok')
   assert.ok(result.gates.length >= 1 && result.gates.length <= 5)
+})
+
+// ---------------------------------------------------------------------------
+// HMR transaction safety: never write Config from inside the event stack
+// ---------------------------------------------------------------------------
+
+test('the settings event performs no Config write in its synchronous phase (HMR regression)', async (t) => {
+  const runtime = setup(t, { nonce: '', text: '' })
+  // Let the startup microtask run against the empty request.
+  await runtime.settle(20)
+  runtime.config.gateParseRequest = { nonce: 'hmr-sync', text: DEFAULT_TEXT, at: Date.now() }
+  const handler = runtime.handlers.get('settings/document-updated')
+  assert.equal(typeof handler, 'function')
+
+  handler(NS)
+  assert.equal(runtime.stats.edits, 0, 'no config write while the Host transaction is still open')
+  assert.equal(runtime.stats.llmCalls, 0, 'the model call must also be scheduled off the event stack')
+
+  assert.equal(await runtime.waitResult(), true)
+  assert.equal(runtime.config.gateParseResult.status, 'ok')
+})
+
+test('a nested-transaction rejection is contained, audited, and recovered by a later write (HMR regression)', async (t) => {
+  const home = await tempHome(t)
+  const rejections = collectUnhandledRejections(t)
+  let clock = Date.now()
+  const runtime = setup(t, {
+    nonce: 'hmr-nested',
+    options: { retryDelaysMs: [60_000], now: () => clock },
+    failEdit: (call) => (call === 1
+      ? new Error('HMR transactions cannot be nested')
+      : undefined),
+  })
+  await runtime.emit()
+  assert.equal(await runtime.waitFor(() => runtime.stats.edits >= 1), true)
+  await runtime.settle(80)
+
+  assert.equal(runtime.stats.gateWrites, 0, 'the nested rejection must not write gates')
+  assert.equal(runtime.config.gateParseResult.status, '', 'the failed write is not projected yet')
+  const records = (await fs.readFile(auditPaths(home).current, 'utf8'))
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => JSON.parse(line))
+  const failure = records.find((entry) => entry.code === 'persist-failed')
+  assert.ok(failure, 'the rejection is audited as persist-failed')
+  assert.match(String(failure.detail), /HMR transactions cannot be nested/)
+
+  clock += 60_000 // the backoff has elapsed; a later write must recover
+  await runtime.parser.check()
+  assert.equal(await runtime.waitResult(), true, 'a later scheduled write recovers the cached result')
+  assert.equal(runtime.config.gateParseResult.status, 'ok')
+  assert.equal(runtime.stats.llmCalls, 1, 'the recovery must not call the model again')
+  assert.deepEqual(rejections, [], 'the nested rejection must not reach the Host as an unhandled error')
+})
+
+// ---------------------------------------------------------------------------
+// v5 retry scheduling: single writer, cancel safety, poll lifecycle
+// ---------------------------------------------------------------------------
+
+test('a scheduled retry never resurrects a cancelled request (v5)', async (t) => {
+  const runtime = setup(t, {
+    nonce: 'cancel-retry',
+    options: { retryDelaysMs: [200] },
+    failEdit: (call) => call === 1,
+  })
+  await runtime.emit()
+  assert.equal(await runtime.waitFor(() => runtime.stats.edits === 1), true)
+
+  // The client cancels: both fields are cleared while a retry is scheduled.
+  runtime.config.gateParseRequest = emptyRequest()
+  runtime.config.gateParseResult = emptyResult()
+  const editsAtCancel = runtime.stats.edits
+  await runtime.emit()
+
+  await runtime.settle(350) // let any scheduled retry fire
+  await runtime.parser.check()
+  await runtime.settle(100)
+
+  assert.equal(runtime.stats.edits, editsAtCancel, 'a late retry must not write after cancellation')
+  assert.equal(runtime.config.gateParseResult.status, '', 'a cancelled request must not receive a late result')
+  assert.equal(runtime.config.gateParseRequest.nonce, '')
+  assert.equal(runtime.stats.gateWrites, 0)
+})
+
+test('concurrent retry drives collapse into a single cached-result write (v5)', async (t) => {
+  let clock = Date.now()
+  const runtime = setup(t, {
+    nonce: 'retry-conc',
+    options: { retryDelaysMs: [10_000], now: () => clock },
+    failEdit: (call) => call === 1,
+  })
+  await runtime.emit()
+  assert.equal(await runtime.waitFor(() => runtime.stats.edits >= 1), true)
+  const editsBefore = runtime.stats.edits
+  clock += 10_000
+
+  await Promise.all([runtime.parser.check(), runtime.parser.check(), runtime.parser.check()])
+  await runtime.settle(80)
+
+  assert.equal(runtime.stats.edits - editsBefore, 1, 're-entrant retries must collapse into exactly one write')
+  assert.equal(runtime.stats.llmCalls, 1)
+  assert.equal(runtime.config.gateParseResult.status, 'ok')
+})
+
+test('per-nonce retry timers fire at 30s/60s/120s without re-running the model (v5 D11)', async (t) => {
+  let clock = Date.now()
+  const realSetTimeout = globalThis.setTimeout
+  const realClearTimeout = globalThis.clearTimeout
+  const timers = []
+  globalThis.setTimeout = (callback, ms) => {
+    const handle = { callback, ms, cleared: false }
+    timers.push(handle)
+    return handle
+  }
+  globalThis.clearTimeout = (handle) => {
+    if (handle !== null && typeof handle === 'object') handle.cleared = true
+  }
+  const flush = async () => {
+    for (let index = 0; index < 48; index += 1) await Promise.resolve()
+  }
+  try {
+    const runtime = setup(t, {
+      nonce: '',
+      text: '',
+      options: { retryDelaysMs: [30_000, 60_000, 120_000], now: () => clock },
+      failEdit: (call) => call <= 3,
+    })
+    await flush() // startup microtask sees no request
+    runtime.config.gateParseRequest = { nonce: 'timer-retry', text: DEFAULT_TEXT, at: Date.now() }
+    await runtime.parser.check()
+    assert.equal(runtime.stats.edits, 1, 'the first write fails')
+
+    const delays = []
+    for (const [index, delay] of [30_000, 60_000, 120_000].entries()) {
+      const timer = timers.find((handle) => handle.ms === delay && handle.cleared === false)
+      assert.ok(timer, `retry #${index + 1} must be scheduled at ${delay}ms`)
+      delays.push(timer.ms)
+      clock += delay
+      timer.callback()
+      // Audit appends are real fs I/O; yield to the real event loop (fake
+      // setTimeout must not be used here) before checking the next schedule.
+      await new Promise((resolve) => realSetTimeout(resolve, 25))
+      await flush()
+    }
+
+    assert.deepEqual(delays, [30_000, 60_000, 120_000])
+    assert.equal(runtime.stats.edits, 4, 'one initial write plus three retries')
+    assert.equal(runtime.stats.llmCalls, 1, 'timed retries must reuse the cached result')
+    assert.equal(runtime.config.gateParseResult.status, 'ok')
+    assert.equal(runtime.config.gateParseRequest.nonce, '')
+  } finally {
+    try {
+      // Dispose while the fake timers are still installed.
+      globalThis.clearTimeout = realClearTimeout
+    } catch {
+      // ignore
+    }
+    globalThis.setTimeout = realSetTimeout
+    globalThis.clearTimeout = realClearTimeout
+  }
+})
+
+test('a successful parse stops the fallback poll immediately (v5 D8)', async (t) => {
+  const realSetInterval = globalThis.setInterval
+  const realClearInterval = globalThis.clearInterval
+  const intervals = []
+  globalThis.setInterval = (callback, ms) => {
+    const handle = { callback, ms, cleared: false }
+    intervals.push(handle)
+    return handle
+  }
+  globalThis.clearInterval = (handle) => {
+    if (handle !== null && typeof handle === 'object') handle.cleared = true
+  }
+  try {
+    const runtime = setup(t, { nonce: 'poll-stop' })
+    await runtime.emit()
+    assert.equal(await runtime.waitResult(), true)
+    const poll = intervals.find((handle) => handle.ms === 1000)
+    if (poll !== undefined) {
+      assert.equal(poll.cleared, true, 'the poll stops as soon as the result is written')
+    } else {
+      assert.equal(intervals.length, 0, 'the event path must not leave a fallback poll armed')
+    }
+  } finally {
+    globalThis.setInterval = realSetInterval
+    globalThis.clearInterval = realClearInterval
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Prompt contract: the model must receive both shell ids (v5 §5.4/§5.5)
+// ---------------------------------------------------------------------------
+
+test('the prompt hands the model both shell ids, not only the platform shell', async (t) => {
+  const { runtime } = await runParse(t, { text: 'neutral requirement' })
+  const options = runtime.stats.llmOptions[0]
+  const user = options.messages[0].content.map((part) => part.text ?? '').join('\n')
+  assert.match(user, /shell tool ids:\s*\["bash","pwsh"\]/, 'both shell ids must be listed verbatim')
+  assert.match(user, /platform shell tool:\s*(?:bash|pwsh)/, 'the platform shell is named separately')
+  const fullPrompt = `${options.system}\n${user}`
+  assert.match(fullPrompt, /\bbash\b/)
+  assert.match(fullPrompt, /\bpwsh\b/)
 })

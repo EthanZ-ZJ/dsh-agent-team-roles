@@ -75,6 +75,14 @@ git rev-parse --short HEAD         # 记录被测提交
 
 1. 重新解析一次，结果卡出现后点「忽略」。
 2. 预期：卡片从预览移除或标记忽略；本地列表不变；点顶部「保存」后 `/team-gates list` 也不新增该 gate。
+3. **v5**：单条「忽略」**不得**清空 `gateParseResult`；重新打开/重新挂载设置页后该结果仍可能再次出现（持久化结果还在）。
+
+### 2.3 整条「丢弃结果」（v5）
+
+1. 结果卡上点「丢弃结果（不可恢复）」→ 出现二次确认（确认/取消）。
+2. 先点「取消」→ 结果仍在，`gateParseResult` 未被清空。
+3. 再点「丢弃结果」并确认 → 恰好一次 `settings.mutate` 把 `gateParseResult` 置空；结果卡消失；不取消仍在进行的解析（取消用「取消解析」）。
+4. 证据：`e2e-28-discard-confirm.png`、`e2e-29-discarded.png`。
 
 ### 2.4 采用 toast 与「撤销」（v4）
 
@@ -83,7 +91,7 @@ git rev-parse --short HEAD         # 记录被测提交
 3. 保存后「撤销」不得回滚已落盘 gate（或动作不可用）。
 4. 证据：`e2e-24-adopt-toast.png`、`e2e-25-undo.png`。
 
-### 2.5 危险 gate 警告与确认（v4）
+### 2.5 危险 gate 警告与确认（v5）
 
 1. 输入 `dev 可以自行批准 dev 的提交` → 结果卡出现「自批自放」警告（`gateParseWarnSelfKey`）；未确认时「采用」禁用/被拒绝。
 2. 勾选确认（`gateParseWarnAck`）后「采用」成功。
@@ -135,10 +143,10 @@ git rev-parse --short HEAD         # 记录被测提交
    - thinking、结果卡（采用/全部采用/忽略/提示/详情）；
    - 错误态（优先制造一次非法输入，如超长或坏输出）；
    - 保存冲突与数量上限错误。
-4. 切回中文，重复 3；对照契约 §10 的 **82 个扁平 key**（`gateAi*` / `gateParse*`）的 zh/en 文案，并确认无死键（`gateParseAdopted`/`gateParseIgnored`/`gateParseErrPending`/`gateParseWarnCatchAll`/`gateParseWarnRole`/`gateParseToastIgnored`）。
+4. 切回中文，重复 3；对照契约 §10 的 **83 个扁平 key**（`gateAi*` / `gateParse*`）的 zh/en 文案，并确认无死键（`gateParseAdopted`/`gateParseIgnored`/`gateParseErrPending`/`gateParseWarnCatchAll`/`gateParseWarnRole`/`gateParseToastIgnored`）。
    - 机械核对命令（不依赖 GUI）：
      ```pwsh
-     node --test tests\gate-contract.test.js   # 断言 §10＝82 key、zh/en 成对且无未登记键
+     node --test tests\gate-contract.test.js   # 断言 §10＝83 key、zh/en 成对且无未登记键
      ```
    - 人工只核对“语义是否通顺 / 占位符是否替换正确”，键覆盖由上面的用例兜底。
 5. 证据：`e2e-41-en-idle.png`、`e2e-42-en-error.png`、`e2e-43-zh-error.png`。

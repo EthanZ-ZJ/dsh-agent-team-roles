@@ -1,13 +1,14 @@
-# 契约：自然语言创建「工序闸门」（gates）— v4
+# 契约：自然语言创建「工序闸门」（gates）— v5
 
-- 状态：**已通过 Lead 评审并入开发（v2 D1–D5；v3 D6–D9；v4 追加 D10，均见 §15）**
+- 状态：**已通过 Lead 评审并入开发（v2 D1–D5；v3 D6–D9；v4 D10；v5 追加 D11，均见 §15）**
+- v5 变更摘要：i18n 增至 **83 键**（新增整条丢弃 `gateParseDiscardResult`）；per-nonce 退避定时器与 poll 解耦；客户端 poll 改 `setTimeout` 链且事件即关；取消/超时不复活；保存成功以宿主返回值为准并重设基线；危险 gate 条件写死；模板 report-and-skip（只校验 incoming）与 apply 顺序；读侧 warn 按 gate id 去重。
 - v4 变更摘要：i18n 定稿 **82 键**并清死键；D9 层 3 写实（pre/post-execute 原始 gates 每 id 每进程 warn）；新增放弃（give-up）路径；退避/重试对象明确（persist 只重写缓存）；D5 `eventSeen` 判据；保存校验分档；id fallback/形状语义边界/取消时序/生命周期等 10 项 CR 细则。
 - v3 变更摘要：i18n 改扁平 `gateAi*`/`gateParse*`（点号键废弃）；`persist-failed` 仅审计；轮询/重试/退避边界；R4 三层（保存/模板/读取）；schema 边界、metadata clamp、可执行 id 规则、旧 Host mock 用例、订阅生命周期。
 - v1（新任务 + Agent 解析 + `gateDraft` 回填）在以下事实核对后废弃：`settings.section` 没有 `sessionId`（`slots.d.ts:154-157`），从设置页打开会话成本高且偏离“解析后回填表单”的诉求。v2 起改为**宿主辅助 LLM 解析 + Config 请求/结果握手 + 客户端回填表单**。
 - 范围：插件 `dsh-agent-team-roles`（根目录 `docs/gates-nl-ui-contract.md`）；本文件只定契约，DEV/TSE 负责 `src/`、`client.js`、`tests/`、`README.md`
 - 基线：DSH desktop `0.2.2-rc.1`（build `c59d10a`），插件 `0.1.0`；GUI `http://127.0.0.1:63036`
 - 读者：Lead（拍板）、DEV（实现）、TSE（回归）、CR（逐条核对 Q1–Q10 与 R1–R4）
-- 章节索引（v4 最终编号）：§9 i18n 约定；**§10 = 扁平 `gateAi*`/`gateParse*` 文案契约（82 键）**；**§11 = Q1–Q10**；**§12 = R1–R4 处置**；§14 = 验收；**§15 = Lead 决策记录 D1–D10（已批准）**；§16 = DEV/TSE 交接。
+- 章节索引（v5 最终编号）：§9 i18n 约定；**§10 = 扁平 `gateAi*`/`gateParse*` 文案契约（83 键）**；**§11 = Q1–Q10**；**§12 = R1–R4 处置**；§14 = 验收；**§15 = Lead 决策记录 D1–D11（已批准）**；§16 = DEV/TSE 交接。
 
 ---
 
@@ -20,13 +21,13 @@
 5. 保存失败不再 `await load()` 覆盖本地（修复 R1）：只刷新 revision 与解析状态，保留本地 `engine`。
 6. `gateParseRequest` / `gateParseResult` 是 **volatile** 字段，会随 profile patch 持久化：请求原文在解析完成后原子清除；**结果不会自动清理**，保留至下次请求/保存/丢弃（README 披露）。这是 R2/R3 的**最小持久化边界**（不引入全局状态库）。
 7. 一并修复既有客户端缺陷（Q6）：编辑态改 id 不查重（`client.js:908-910`）与 `upsert` 按 id 静默覆盖（`client.js:737-743`）；解析回填依赖 create 语义，必须同轮修。
-8. i18n 使用**扁平 `gateAi*`/`gateParse*`**（§10，共 82 个 key）；点号键废弃；字典不得有未登记键；`persist-failed` 仅审计、无客户端 key。
+8. i18n 使用**扁平 `gateAi*`/`gateParse*`**（§10，共 83 个 key）；点号键废弃；字典不得有未登记键；`persist-failed` 仅审计、无客户端 key。
 9. 事件优先、轮询兜底：每 nonce 记 `eventSeen`；宿主轮询仅在 pending 且无事件时存在；首次 + ≤3 次重试（30/60/120s），persist 只重写缓存；客户端 `$on` + 2s `describe()` 轮询（同条件，卸载即停）。
 10. schema 边界：`GateSchema` 只校验形状，`validateGate` 是唯一语义门；解析结果写回前宿主已自校验。
 
 ---
 
-## 1. 调研事实（v2–v4 修订）
+## 1. 调研事实（v2–v5 修订）
 
 ### 1.1 平台事实（DEV 已核实，直接引用）
 
@@ -217,9 +218,9 @@ ctx.effect(() => ctx.on('settings/document-updated', (payload) => {
 - 只处理本插件 namespace；`ctx.on` 不需要新增 inject。收到事件时对当前 pending nonce 置 `eventSeen=true`，并停止该 nonce 的轮询。
 - `onSettingsChanged()`：读 `gateParseRequest`；空/过期/已处理（内存 `lastHandledNonce` 或 `result.nonce` 相同）→ 返回；有在途 → 按 §4.1 中止旧流/记录最新；否则启动解析。
 - **读旧值防护**：若事件到达时读到的 `nonce` 与上一次相同、但 revision 已前进，100ms 后重读一次再决定（防止极端情况下 Config 引用晚于事件更新）。
-- **宿主轮询（仅兜底）**：正常模式仅在 `gateParseRequest` 非空**且该 nonce 尚未收到事件（`eventSeen=false`）**时启用；延后到 pending ≥2 个轮询周期（约 2s）仍无事件；间隔 1s；一旦 `eventSeen=true`、请求被清空或插件 dispose 立即停止，不得常驻。正常路径必须记录来源 `via event`（日志与审计行带 `source:'event'|'poll'`）；`poll` 仅用于事件不可达时。
+- **宿主轮询（仅兜底）**：正常模式仅在 `gateParseRequest` 非空**且该 nonce 尚未收到事件（`eventSeen=false`）**时启用；延后到 pending ≥2 个轮询周期（约 2s）仍无事件；间隔 1s；一旦 `eventSeen=true`、请求被清空或插件 dispose 立即停止，不得常驻。正常路径必须记录来源 `via event`（日志与审计行带 `source:'event'|'poll'`）；`poll` 仅用于事件不可达时。**停止 poll 不应停止 persist 重试定时器**——二者解耦，否则“收到事件即停 poll”与“persist 重试最多 3 次”无法同时满足（实现发现的契约漏洞，必须按此写）。
+- **重试与放弃（give-up）**：首次 + 最多 3 次重试，间隔 `30s → 60s → 120s`，由 **per-nonce 定时器**驱动（`dispose`、nonce 变化、请求被清空时清理定时器）。**persist 失败的重试只重写已缓存的 result，绝不重跑模型**；模型失败不做宿主重试（由用户以新 nonce 重试）。重试耗尽后只 warn/审计并记录 `lastHandledNonce`，**不写 `stale-request`、不主动清请求**；残留请求由客户端在 90s 超时/取消时 `set 空请求 + 空结果` 清除。新 nonce 重置计数与 `eventSeen`。
 - **D5 降级例外**：若首日实测证明 `settings/document-updated` 在宿主侧不可达，允许一个**插件生命周期内的轻量 1s ticker**作为降级（只读 `gateParseRequest`，空则立即返回、不做工作；dispose 停止）；这是“轮询仅 pending 时有工作”的唯一例外，README 必须记录降级原因与实测结论。
-- **重试与放弃（give-up）**：首次 + 最多 3 次重试，间隔 `30s → 60s → 120s`。**persist 失败的重试只重写已缓存的 result，绝不重跑模型**；模型失败不做宿主重试（由用户以新 nonce 重试）。重试耗尽后只 warn/审计并记录 `lastHandledNonce`，**不写 `stale-request`、不主动清请求**；残留请求由客户端在 90s 超时/取消时 `set 空请求 + 空结果` 清除。新 nonce 重置计数与 `eventSeen`。
 - 插件启动时：`queueMicrotask(onSettingsChanged)` + 一个短延迟重试，覆盖 crash 遗留（配合 `at` TTL）。
 - **D5 可证伪口径**：一次正常解析的日志/审计必须显示 `source:'event'`；只有事件不可达（首日实测失败）时才允许 `source:'poll'`，且 README 记录该降级。
 
@@ -231,7 +232,7 @@ const defaultModel = ctx.get('agentDefaultModel')?.currentSelection?.()
 // { provider, model, reasoningEffort? }；缺失/空 → no-route
 ```
 
-- **不新增 Config 路由覆盖**（v1）：使用部署默认模型；无默认路由时返回 `no-route`，客户端给“去设置默认模型 / 手动填写”的降级提示。
+- **不新增 Config 路由覆盖**（本轮）：使用部署默认模型；无默认路由时返回 `no-route`，客户端给“去设置默认模型 / 手动填写”的降级提示。
 - 不用会话模型（设置页无会话）；不调用 `subagents`。
 - `llm`/`agentDefaultModel` 均不写入 `inject`、不新增 peerDependency（Q9）。
 
@@ -373,8 +374,9 @@ gateParseResult = {
 | 两次请求快速到达 | 单飞；旧流 abort；只处理最新 nonce |
 | 客户端在解析中关闭页面 | 宿主照常完成并写结果；客户端重开后按 `completedAt` 展示（≤10min 为可消费窗口；结果不自动清理） |
 | 客户端取消 | 写空请求 → 宿主事件回调 abort 当前流；**流返回/写结果前重读 nonce，不匹配即丢弃**；若宿主已完成并写入，客户端以“无 pending”忽略 |
-| `configEditor.edit` 失败 | 审计 `persist-failed` + warn；**只重写缓存 result、不重跑模型**；首次 + ≤3 次（30/60/120s）；客户端 90s 超时/取消时清空请求+结果（该码不显示给用户） |
+| `configEditor.edit` 失败 | 审计 `persist-failed` + warn；**只重写缓存 result、不重跑模型**；由 per-nonce 定时器重试（首次 + ≤3 次，30/60/120s）；**每次写前重读 `gateParseRequest.nonce`，不匹配即丢弃（retry 路径同样适用）**；客户端 90s 超时/取消时清空请求+结果（该码不显示给用户） |
 | 重试耗尽（give-up） | 只 warn/审计并记录 `lastHandledNonce`；**不写 `stale-request`、不主动清请求**；残留请求由客户端 90s 超时/取消 `set 空请求+空结果` 清除 |
+| 取消后结果“复活” | 宿主写结果前重读 nonce，不匹配即丢弃；客户端 `matchesPending = pendingNonce !== '' && result.nonce === pendingNonce`，pending 为空时恒为 false，不展示/不消费旧结果 |
 | 插件卸载/重启 | dispose abort 在途流；遗留请求按 `at` TTL 处理 |
 | 多设置页实例 | 同一结果字段，后写者覆盖；revision 冲突由客户端保存路径处理 |
 
@@ -394,19 +396,20 @@ gateParseResult = {
 ```
 
 - 前置：`describe().writable === true`、`ctx.remote.settings` 存在、namespace value 含 `gateParseRequest`/`gateParseResult`（旧 Host 缺字段 → 禁用 AI 入口给 `gateAiUnavailable`）；否则禁用入口并给 `settingsUnavailable`。
-- 客户端在 thinking 期间：每个 nonce 维护 `eventSeen`。订阅 `$on('settings/document-updated')`；**2s `describe()` 轮询延后到 pending ≥2 个周期（约 4s）且 `eventSeen=false` 才启动**，一旦收到事件即停（`eventSeen=true`）。`$on`、轮询、90s 计时器都必须随组件卸载/取消/解析结束清理（`ctx.effect`/`useEffect` cleanup，不得遗留）。**每次 mutate 成功后都用响应更新 `setRevision`**（请求、取消、保存、清结果都一样）。
+- 客户端在 thinking 期间：每个 nonce 维护 `eventSeen`。订阅 `$on('settings/document-updated')`；**收到事件即置 `eventSeen=true` 并清除轮询定时器**。2s `describe()` 轮询**首个 tick 延后 ≥4s（2 个周期）**且仅当 `eventSeen=false` 时启动，使用 **`setTimeout` 链**（每次完成后排下一次），不用固定 `setInterval`；`$on`、轮询、90s 计时器都必须随组件卸载/取消/解析结束清理（`ctx.effect`/`useEffect` cleanup，不得遗留）。**每次 mutate 成功后都用响应更新 `setRevision`**（请求、取消、保存、清结果都一样）。
 - 90s 超时：视为放弃，执行与「取消」相同的清理 —— 一次 mutate **`set gateParseRequest=空` + `set gateParseResult=空结果`**；UI 回 idle（可重试）。
 - 取消：一次 mutate **`set gateParseRequest=空` 与 `set gateParseResult=空结果`**；UI 回 idle。宿主在事件中 abort；若结果在清空前已写入，会被这次清空覆盖（用户取消即丢弃）。
 - 重试：用新 nonce 重发同一文本（旧结果被清，`eventSeen` 重置）。
 
 ### 6.2 结果处理
 
-- 读 `gateParseResult`，**只有 `result.nonce === pendingNonce` 才可消费**；陈旧 nonce 的结果只展示为“过期”，不得采用。
+- 读 `gateParseResult`：定义 `matchesPending = pendingNonce !== '' && result.nonce === pendingNonce`；**只有 `matchesPending === true` 才可自动消费**。`pendingNonce` 为空（idle/已取消/已超时）时恒为 false，旧结果不得自动“复活”或展示为可操作。**例外（用户主动）**：用户显式点「采用」一个已完成的 result 时，可先把 `pendingNonce` 设为该 `result.nonce` 再执行采用；取消/超时会清空结果字段，因此没有可复活对象。陈旧 nonce 的结果只展示为“过期”，不得采用。
   - `completedAt` 为 0 或超过 10 分钟 → 不作为可消费结果；**客户端不自动清理**（清理由下一次请求/保存/「丢弃」触发），10 分钟只是展示/消费窗口。
   - `status === 'ok'`：预览卡片（复用 GateCard 的只读摘要，`client.js:778-869`），每条显示最终 id、deny、key、warnings/note。操作：
     - 「采用」：**本地**校验（§6.4）后加入 `engine.gates`（create 语义），标记 `parseConsumedNonce = result.nonce`；不写盘。危险 gate（全 shell 拦截 / 自批自放）必须先通过 `gateParseWarnAck` 确认（`gateParseWarnAllShell`/`gateParseWarnSelfKey`）。
     - 「全部采用」：逐条采用，任一条非法/未确认危险警告则整体不采用并报错。
-    - 「忽略」：本地丢弃该条，**无 toast**（结果字段保留，直到保存/下次请求）。
+    - 「忽略」：**只丢该条预览**（当前挂载的本地列表），结果字段保留、不写盘；重新挂载后可能再次出现（持久化结果仍在），不视为“丢弃结果”。
+    - 「丢弃结果」（`gateParseDiscardResult`）：**整条丢弃 + 二次确认**，一次 mutate `set gateParseResult=空结果`；只在结果已完成时可点，不取消仍在进行的解析（取消用「取消解析」）。
     - 采用成功显示 `gateParseToastAdopted` + `gateParseUndo`；Undo 只撤销尚未保存的本次采用。
   - `status === 'needs-input'`：显示 `note` + 「补充描述并重试」（预填原文）→ 新请求。
   - `status === 'error'`：显示 `code` 的本地化文案 + `detail` 次要行；保留原文供重试；提供「手动填写」入口。
@@ -435,12 +438,13 @@ gateParseResult = {
 
 `saveEngine` 在 `writeNamespaceFields` 之前（R4 边界见 §12），按“本次是否改动了 gates”分档：
 
-1. **基线跟踪**：`load()` 时记录 `gatesBaseline = 深拷贝(engine.gates)`；保存前比较 `engine.gates` 与 `gatesBaseline`（深比较，含顺序/id/字段）。
-2. **未改动 gates（与基线一致）**：legacy 非法 gate、引用已删角色的 gate **只警告、不阻塞**保存（其它字段照常写入）；警告列出 gate id/原因。
+1. **基线跟踪**：`load()` 时记录 `gatesBaseline = 逐条 normalizeGate(深拷贝(engine.gates))`；保存前把 `engine.gates` 同样逐条规范化后与基线做**深比较**（id/字段/顺序；忽略 schema 默认空对象差异）。比较口径固定为“规范化后深比较”，不得直接比原始对象，避免分档漂移。
+2. **未改动 gates（规范化后与基线一致）**：legacy 非法 gate、引用已删角色的 gate **只警告、不阻塞**保存（其它字段照常写入）；警告列出 gate id/原因。
 3. **改动了 gates**：必须全部合法 —— 逐条 `validateGateObject`（语义） + 条数 ≤ `MAX_GATES(50)` + **id 集合唯一** + **角色存在性**（`deny.role`/`byRoles`/`commandSuccess.role`/`invalidateOn.role` 均在**当前 Host 已保存的 roles**（`describe().value.roles` + 内置 `general`）中，且 ≠ `lead`）；任一失败不 mutate。若用户同时改了 roles 但尚未保存，先保存 roles 再保存 gates。
 4. **`gatesDisabled` 过滤（要求实现，始终执行）**：仅保留仍存在于最终 `gates` 的 id；无论 gates 是否改动都写入过滤后的集合。
 5. 失败：`setError` 指出 gate id 与原因，**不 mutate**；本地内容保留，用户可修复/删除后重存。
 6. 全部通过才 mutate；写 `gateParseResult`/清空时先 `describe()` 判字段存在；旧 Host 缺字段则跳过该 op（不阻断 gates 保存）。
+7. **保存成功回写**：`engine.gates` 与 `engine.gatesDisabled` **必须采用宿主返回的 `view.value.gates` / `view.value.gatesDisabled`**（不是本地提交值），`revision` 用响应值更新，并用返回的 gates 重置 `gatesBaseline`（同样逐条 normalize + 深拷贝）。
 
 ### 6.5 GateForm / upsert 修复（Q6）
 
@@ -512,7 +516,7 @@ gateParseResult = {
 
 ## 10. i18n 文案契约（扁平 `gateAi*` / `gateParse*`；PM 提供文案，键名以本契约为准）
 
-> 共 **82** 个 key（相对 v3：`gateParseAdopted` 更名 `gateParseToastAdopted`、新增 `gateParseUndo` 与危险三键；删除 `gateParseIgnored`、`gateParseErrPending`；`gateParseWarnCatchAll`/`gateParseWarnRole`/`gateParseToastIgnored` 不登记）。`zh`/`en` 同 key；下表“占位符”为**由数据/状态注入**的变量，“用途”描述该 key 出现的状态。数值类占位符由 client 格式化后传入（如 `{age}` 传“3 分钟”而非毫秒）。
+> 共 **83** 个 key（相对 v4：新增 `gateParseDiscardResult`；其余键名/占位符不变）。`zh`/`en` 同 key；下表“占位符”为**由数据/状态注入**的变量，“用途”描述该 key 出现的状态。数值类占位符由 client 格式化后传入（如 `{age}` 传“3 分钟”而非毫秒）。
 
 ### 10.1 入口与对话框（12）
 
@@ -540,7 +544,7 @@ gateParseResult = {
 | `gateAiCancelParse` | — | 取消解析按钮 |
 | `gateAiThinkingTimeout` | `{seconds}` | 客户端 90s 兜底超时提示 |
 
-### 10.3 结果与操作（16）
+### 10.3 结果与操作（17）
 
 | key | 占位符 | 用途/语义 |
 |---|---|---|
@@ -559,6 +563,7 @@ gateParseResult = {
 | `gateParseNote` | `{note}` | 成功结果的假设说明 |
 | `gateParseToastAdopted` | `{ids}` | 采用成功 toast（单条传一个 id，批量传逗号/列表拼接后的 ids；带「撤销」） |
 | `gateParseUndo` | — | 采用后的「撤销」动作；只撤销未保存的本地采用 |
+| `gateParseDiscardResult` | — | **整条丢弃**解析结果（按钮 + 二次确认；清空 `gateParseResult`，与单条「忽略」区分） |
 | `gateParseStale` | `{age}` | 结果超过 10min，提示丢弃 |
 
 ### 10.4 错误（15）
@@ -662,9 +667,11 @@ gateParseResult = {
 
 | key | 占位符 | 用途/语义 |
 |---|---|---|
-| `gateParseWarnAllShell` | — | `deny.commandPattern` 为空且 `deny.tool` 含 `bash`/`pwsh`：该 gate 会拦截该角色的全部 shell 命令 |
-| `gateParseWarnSelfKey` | — | 钥匙产生者包含被拦截角色自身（`require.byRoles` 含 `deny.role`，或 `commandSuccess.role === deny.role`）：等于自批自放 |
-| `gateParseWarnAck` | — | 危险警告的确认动作/复选框标签（未确认不得「采用」） |
+| `gateParseWarnAllShell` | — | **条件**：`deny.tool` 含 shell 工具（`bash` 或 `pwsh`）且 `deny.commandPattern` 为空 → 该 gate 会拦截该角色的全部 shell 命令（整工具拦截） |
+| `gateParseWarnSelfKey` | — | **条件**：钥匙产生者包含被拦截角色自身（`require.byRoles` 含 `deny.role`，或 `require.commandSuccess.role === deny.role`）→ 自批自放 |
+| `gateParseWarnAck` | — | **复选框标签 + 采用前置校验**：勾选后才允许「采用/全部采用」；未勾选时按钮禁用并提示 |
+
+> 警告只在上述**条件为真**时显示；`gateParseWarnAck` 是确认控件文案，本身不是“defined 即警告”。危险判定由 client 按 gate 结构计算，不依赖模型文案。
 
 > 已删除未落地的危险键：`gateParseWarnCatchAll`、`gateParseWarnRole`（不实现、不登记）。忽略动作**无 toast**（`gateParseToastIgnored` 已删除）。
 
@@ -678,12 +685,13 @@ gateParseResult = {
 | `gateAiA11yResult` | — | 结果区 `role=status` |
 | `gateParseSettingsUpdated` | — | 配置在别处更新时的提示（**权威 key**；不再用 `settingsUpdatedElsewhere` 兜底） |
 
-### 10.9 key 总数核对（82）
+### 10.9 key 总数核对（83）
 
-`12 + 4 + 16 + 15 + 10 + 17 + 3 + 5 = 82`。
+`12 + 4 + 17 + 15 + 10 + 17 + 3 + 5 = 83`。
 
-- 相对 v3：`gateParseAdopted` 更名 `gateParseToastAdopted`（不增计数）；+ `gateParseUndo`；+ 危险三键；− `gateParseIgnored`（忽略静默）；− `gateParseErrPending`（无行为规范，不补）；`gateParseWarnCatchAll`/`gateParseWarnRole`/`gateParseToastIgnored` 不登记。
-- **字典反向约束**：`client.js` 的 `zh`/`en` 字典**不得有本清单之外的 `gateAi*`/`gateParse*` 键**；TSE 增加反向断言（遍历字典 key 集合 === §10 清单；中英集合相等）。
+- 相对 v4：仅新增 `gateParseDiscardResult`（整条丢弃结果）；其余 82 键不变。
+- 历史清理（v4 已定）：`gateParseAdopted` 更名 `gateParseToastAdopted`；删 `gateParseIgnored`（忽略静默）、`gateParseErrPending`；`gateParseWarnCatchAll`/`gateParseWarnRole`/`gateParseToastIgnored` 不登记。
+- **字典反向约束（含例外）**：`client.js` 的 `zh`/`en` 字典**不得有本清单之外的 `gateAi*`/`gateParse*` 前缀键**；TSE 增加反向断言（遍历字典 key 集合 === §10 清单；中英集合相等）。**例外**：既有 `gate*`/`gateForm*`/`gateErr*`/`settingsUpdatedElsewhere` 等历史键不属于 `gateAi*`/`gateParse*` 前缀，不在本清单约束内；但 `gateAiFreshHint`/`gateParseSettingsUpdated` 是自然语言流程的权威 key。
 - `gateAiFreshHint`、`gateParseSettingsUpdated` 为唯一权威 key；不再保留“复用现有 key”的备选口子。
 
 ---
@@ -712,7 +720,7 @@ gateParseResult = {
 
 ### Q3. 模型路由来源与无路由降级
 
-**答：`ctx.get('agentDefaultModel')?.currentSelection()`**（`dsh-agent-default-model/README.zh.md:50-55`），得到 `{provider, model, reasoningEffort?}`；设置页没有会话，因此不用会话模型。v1 不新增 Config 路由覆盖（避免模型 id 漂移）；无服务/无选择 → `no-route`，客户端提示“先在设置中配置默认模型”并保留手动入口，不自动挑 provider、不回退到别家模型。`llm-unavailable` 同理。
+**答：`ctx.get('agentDefaultModel')?.currentSelection()`**（`dsh-agent-default-model/README.zh.md:50-55`），得到 `{provider, model, reasoningEffort?}`；设置页没有会话，因此不用会话模型。本轮不新增 Config 路由覆盖（避免模型 id 漂移）；无服务/无选择 → `no-route`，客户端提示“先在设置中配置默认模型”并保留手动入口，不自动挑 provider、不回退到别家模型。`llm-unavailable` 同理。
 
 ### Q4. 模型输出契约
 
@@ -777,7 +785,7 @@ gateParseResult = {
 **答：契约放在插件根 `docs/`（即本文件）；`package.json` 的 `files` 增加 `docs/**/*.md`；`README.md` 增补用户操作段。**
 
 - `docs/gates-nl-ui-contract.md` 是唯一契约源；`README.md` 只写用户视角的“怎么用”，并链接本文件。
-- README 必须同步更新：**gates 数据位置**（`Config.gates` / 模板 `gates`）、**模板 apply 四件事**（roles upsert、playbook/activeTemplate、gates 合并含 `replaced: <ids>`、skills 复制）、**已知限制三项**（事件来源/轮询降级；原文短暂写入、结果不自动清理、审计文件；无默认模型/旧 Host 缺字段/事件不可达）。
+- README 必须同步更新：**gates 数据位置**（`Config.gates` / 模板 `gates`）、**模板 apply 四件事**（roles upsert、playbook/activeTemplate、gates 合并含 `replaced: <ids>` 与 `warnings`、skills 复制）、**已知限制三项**（事件来源/轮询降级；原文短暂写入、结果不自动清理、审计文件；无默认模型/旧 Host 缺字段/事件不可达）、**单条忽略 vs 整条丢弃**边界。
 - 加入 `files` 让安装包带契约，便于 CR/后续维护；体积可忽略。
 - 不把契约放仓库根（工作区根不是插件发布单元）。
 
@@ -810,8 +818,13 @@ gateParseResult = {
 
 **结论：三层边界分开处理，不能只修客户端。**
 1. **客户端保存路径**：按 §6.4 **分档**——未改动 gates 时 legacy 非法/引用已删角色只警告；改动了 gates 时逐条 `validateGateObject` + 条数 + **id 集合唯一 + 角色存在性**；`gatesDisabled` 始终过滤为现存 id；任一失败（改动档）不 mutate。
-2. **模板 apply**：`readTemplate` 已做 `normalizeGate`+`validateGate`（`src/templates.js:63-75`），保留；`apply` 遇到与现有 gate 同 id 时必须覆盖，并在成功文本中**包含 `replaced: <ids>`**（例如 `gates installed: a (added); replaced: b`），不得静默覆盖；总量仍受 `MAX_GATES` 约束。
-3. **宿主读取侧（pre-execute 与 post-execute 两处，`src/plugin.js:176-233`）**：每次评估前对**原始 `gates` 列表**逐条 `validateGate`（在 `normalizeGates` 去重之前检查，确保被去重丢弃的重复 id 也能被看到）；非法 gate 每 id 每进程只 warn 一次；**不阻断执行**（fail-open），有效 gate 行为不变；不得每步刷日志。
+2. **模板 apply（`mergeTemplateGates`，report-and-skip）**：
+   - **只校验 incoming**（逐条 `normalizeGate`+`validateGate`）；incoming 非法项跳过并计入 `warnings`（不因单个坏 gate 拒绝整模板）。
+   - **existing 非法项保留**（不重新校验/不丢弃），并**计入 `MAX_GATES`**；合并前先校验 gates，再写 roles（或同一事务），避免 gates 失败留下半套 roles。
+   - 同 id 覆盖：incoming 同 id 替换 existing，记录 `replaced: <ids>`；新 id 追加。
+   - 合并后超 `MAX_GATES`：跳过超出的 incoming 并写 `warnings`（仍保留 existing，不丢已有配置）。
+   - 成功文本必须含 `warnings: [...]` 与 `replaced: <ids>`（无则空数组）。
+3. **宿主读取侧（pre-execute 与 post-execute 两处，`src/plugin.js:176-233`）**：每次评估前对**原始 `gates` 列表**逐条 `validateGate`（在 `normalizeGates` 去重之前检查，确保被去重丢弃的重复 id 也能被看到）；**warn 去重键是 gate id（空 id 用固定哨兵 `(empty-id)`），不是消息文本**；每 id 每进程只 warn 一次；**不阻断执行**（fail-open），有效 gate 行为不变；不得每步刷日志。
 - **schema 边界**：`GateSchema` 只校验形状；`validateGate` 是唯一语义门；`gateParseResult.gates` 的 schema 只保证形状，宿主写结果前已自校验（Q2/Q8）。
 
 ### R2/R3：双 `SettingsSection` 挂载、局部 state、切 tab/切页丢失
@@ -861,11 +874,12 @@ gateParseResult = {
 - [ ] `status=ok`：仅 `result.nonce === pendingNonce` 可消费；危险 gate 需 `gateParseWarnAck` 确认（`gateParseWarnAllShell`/`gateParseWarnSelfKey`）；采用后进入 `engine.gates`（未保存）并显示 `gateParseToastAdopted`+`gateParseUndo`；忽略静默；非法项拒绝采用。
 - [ ] `status=needs-input`：显示缺失信息，可补充重试。
 - [ ] `status=error`：本地化 code + detail 次要行；可重试/手动填写；`persist-failed` 不显示。
-- [ ] 顶部保存分档：未改动 gates 时 legacy 非法/删角色只警告不阻塞；改动 gates 时逐条 + 条数 + **id 集合唯一 + 角色存在性**，失败不 mutate；`gatesDisabled` 始终只保留现存 id；成功写 `gates` 并 `set gateParseResult=空结果`（旧 Host 缺字段跳过）；失败保留本地（R1）。
+- [ ] 顶部保存分档：基线=逐条 normalize 后深比较；未改动 gates 时 legacy 非法/删角色只警告不阻塞；改动 gates 时逐条 + 条数 + **id 集合唯一 + 角色存在性**，失败不 mutate；`gatesDisabled` 始终只保留现存 id；**成功后 `engine.gates/gatesDisabled` 采用宿主 `view.value` 并重设基线**；已采用结果 `set gateParseResult=空结果`（旧 Host 缺字段跳过）；失败保留本地（R1）。
+- [ ] 忽略/丢弃边界：单条「忽略」仅丢当前预览、结果字段保留；整条「丢弃结果」`gateParseDiscardResult` + 二次确认，一次 mutate `set 空结果`，不取消仍在进行的解析。
 - [ ] 事件刷新：clean 全量、dirty 只刷新 revision/parse；双挂载点均可看到结果。
 - [ ] Q6：create 重复报错；edit 改名正确替换且查重。
-- [ ] 模板 apply：同 id 覆盖在成功文本包含 `replaced: <ids>`；非法模板 gate 被拒。
-- [ ] 宿主读取侧：pre/post-execute 两处对原始 gates 逐条 `validateGate`（含被 `normalizeGates` 丢弃的重复 id），每 id 每进程一次 warn，不阻断其它 gate。
+- [ ] 模板 apply（`mergeTemplateGates`）：只校验 incoming（非法跳过 + `warnings`）；existing 非法保留并计入上限；同 id 覆盖 `replaced: <ids>`；先 gates 后 roles（或同事务）；成功文本含 `warnings: [...]`/`replaced: <ids>`。
+- [ ] 宿主读取侧：pre/post-execute 两处对原始 gates 逐条 `validateGate`（含被 `normalizeGates` 丢弃的重复 id），**warn 按 gate id 去重（空 id 哨兵 `(empty-id)`）**、每 id 每进程一次、不阻断其它 gate。
 
 ### 14.4 GUI 实测（TSE/Lead，`http://127.0.0.1:63036`）
 1. 设置 → Agent 团队角色 → 引擎：点「用自然语言新增」，输入 `dev 提交前必须由 cr 检视批准，dev 再改代码就失效`。
@@ -875,26 +889,27 @@ gateParseResult = {
 5. 关闭设置页再打开 → 若结果仍在 10min 内可再次采用；请求字段为空。
 6. 复现异常：临时清空默认模型 → `no-route` 文案 + 手动入口；外部并发改配置 → 保存冲突提示且本地不丢。
 
-### 14.5 决策项验收（D1–D10，逐条对应 §15）
+### 14.5 决策项验收（D1–D11，逐条对应 §15）
 
 - [ ] **D1**：解析完成后 `describe()` 中 `gateParseRequest` 为空；`gateParseResult` **没有 `text` 字段**、不回显原文；审计 JSONL 有一行精确输入/输出且 >1MiB 轮转；`README.md` 明确披露“原文会短暂写入 profile 配置，解析完成后清除；结果会留在 profile 配置直至下次请求/保存/丢弃；有本地审计文件”。
 - [ ] **D2**：无默认路由时结果为 `no-route`，无 provider 自动选择；`ctx.get('llm')` 缺失为 `llm-unavailable`；两种都显示手动入口。
 - [ ] **D3**：解析、采用、忽略全过程中不调用 `settings.mutate` 写 `gates`；只有顶部「保存」会写（可用 spy/日志/配置快照断言）。
 - [ ] **D4**：新增/修改的 `src/` 代码零领域词（`git|commit|review|reviewer|dev|cr|tse|pm` 等）且无领域词表；既有 4 处注释保留并在 §15 标注“已知遗留，不阻塞”。
 - [ ] **D5（可证伪）**：每 nonce 维护 `eventSeen`；轮询延后到 pending ≥2 周期且无事件；审计 `source` 按“是否收到过事件”判定。正常路径 `source:'event'`（`via event`），只有首日实测事件不可达才允许 `source:'poll'`，且 README“已知限制”记录实测结论与降级选择。
-- [ ] **D6**：client.js 字典只用扁平 `gateAi*`/`gateParse*`，**没有任何 `gates.nlg.*` 点号 key**；82 个 key zh/en 成对且**无未登记键**；不依赖 locale 对 `.` 的路径解析。
+- [ ] **D6**：client.js 字典只用扁平 `gateAi*`/`gateParse*`，**没有任何 `gates.nlg.*` 点号 key**；83 个 key zh/en 成对且**无未登记键**（前缀例外见 §10.9）；不依赖 locale 对 `.` 的路径解析。
 - [ ] **D7**：`persist-failed` 没有客户端文案 key；宿主写结果失败只进审计/warn；客户端 90s 超时兜底后可重试。
-- [ ] **D8**：宿主轮询正常模式仅在 `gateParseRequest` 非空且 `eventSeen=false` 时存在，清空/收到事件/dispose 即停；首次 + ≤3 次重试（30/60/120s）；**persist 重试只重写缓存 result、不重跑模型**；耗尽后只 warn/审计 + `lastHandledNonce`（不写 `stale-request`、不清请求）；客户端 2s 轮询同条件并随卸载清理；D5 降级例外按 §5.1（生命周期 1s ticker，空则 no-op）。
+- [ ] **D8**：宿主轮询正常模式仅在 `gateParseRequest` 非空且 `eventSeen=false` 时存在，清空/收到事件/dispose 即停；**persist 重试由 per-nonce 定时器驱动（30/60/120s，dispose/nonce 变化清理），与 poll 解耦**（停 poll 不停止重试）；首次 + ≤3 次重试；**persist 重试只重写缓存 result、不重跑模型**；耗尽后只 warn/审计 + `lastHandledNonce`（不写 `stale-request`、不清请求）；客户端 2s 轮询同条件并随卸载清理；D5 降级例外按 §5.1。
 - [ ] **D9**：R4 三层均有测试：客户端保存分档（未改 gates 仅警告；改动 gates 强制逐条+条数+id 唯一+角色存在性）、模板 apply（`replaced: <ids>`）、宿主 pre/post-execute 读取原始 gates（含重复 id）每 id 每进程一次 warn、不阻断。
-- [ ] **D10**：82 键清单与字典完全一致（无未登记/死键）；保存校验分档落地；退避/重试对象（persist 只重写缓存）与放弃路径（不写 stale、不清请求）均有测试。
+- [ ] **D10**：v4 的 82 键清单与字典完全一致（无未登记/死键）；保存校验分档落地；退避/重试对象（persist 只重写缓存）与放弃路径（不写 stale、不清请求）均有测试。
+- [ ] **D11**：当前 **83 键**（+`gateParseDiscardResult`）与 §10 清单双向一致；单条忽略仅丢预览、整条丢弃二次确认；persist 重试由 per-nonce 定时器驱动（停 poll 不停止重试，dispose 清理）；保存成功后 `engine.gates/gatesDisabled` 采用宿主返回值且基线重设；`mergeTemplateGates` 只校验 incoming、existing 保留计入上限、`warnings`/`replaced: <ids>` 报告、先 gates 后 roles。
 
 ---
 
 ## 15. 决策记录（Lead 已批准）与残余风险
 
-> 决策日期：2026-11-19；决策人：Lead；契约 v2 通过评审并已达 DEV；v3 追加 D6–D9；v4 追加 D10（CR 第二轮复核裁决）。
+> 决策日期：2026-11-19；决策人：Lead；契约 v2 通过评审并已达 DEV；v3 追加 D6–D9；v4 追加 D10；v5 追加 D11（CR 第三轮复核裁决）。
 
-### 15.1 已批准决策（10/10）
+### 15.1 已批准决策（11/11）
 
 | # | 决策 | Lead 附加约束（必须实现） | 状态 |
 |---|---|---|---|
@@ -903,11 +918,12 @@ gateParseResult = {
 | D3 | **两击语义：接受** | 解析结果只回填本地（采用 → 顶部「保存」）；解析/采用阶段绝不写 `gates`；不得新增第二写路径。 | 已批准 |
 | D4 | **`src/` 既有注释领域词：本轮不清理** | 只要求**新增代码零领域词**；`src/policy.js:8`、`src/config.js:107`、`src/rules.js:7`、`src/tools.js:302` 标注为“**已知遗留，不阻塞**”，遗留清理另开任务（见 15.3）。 | 已批准 |
 | D5 | **`settings/document-updated` 可达性：必做 + 可证伪** | 每 nonce 记 `eventSeen`；轮询延后到 pending ≥2 周期且无事件；审计 `source` 按“是否收到过事件”判定：正常路径必须 `event`，仅首日实测事件不可达才允许 `poll`，README“已知限制”记录。 | 已批准（待 DEV 首日验证） |
-| D6 | **i18n 改扁平 camelCase** | 统一 `gateAi*`/`gateParse*`（平台 `t()` 字典直查）；**点号键废弃**；定稿 **82 键**，无未登记/死键（D10）。 | 已批准 |
+| D6 | **i18n 改扁平 camelCase** | 统一 `gateAi*`/`gateParse*`（平台 `t()` 字典直查）；**点号键废弃**；定稿 **83 键**（v5 增 `gateParseDiscardResult`），无未登记/死键（D10/D11）。 | 已批准 |
 | D7 | **`persist-failed` 仅审计** | 从客户端可见码集合摘出；宿主写结果失败只进审计/warn；客户端由 90s 超时兜底（`gateParseErrTimeout`/thinking 超时）后重试。 | 已批准 |
-| D8 | **退避与轮询边界** | 正常模式宿主轮询仅在 `gateParseRequest` 非空且 `eventSeen=false` 时启动、清空/收到事件/dispose 即停；首次 + ≤3 次重试（30/60/120s）；**persist 重试只重写缓存 result、不重跑模型**；耗尽后只 warn/审计 + `lastHandledNonce`（不写 `stale-request`、不清请求）。客户端 2s 轮询同条件、卸载即停。D5 降级例外按 §5.1（生命周期 1s ticker，空则 no-op）。 | 已批准 |
+| D8 | **退避与轮询边界** | 正常模式宿主轮询仅在 `gateParseRequest` 非空且 `eventSeen=false` 时启动、清空/收到事件/dispose 即停；**persist 重试由 per-nonce 定时器驱动（30/60/120s，dispose/nonce 变化清理），与 poll 解耦**；首次 + ≤3 次重试；**persist 重试只重写缓存 result、不重跑模型**；耗尽后只 warn/审计 + `lastHandledNonce`（不写 `stale-request`、不清请求）。客户端 2s 轮询同条件、卸载即停。D5 降级例外按 §5.1。 | 已批准 |
 | D9 | **R4 边界** | 客户端保存分档（§6.4：未改 gates 只警告；改动 gates 强制逐条+条数+id 唯一+角色存在性）+ 模板 apply 校验且成功文本含 `replaced: <ids>` + 宿主 pre/post-execute 两处读取**原始 gates** 逐条 `validateGate`（含被 `normalizeGates` 丢弃的重复 id），每 id 每进程一次 warn、不阻断。 | 已批准 |
-| D10 | **CR 第二轮细则（v4）** | ① 82 键与死键清理（`gateParseWarnCatchAll`/`gateParseWarnRole`/`gateParseToastIgnored`/`gateParseErrPending` 不登记）；② D9 层 3 写实（原始 gates + 重复 id + pre/post）；③ 保存校验分档（§6.4）；④ 退避/重试对象（persist 只重写缓存，放弃路径不写 stale/不清请求）；⑤ D5 `eventSeen` 与 `source` 判据。 | 已批准 |
+| D10 | **CR 第二轮细则（v4）** | ① 82 键与死键清理（`gateParseWarnCatchAll`/`gateParseWarnRole`/`gateParseToastIgnored`/`gateParseErrPending` 不登记）；② D9 层 3 写实（原始 gates + 重复 id + pre/post）；③ 保存校验分档（§6.4）；④ 退避/重试对象（persist 只重写缓存，放弃路径不写 stale/不清请求）；⑤ D5 `eventSeen` 与 `source` 判据。（v5 的 83 键与新增边界见 D11） | 已批准 |
+| D11 | **CR 第三轮细则（v5）** | ① 83 键（+`gateParseDiscardResult`）与“忽略/整条丢弃”边界；② persist 重试由 per-nonce 定时器驱动（30/60/120s，dispose 清理），与 poll 解耦（停 poll 不停重试）；③ 服务端每次写结果前重读 nonce（含 retry），取消不复活；客户端 `matchesPending`（pending 为空恒 false）；④ 客户端 poll 用 `setTimeout` 链、首 tick ≥4s、事件即清；⑤ 保存成功后回写宿主 `view.value` 并重设基线（逐条 normalize 后深比较）；⑥ 危险 gate 条件写死（AllShell/SelfKey/Ack 前置校验）；⑦ `mergeTemplateGates` 只校验 incoming、existing 保留计入上限、`warnings`/`replaced: <ids>` 报告、先 gates 后 roles；⑧ 读侧 warn 按 gate id 去重（空 id 哨兵）。 | 已批准 |
 
 ### 15.2 决策对应的实现落点
 
@@ -916,17 +932,18 @@ gateParseResult = {
 - D3 → §6.2（采用不写盘）、§6.4（保存前校验）、§14 验收。
 - D4 → §13 不变量第 6 条、§16 DEV 步骤 6；遗留清理进 §15.3。
 - D5 → §5.1（`eventSeen`/轮询延后/`source`）、§6.1、§14.5 D5。
-- D6 → §9/§10（82 键）、§14.5 D6；client.js 字典不得出现 `gates.nlg.*` 或未登记键。
+- D6 → §9/§10（83 键）、§14.5 D6；client.js 字典不得出现 `gates.nlg.*` 或未登记 `gateAi*`/`gateParse*` 前缀键。
 - D7 → §5.6（persist-failed 注）、§10.4（无客户端 key）、§14.5 D7。
-- D8 → §5.1/§5.8（退避/放弃/重试对象）、§6.1（客户端轮询与清理）、§14.5 D8。
+- D8 → §5.1/§5.8（退避/放弃/重试对象/per-nonce 定时器）、§6.1（客户端轮询与清理）、§14.5 D8。
 - D9 → §12 R4（三层边界）、§6.4（分档）、§14.3/§14.5 D9、§16 DEV/TSE。
-- D10 → §10.9（82 键/反向断言）、§12 R4 层 3、§6.4（分档）、§5.1/§5.8（退避/放弃）；§14.5 D10 验收。
+- D10 → §10.9（82 键历史/反向断言）、§12 R4 层 3、§6.4（分档）、§5.1/§5.8（退避/放弃）；§14.5 D10 验收。
+- D11 → §10.3/§10.9（83 键/丢弃边界）、§5.1/§5.8（per-nonce 定时器/不复活）、§6.1（setTimeout 链）、§6.2（忽略 vs 丢弃、matchesPending）、§6.4（回写/基线）、§10.7（危险条件）、§12 R4 层 2/3（模板/读侧）、§14.5 D11。
 
-### 15.3 残余风险与后续任务（不阻塞 v4）
+### 15.3 残余风险与后续任务（不阻塞 v5）
 
 1. **审计文件隐私**：`gate-parse-audit.jsonl` 含精确用户原文与模型输出（本地 `$DSH_HOME`，与 session 日志同信任边界）；D1 已批准，README 必须披露。若未来合规要求更严，改为“摘要 + 哈希”，另立任务。
 2. **默认模型质量**：解析质量取决于部署默认模型；D2 已批准不加覆盖。若出现系统性质量问题，后续可加 `gateParseProvider`/`gateParseModel`（空=默认），另立任务。
-3. **两击 UX**：D3 已批准；若产品后续要求一击落盘，需重新评审第二写路径与原子性，不在 v4。
+3. **两击 UX**：D3 已批准；若产品后续要求一击落盘，需重新评审第二写路径与原子性，不在 v5。
 4. **事件可达性/来源**：D5 必测且可证伪（正常路径 `source:'event'`；轮询延后到 pending ≥2 周期且 `eventSeen=false`）；若不可达，README 已知限制记录“轮询降级”，并评估对 Host 唤醒/耗电的影响。
 5. **校验规则双镜像**：client `validateGateObject` 与 `src/gates.js` 的 `validateGate` 是两份实现（client 不能 import Host/src）；TSE 用“规则用例对照 + `MAX_GATES` 常量同步”兜底；若未来把校验上提到 Host，再消除镜像。
 6. **无全局状态**：采用但未保存的 gate 在卸载/双挂载点切换后可能丢失，需从持久化的 `gateParseResult` 重新采用（§12 R2/R3 已定义为可接受边界）。
@@ -934,6 +951,8 @@ gateParseResult = {
 8. **审计轮转实现**：≤1MiB 轮转、覆盖旧档（§5.7）；TSE 需测写失败不影响解析、轮转后仍能查到最近记录。
 9. **结果不自动清理**：`gateParseResult` 会留在 profile 配置（D1），README 必须披露；用户可通过下一次请求/保存/「丢弃结果」清除。TSE 需断言“不请求就不自动清”。
 10. **`persist-failed` 仅审计**：宿主写失败不产生客户端码；TSE 断言 `describe()` 无可见错误码、客户端 90s 超时兜底。
+11. **模板 existing 非法 gate**：D11 规定保留并计入 `MAX_GATES`，不自动清理；用户需在设置页修复，apply 成功文本用 `warnings` 报告。
+12. **单条忽略是本地行为**：只丢当前预览，结果字段保留；重新挂载可能再次出现。README 必须写清“忽略 ≠ 整条丢弃”。
 
 ---
 
@@ -941,23 +960,23 @@ gateParseResult = {
 
 ### DEV（按序）
 1. `src/plugin.js`：Config 加 `gateParseRequest`/`gateParseResult`（注意 `GateSchema` 仅形状，语义在 `validateGate`）；`apply()` 安装 `installGateParser`。
-2. `src/gate-parse.js`：事件监听（payload 兼容 `string|{ns}`）+ **每 nonce `eventSeen`**；正常模式轮询仅 pending 且 `eventSeen=false`、延后 ≥2 周期、1s 间隔，事件/清空/dispose 即停（D5 降级例外见 §5.1）；单飞/去重/TTL；**首次 + ≤3 次重试（30/60/120s），persist 失败只重写缓存 result、不重跑模型**；耗尽后只 warn/审计 + `lastHandledNonce`（不写 `stale-request`、不清请求）；prompt 组装（`shell tools:["bash","pwsh"]` + 平台标注）、`ctx.llm.stream` 消费、JSON 解析、`normalizeGate`+`validateGate`+角色检查、shell 补齐后 >8 → `invalid-output`、id 生成（清洗后不满足 `GATE_ID` → `gate-<nonceHash6>`；合法则先 ≤62 再加 `-2/-3`，总长 ≤64）、note/warnings/detail clamp、结果写回（含 `nonce`）、审计（`source`/`persist-failed`）。
-3. `src/templates.js` / `src/plugin.js`：模板 apply 同 id 覆盖在成功文本包含 `replaced: <ids>`；宿主 **pre/post-execute 两处**对**原始 gates**逐条 `validateGate`（含被 `normalizeGates` 丢弃的重复 id），每 id 每进程一次 warn、不阻断。
+2. `src/gate-parse.js`：事件监听（payload 兼容 `string|{ns}`）+ **每 nonce `eventSeen`**；正常模式轮询仅 pending 且 `eventSeen=false`、延后 ≥2 周期、1s 间隔，事件/清空/dispose 即停（D5 降级例外见 §5.1）；**persist 重试由 per-nonce 定时器驱动（30/60/120s），与 poll 解耦，dispose/nonce 变化清理**；**每次写结果前重读 `gateParseRequest.nonce`，不匹配即丢弃（含 retry 路径）**；单飞/去重/TTL；首次 + ≤3 次重试，persist 失败只重写缓存 result、不重跑模型；耗尽后只 warn/审计 + `lastHandledNonce`（不写 `stale-request`、不清请求）；prompt 组装（`shell tools:["bash","pwsh"]` + 平台标注）、`ctx.llm.stream` 消费、JSON 解析、`normalizeGate`+`validateGate`+角色检查、shell 补齐后 >8 → `invalid-output`、id 生成（清洗后不满足 `GATE_ID` → `gate-<nonceHash6>`；合法则先 ≤62 再加 `-2/-3`，总长 ≤64）、note/warnings/detail clamp、结果写回（含 `nonce`）、审计（`source`/`persist-failed`）。
+3. `src/templates.js` / `src/plugin.js`：实现 `mergeTemplateGates`——**只校验 incoming**，非法 incoming 跳过并写 `warnings`；**existing 非法项保留并计入 `MAX_GATES`**；同 id 覆盖记录 `replaced: <ids>`；**先校验 gates 再写 roles（或同一事务）**；成功文本含 `warnings: [...]` 与 `replaced: <ids>`。宿主 **pre/post-execute 两处**对**原始 gates**逐条 `validateGate`（含被 `normalizeGates` 丢弃的重复 id），**warn 按 gate id 去重（空 id 用哨兵 `(empty-id)`）**、每 id 每进程一次、不阻断。
 4. `client.js`：
-   - 字典（§10，**扁平 `gateAi*`/`gateParse*`，82 键，无未登记键**）；
+   - 字典（§10，**扁平 `gateAi*`/`gateParse*`，83 键，无未登记键**）；
    - `refreshParseAndRevision()`；
-   - AI 对话框 + 请求 mutate + `$on` + **2s `describe()` 兜底轮询**（pending ≥2 周期且 `eventSeen=false` 才启用，事件/卸载即停）+ 90s 超时/取消（`set 空请求/空结果`，先 `describe()` 判字段存在）；每次 mutate 成功 `setRevision`；
-   - 结果预览：仅 `result.nonce === pendingNonce` 可消费；危险 gate 需 `gateParseWarnAck`（`gateParseWarnAllShell`/`gateParseWarnSelfKey`）；采用 toast `gateParseToastAdopted` + `gateParseUndo`；忽略静默；needs-input/error（`persist-failed` 不显示）；
-   - `saveEngine` **分档校验**（未改 gates 仅警告；改动 gates 逐条+条数+id 唯一+角色存在性）+ `gatesDisabled` 始终过滤 + 失败保留（R1/R4）+ 已采用结果 `set 空结果`（旧 Host 缺字段跳过）；
+   - AI 对话框 + 请求 mutate + `$on`（收到事件即置 `eventSeen` 并清 poll）+ **2s `describe()` 兜底轮询用 `setTimeout` 链，首 tick ≥4s、仅 `eventSeen=false`**（卸载即停）+ 90s 超时/取消（`set 空请求/空结果`，先 `describe()` 判字段存在）；每次 mutate 成功 `setRevision`；
+   - 结果预览：`matchesPending`（pending 为空恒 false）才自动消费；用户显式「采用」可先置 `pendingNonce=result.nonce`（取消/超时已清结果，无可复活对象）；危险 gate 需 `gateParseWarnAck`（`gateParseWarnAllShell`/`gateParseWarnSelfKey`，条件见 §10.7）；采用 toast `gateParseToastAdopted` + `gateParseUndo`；**单条「忽略」仅丢预览**，**整条「丢弃结果」用 `gateParseDiscardResult` + 二次确认**；needs-input/error（`persist-failed` 不显示）；
+   - `saveEngine` **分档校验**（基线=逐条 normalize 后深比较；未改 gates 仅警告；改动 gates 逐条+条数+id 唯一+角色存在性）+ `gatesDisabled` 始终过滤 + 失败保留（R1/R4）+ **成功后 `engine.gates/gatesDisabled` 采用宿主 `view.value` 并重设基线** + 已采用结果 `set 空结果`（旧 Host 缺字段跳过）；
    - `GateForm` create/edit 模式 + `formFromGate`/`gateFromForm`/`validateGateInput` + `upsert` 修复（Q6）。
-5. `README.md`：用户操作段；**gates 数据位置**（`Config.gates`/模板 `gates`）；**apply 四件事**（roles upsert、playbook/activeTemplate、gates 合并（`replaced: <ids>`）、skills 复制）；**已知限制三项**：① 解析来源与轮询降级（`eventSeen`/`source`/pending ≥2 周期）；② 持久化与隐私（原文短暂写入、结果不自动清理、审计文件）；③ 兼容与降级（无默认模型、旧 Host 缺字段、事件不可达）。链接本契约。
+5. `README.md`：用户操作段；**gates 数据位置**（`Config.gates`/模板 `gates`）；**apply 四件事**（roles upsert、playbook/activeTemplate、gates 合并（`replaced: <ids>` + `warnings`）、skills 复制）；**已知限制三项**：① 解析来源与轮询降级（`eventSeen`/`source`/pending ≥2 周期）；② 持久化与隐私（原文短暂写入、结果不自动清理、审计文件）；③ 兼容与降级（无默认模型、旧 Host 缺字段、事件不可达）。另需写清**单条忽略 vs 整条丢弃**边界（README 226/237 的矛盾措辞由 DEV 改）。链接本契约。
 6. `package.json` `files` 加 `docs/**/*.md`（DEV 执行）；不碰 `locale/*.json`；`src/` 新增代码零领域词。
 
 ### TSE（测试点）
-- **Host 单测（新建 `tests/gate-parse.test.js` 或扩展 tools.test.js）**：单飞/去重/TTL；`eventSeen` 与轮询延后（pending ≥2 周期且无事件）；事件/清空/dispose 即停；首次 + ≤3 次 30/60/120s 退避；persist 重试只重写缓存（模型调用次数不增）；耗尽后不写 `stale-request`、不清请求、记 `lastHandledNonce`；三种 status；可见错误码 + `persist-failed` 仅审计；坏 JSON/坏 gate/未知角色/`lead`/超长/超 5 条；id 生成（`GATE_ID` 失败 → `gate-<nonceHash6>`；≤62+后缀；总长 ≤64）；shell 补齐后 >8 → `invalid-output`；note/warnings/detail clamp；schema 边界；审计 `source`/轮转。
-- **模板/读取侧**：模板同 id 覆盖回报 `replaced: <ids>`；非法模板 gate 拒绝；宿主 pre/post-execute 两处读取原始 gates（含重复 id）每 id 每进程一次 warn、不阻断。
+- **Host 单测（新建 `tests/gate-parse.test.js` 或扩展 tools.test.js）**：单飞/去重/TTL；`eventSeen` 与轮询延后（pending ≥2 周期且无事件）；事件/清空/dispose 即停；**persist 重试由 per-nonce 定时器驱动（停 poll 不影响重试）、dispose/nonce 变化清理**；首次 + ≤3 次 30/60/120s 退避；persist 重试只重写缓存（模型调用次数不增）；**每次写前重读 nonce（含 retry），取消后结果不复活**；耗尽后不写 `stale-request`、不清请求、记 `lastHandledNonce`；三种 status；可见错误码 + `persist-failed` 仅审计；坏 JSON/坏 gate/未知角色/`lead`/超长/超 5 条；id 生成（`GATE_ID` 失败 → `gate-<nonceHash6>`；≤62+后缀；总长 ≤64）；shell 补齐后 >8 → `invalid-output`；note/warnings/detail clamp；schema 边界；审计 `source`/轮转。
+- **模板/读取侧**：`mergeTemplateGates` 只校验 incoming（非法项跳过 + `warnings`）；existing 非法保留并计入 `MAX_GATES`；同 id 覆盖 `replaced: <ids>`；先 gates 后 roles（或同事务）；宿主 pre/post-execute 两处读取原始 gates（含重复 id）**按 gate id 去重（空 id 哨兵 `(empty-id)`）**、每 id 每进程一次 warn、不阻断。
 - **纯函数**：prompt 不含领域词且带两个 shell id + 平台；`validateGateObject` 与 `src/gates.js` 规则对照；`MAX_GATES` 常量同步（node 读文件断言）。
-- **客户端**（无单测基建，GUI + 静态检查）：82 键与 §10 清单**双向一致**（无未登记/死键，中英集合相等）；Q6 查重/改名；R1 失败保留；保存分档（未改仅警告 / 改动强制）；危险警告 ack；`gateParseUndo`；结果 nonce 匹配；`$on`/2s 轮询卸载清理；`setRevision`；`set 空结果`；`gatesDisabled` 过滤。
+- **客户端**（无单测基建，GUI + 静态检查）：**83 键**与 §10 清单**双向一致**（无未登记/死键，中英集合相等）；Q6 查重/改名；R1 失败保留；保存分档（基线逐条 normalize 深比较；未改仅警告 / 改动强制）；**保存成功后采用宿主 `view.value` 并重设基线**；危险警告条件与 ack 前置；`gateParseUndo`；**单条忽略仅丢预览 vs 整条丢弃 `gateParseDiscardResult` 二次确认**；`matchesPending`（pending 空恒 false）；`$on` 事件清 poll、`setTimeout` 链首 tick ≥4s；`setRevision`；`set 空结果`；`gatesDisabled` 过滤。
 - **旧 Host 形态**：**mock `describe()` 去掉 `gateParse*` 两字段**，断言无请求/无结果、清理 op 跳过且 gates 保存不受阻（不要构造真实旧组合）。
 - **回归**：手动 CRUD、模板 apply、`/team-gates`、现有 `node --test`。
 - **异常注入**：无默认模型、断线错过事件、10min 过期结果、并发两标签页、重启遗留请求、审计写失败、事件不可达（poll 兜底）、persist 重试耗尽（give-up）。

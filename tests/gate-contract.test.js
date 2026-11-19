@@ -220,11 +220,11 @@ test('client MAX_GATES mirrors src/gates.js and points at the source of truth', 
   assert.match(nearby, /src\/gates\.js/, 'the mirror must reference src/gates.js')
 })
 
-test('the contract §10 declares 82 flat keys and client zh/en cover each one', () => {
+test('the contract §10 declares 83 flat keys and client zh/en cover each one', () => {
   const { rows } = contractI18nRows()
   const keys = rows.map((row) => row.key)
-  assert.equal(keys.length, 82, `contract v4 §10 must list 82 keys, found ${keys.length}`)
-  assert.equal(new Set(keys).size, 82, 'contract §10 keys must be unique')
+  assert.equal(keys.length, 83, `contract v5 §10 must list 83 keys, found ${keys.length}`)
+  assert.equal(new Set(keys).size, 83, 'contract §10 keys must be unique')
   const declared = /共 \*\*(\d+)\*\* 个 key/.exec(contractSrc)
   assert.ok(declared, 'contract §10 must declare its key count')
   assert.equal(Number(declared[1]), keys.length, 'the parsed key count must match the declared count')
@@ -248,8 +248,15 @@ test('client dictionaries contain no unregistered gateAi*/gateParse* keys (v4 re
   assert.deepEqual(extraZh, [], `zh has unregistered gate keys: ${extraZh.join(', ')}`)
   assert.deepEqual(extraEn, [], `en has unregistered gate keys: ${extraEn.join(', ')}`)
 
-  // v4 keys that must exist in both dictionaries.
-  for (const key of ['gateParseToastAdopted', 'gateParseUndo', 'gateParseWarnAllShell', 'gateParseWarnSelfKey', 'gateParseWarnAck']) {
+  // v4/v5 keys that must exist in both dictionaries.
+  for (const key of [
+    'gateParseToastAdopted',
+    'gateParseUndo',
+    'gateParseWarnAllShell',
+    'gateParseWarnSelfKey',
+    'gateParseWarnAck',
+    'gateParseDiscardResult',
+  ]) {
     assert.ok(key in zhDict, `zh must define ${key}`)
     assert.ok(key in enDict, `en must define ${key}`)
   }
@@ -359,7 +366,8 @@ test('client subscribes to settings events and refreshes parse state without ove
 function saveEngineRegion() {
   const start = clientSrc.indexOf('const saveEngine')
   assert.ok(start >= 0, 'client.js must keep a saveEngine function')
-  return clientSrc.slice(start, start + 4200)
+  const end = clientSrc.indexOf('const markDirty', start)
+  return clientSrc.slice(start, end > start ? end : start + 8000)
 }
 
 test('R1: the saveEngine failure path refreshes revision/parse state instead of reloading over local edits', () => {
