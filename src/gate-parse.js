@@ -16,7 +16,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { mergeRoles, readConfig } from './config.js'
-import { MAX_GATE_TOOLS, normalizeGate, normalizeGates, validateGate } from './gates.js'
+import { GATE_ID, MAX_GATE_TOOLS, normalizeGate, normalizeGates, validateGate } from './gates.js'
 import { stateDir } from './store.js'
 
 /** Settings namespace owned by this plugin. */
@@ -57,6 +57,9 @@ export const PARSE_RESULT_TTL_MS = 10 * 60 * 1000
 
 /** Fallback poll cadence used when the update event cannot be observed. */
 export const PARSE_POLL_INTERVAL_MS = 1_000
+
+/** Result-write retry delays: the first attempt, then three retries. */
+export const PARSE_RETRY_DELAYS_MS = Object.freeze([30_000, 60_000, 120_000])
 
 /** Audit file size above which the previous log is rotated away. */
 export const AUDIT_MAX_BYTES = 1024 * 1024
@@ -220,9 +223,10 @@ function nonceSeed(nonce) {
   return (hash % (36 ** 6)).toString(36).padStart(6, '0')
 }
 
-/** Choose the final id: clean input, else a generated base, then a free suffix. */
+/** Choose the final id: a valid cleaned id, else a hash-derived base, then a free suffix. */
 function finalGateId(raw, used, nonce) {
-  const base = cleanGateId(raw) !== '' ? cleanGateId(raw) : `gate-${nonceSeed(nonce)}`
+  const cleaned = cleanGateId(raw)
+  const base = GATE_ID.test(cleaned) ? cleaned : `gate-${nonceSeed(nonce)}`
   let candidate = base
   for (let index = 2; used.has(candidate); index += 1) {
     const suffix = `-${index}`
@@ -505,11 +509,15 @@ export function installGateParser({ ctx, config }, options = {}) {
     : PARSE_TIMEOUT_MS
   const disposers = []
   const started = new Set()
-  // A failed result write is retried at most three times, each no sooner than
-  // the cooldown, so a broken editor cannot turn one request into a hot loop.
-  const RETRY_COOLDOWN_MS = 30_000
-  const MAX_PERSIST_ATTEMPTS = 3
+  // One failed result write keeps its computed result and only rewrites Config:
+  // the model is never called twice for the same nonce. Delays are exponential
+  // and at most three retries follow the first attempt.
+  const retryDelays = Array.isArray(options?.retryDelaysMs) && options.retryDelaysMs.length > 0
+    ? options.retryDelaysMs.map((value) => (Number.isFinite(value) && value >= 0 ? value : 0))
+    : PARSE_RETRY_DELAYS_MS
+  const now = typeof options?.now === 'function' ? options.now : Date.now
   const retryState = new Map()
+  const eventSeen = new Set()
   const installedAt = Date.now()
   let pollTimer = null
   let disposed = false
@@ -535,17 +543,22 @@ export function installGateParser({ ctx, config }, options = {}) {
     return result.nonce === nonce && result.status !== '' ? result : undefined
   }
 
-  /** Record one failed result write and decide whether to retry it later. */
-  const notePersistFailure = (nonce) => {
-    const state = retryState.get(nonce) ?? { attempts: 0, notBefore: 0 }
-    state.attempts += 1
-    if (state.attempts >= MAX_PERSIST_ATTEMPTS) {
-      lastHandledNonce = nonce
+  /**
+   * Record one failed result write: keep the computed result for a Config-only
+   * retry, or give up after the first attempt plus three retries.
+   */
+  const notePersistFailure = (nonce, result, auditRecord = undefined) => {
+    const state = retryState.get(nonce) ?? { retries: 0, notBefore: 0, result, audit: auditRecord }
+    state.result = result
+    if (auditRecord !== undefined) state.audit = auditRecord
+    state.retries += 1
+    if (state.retries > retryDelays.length) {
       retryState.delete(nonce)
-      log('warn', `gate parse ${nonce} gave up after ${state.attempts} result writes`)
+      lastHandledNonce = nonce
+      log('warn', `gate parse ${nonce} gave up after ${state.retries} result writes; the client clears the request`)
       return
     }
-    state.notBefore = Date.now() + RETRY_COOLDOWN_MS
+    state.notBefore = now() + retryDelays[state.retries - 1]
     retryState.set(nonce, state)
   }
 
@@ -593,19 +606,20 @@ export function installGateParser({ ctx, config }, options = {}) {
   /** Resolve one failure path: persist the error result when possible. */
   const fail = async (nonce, code, detail, extra = {}) => {
     const result = failure(nonce, code, detail)
+    const auditRecord = { at: Date.now(), nonce, code, detail: result.detail, ...extra }
     let persisted = false
     try {
       persisted = await persist(nonce, result)
     } catch (error) {
       log('warn', `gate parse result write failed: ${error.message}`)
-      await audit({ at: Date.now(), nonce, code: 'persist-failed', detail: clamp(error.message, MAX_PARSE_DETAIL), ...extra })
-      // Keep the request retryable: a later check may persist successfully.
+      await audit({ ...auditRecord, code: 'persist-failed', detail: clamp(error.message, MAX_PARSE_DETAIL) })
+      // Keep the request retryable: a later check rewrites Config only.
       started.delete(nonce)
-      notePersistFailure(nonce)
+      notePersistFailure(nonce, result, auditRecord)
       return
     }
     retryState.delete(nonce)
-    await audit({ at: Date.now(), nonce, code, detail: result.detail, ...extra, persisted })
+    await audit({ ...auditRecord, persisted })
   }
 
   /** Consume one model stream, honouring the injected timeout without relying on abort. */
@@ -764,7 +778,21 @@ export function installGateParser({ ctx, config }, options = {}) {
       log('warn', `gate parse result write failed: ${error.message}`)
       await audit({ ...base, code: 'persist-failed', detail: clamp(error.message, MAX_PARSE_DETAIL) })
       started.delete(nonce)
-      notePersistFailure(nonce)
+      notePersistFailure(nonce, result, base)
+    }
+  }
+
+  /** Rewrite one cached result without calling the model again. */
+  const retryPersist = async (nonce, source) => {
+    const state = retryState.get(nonce)
+    if (state === undefined) return
+    try {
+      const persisted = await persist(nonce, state.result)
+      await audit({ ...(state.audit ?? { at: Date.now(), nonce }), source, retried: true, persisted })
+    } catch (error) {
+      log('warn', `gate parse result rewrite failed: ${error.message}`)
+      await audit({ at: Date.now(), nonce, code: 'persist-failed', detail: clamp(error.message, MAX_PARSE_DETAIL), source })
+      notePersistFailure(nonce, state.result, state.audit)
     }
   }
 
@@ -804,6 +832,7 @@ export function installGateParser({ ctx, config }, options = {}) {
     }
     if (nonce === '' && description === '') {
       stopPoll()
+      retryState.clear()
       return
     }
     // A pending request keeps one lightweight poll alive; event delivery stays
@@ -813,38 +842,58 @@ export function installGateParser({ ctx, config }, options = {}) {
     // minted after install belongs to the live event path, which must stay the
     // source reported in the diagnostic log.
     if (source === 'startup' && request.at > installedAt) return
-    if (nonce !== '' && (nonce === lastHandledNonce || started.has(nonce))) return
     const retry = nonce === '' ? undefined : retryState.get(nonce)
-    if (retry !== undefined && retry.notBefore > Date.now()) return
+    if (retry !== undefined) {
+      // A failed result write is retried by rewriting Config only; the cached
+      // result means the model is never called twice for one nonce.
+      if (retry.notBefore > now()) return
+      await retryPersist(nonce, source)
+      return
+    }
+    if (nonce !== '' && nonce === lastHandledNonce) {
+      // Nothing left to do for this request; the client clears it on its own
+      // timeout, so the fallback poll must not spin forever.
+      stopPoll()
+      return
+    }
+    if (nonce !== '' && started.has(nonce)) return
+    // D5: the event path owns a request whenever one was observed. Only a
+    // request that never produced an event may be taken over by the poll, and
+    // only after two poll periods so a late event still wins.
+    const seenEvent = nonce !== '' && eventSeen.has(nonce)
+    if (source === 'poll' && !seenEvent && request.at > 0
+      && Date.now() - request.at < 2 * PARSE_POLL_INTERVAL_MS) return
+    const effectiveSource = seenEvent ? 'event' : 'poll'
     if (nonce !== '' && resultFor(nonce) !== undefined) {
       lastHandledNonce = nonce
+      stopPoll()
       return
     }
     if (description === '') {
       if (nonce !== '') {
         lastHandledNonce = nonce
-        await fail(nonce, 'empty-text', 'the request carried no description', { source })
+        await fail(nonce, 'empty-text', 'the request carried no description', { source: effectiveSource })
       }
       return
     }
     if (description.length > MAX_PARSE_TEXT) {
       lastHandledNonce = nonce
-      await fail(nonce, 'text-too-long', `description is ${description.length} characters; at most ${MAX_PARSE_TEXT} are accepted`, { source })
+      await fail(nonce, 'text-too-long', `description is ${description.length} characters; at most ${MAX_PARSE_TEXT} are accepted`, { source: effectiveSource })
       return
     }
     if (nonce === '' || nonce.length > 64) {
-      await fail(nonce, 'stale-request', 'the request carries no usable nonce', { source })
+      await fail(nonce, 'stale-request', 'the request carries no usable nonce', { source: effectiveSource })
       return
     }
     if (request.at > 0 && Date.now() - request.at > PARSE_REQUEST_TTL_MS) {
       lastHandledNonce = nonce
-      await fail(nonce, 'stale-request', `request is older than ${PARSE_REQUEST_TTL_MS} ms`, { source })
+      await fail(nonce, 'stale-request', `request is older than ${PARSE_REQUEST_TTL_MS} ms`, { source: effectiveSource })
       return
     }
     started.add(nonce)
     if (started.size > 64) started.delete(started.values().next().value)
-    log('info', `gate parse ${nonce} started via ${source}`)
-    await run(nonce, description, source)
+    log('info', `gate parse ${nonce} started via ${effectiveSource}`)
+    await run(nonce, description, effectiveSource)
   }
 
   const safeCheck = (source) => check(source).catch((error) => {
@@ -855,6 +904,17 @@ export function installGateParser({ ctx, config }, options = {}) {
     // Some emitters pass the namespace, others pass a document object.
     const namespace = typeof payload === 'string' ? payload : payload?.ns
     if (namespace !== GATE_PARSE_NS) return
+    // Remember which request the event path claimed, so a later poll can never
+    // be mistaken for (or preempt) the event-driven parse.
+    try {
+      const request = requestNow()
+      if (request.nonce !== '') {
+        eventSeen.add(request.nonce)
+        if (eventSeen.size > 128) eventSeen.delete(eventSeen.values().next().value)
+      }
+    } catch {
+      // A read failure only loses the attribution hint.
+    }
     queueMicrotask(() => { void safeCheck('event') })
   }
 

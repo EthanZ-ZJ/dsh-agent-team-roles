@@ -87,9 +87,52 @@ export async function readTemplate(dir) {
   }
 }
 
+/**
+ * Merge one template's gates into the live list.
+ *
+ * Same-id gates are replaced (their ids are reported in `replaced`); the merge
+ * is rejected whole when an incoming gate is invalid, when the template itself
+ * repeats an id, or when the result would exceed the team-wide cap.
+ *
+ * @param existing - current configured gates.
+ * @param incoming - gates from the template.
+ * @param options - optional `max` override for the team-wide cap.
+ * @returns `{gates, replaced, error}`; a rejected merge writes nothing.
+ */
+export function mergeTemplateGates(existing, incoming, options = {}) {
+  const max = Number.isFinite(options.max) ? options.max : MAX_GATES
+  const current = Array.isArray(existing) ? existing.map((gate) => normalizeGate(gate)) : []
+  const added = Array.isArray(incoming) ? incoming.map((gate) => normalizeGate(gate)) : []
+  for (const gate of current) {
+    const invalid = validateGate(gate)
+    if (invalid !== undefined) {
+      return { gates: [], replaced: [], error: `existing gate invalid: ${invalid}` }
+    }
+  }
+  const addedIds = new Set()
+  for (const gate of added) {
+    const invalid = validateGate(gate)
+    if (invalid !== undefined) return { gates: [], replaced: [], error: `gate invalid: ${invalid}` }
+    if (addedIds.has(gate.id)) {
+      return { gates: [], replaced: [], error: `duplicate gate id "${gate.id}" in this template` }
+    }
+    addedIds.add(gate.id)
+  }
+  const currentIds = new Set(current.map((gate) => gate.id))
+  const replaced = added.filter((gate) => currentIds.has(gate.id)).map((gate) => gate.id)
+  const merged = [...current.filter((gate) => !addedIds.has(gate.id)), ...added]
+  if (merged.length > max) {
+    return {
+      gates: [],
+      replaced: [],
+      error: `applying this template would leave ${merged.length} gates; the limit is ${max}`,
+    }
+  }
+  return { gates: merged, replaced, error: undefined }
+}
+
 /** Scan a templates root; invalid entries are skipped, never thrown. */
-export async function discoverTemplates(root) {
-  let entries
+export async function discoverTemplates(root) {  let entries
   try {
     entries = await fs.readdir(root, { withFileTypes: true })
   } catch {

@@ -106,8 +106,6 @@ window.__ModuleLoader__.load({
       gateParseCode: '错误码：{code}',
       gateParseWarnings: '提示：{warnings}',
       gateParseNote: '说明：{note}',
-      gateParseAdopted: '已采用 {id}',
-      gateParseIgnored: '已忽略',
       gateParseStale: '结果已过期（{age}前），请重新解析',
       gateParseErrEmpty: '没有可解析的描述',
       gateParseErrTooLong: '描述过长（最多 {max} 字符）',
@@ -120,7 +118,6 @@ window.__ModuleLoader__.load({
       gateParseErrInvalid: '模型输出无法解析（{detail}）',
       gateParseErrStale: '请求已过期，请重试',
       gateParseErrUnknown: '解析失败',
-      gateParseErrPending: '已有一个 {age} 前的解析请求未完成，可重试或取消',
       gateParseErrLegacyGate: '闸门 {id} 配置无效，无法保存',
       gateParseErrRequestFailed: '写入解析请求失败',
       gateParseErrConflict: '配置已被其它页面/会话修改，请刷新后重试',
@@ -156,12 +153,11 @@ window.__ModuleLoader__.load({
       gateParseSumSep: ' · ',
       gateParseListSep: '、',
       gateAiFreshHint: '超过该时长后钥匙失效（0 表示永久有效）',
-      gateParseWarnShell: '已自动补上 shell 工具，确认是否真的需要拦截整条命令。',
-      gateParseWarnCatchAll: '该闸门会拦截整工具调用，影响面较大。',
-      gateParseWarnRole: '检测到未在角色目录中的角色引用，请确认。',
+      gateParseWarnAllShell: '该闸门同时拦截 bash 与 pwsh，且命令正则可能覆盖过宽，请确认影响面。',
+      gateParseWarnSelfKey: '钥匙由被拦角色自己产生，等于闸门可被自己满足，请确认是否预期。',
+      gateParseWarnAck: '该闸门会拦截整个工具调用（无命令正则），影响面较大，请确认。',
       gateParseToastAdopted: '已采用 {id}',
       gateParseUndo: '撤销',
-      gateParseToastIgnored: '已忽略该条',
       gateAiA11yDialog: '自然语言新增闸门：{title}',
       gateAiA11ySpinner: '正在解析闸门描述',
       gateAiA11yError: '解析错误',
@@ -329,8 +325,6 @@ window.__ModuleLoader__.load({
       gateParseCode: 'Code: {code}',
       gateParseWarnings: 'Notes: {warnings}',
       gateParseNote: 'Note: {note}',
-      gateParseAdopted: 'Adopted {id}',
-      gateParseIgnored: 'Ignored',
       gateParseStale: 'Result expired ({age} ago); parse again',
       gateParseErrEmpty: 'Nothing to parse',
       gateParseErrTooLong: 'Description too long (max {max} characters)',
@@ -343,7 +337,6 @@ window.__ModuleLoader__.load({
       gateParseErrInvalid: 'The model returned an invalid result ({detail})',
       gateParseErrStale: 'Request expired; try again',
       gateParseErrUnknown: 'Parsing failed',
-      gateParseErrPending: 'A parse request from {age} ago is still pending; retry or cancel',
       gateParseErrLegacyGate: 'Gate {id} is invalid and blocks the save',
       gateParseErrRequestFailed: 'Could not write the parse request',
       gateParseErrConflict: 'Configuration changed elsewhere; refresh and retry',
@@ -375,12 +368,11 @@ window.__ModuleLoader__.load({
       gateParseSumSep: ' · ',
       gateParseListSep: ', ',
       gateAiFreshHint: 'The key expires after this window (0 = valid until invalidated).',
-      gateParseWarnShell: 'Shell tools were added automatically; confirm the whole tool really must be blocked.',
-      gateParseWarnCatchAll: 'This gate blocks a whole tool call, which has a wide impact.',
-      gateParseWarnRole: 'A role reference is not in the role catalog; confirm it.',
+      gateParseWarnAllShell: 'This gate blocks both bash and pwsh and its command pattern may be too broad; check the impact.',
+      gateParseWarnSelfKey: 'The key is produced by the same role this gate blocks, so the gate can satisfy itself; confirm that is intended.',
+      gateParseWarnAck: 'This gate blocks a whole tool call (no command pattern), which has a wide impact; confirm it.',
       gateParseToastAdopted: 'Adopted {id}',
       gateParseUndo: 'Undo',
-      gateParseToastIgnored: 'Ignored',
       gateAiA11yDialog: 'Describe a gate: {title}',
       gateAiA11ySpinner: 'Parsing the gate description',
       gateAiA11yError: 'Parsing error',
@@ -883,6 +875,30 @@ window.__ModuleLoader__.load({
       return ''
     }
 
+    /** Every role reference one gate carries. */
+    function gateRoleRefs(gate) {
+      const deny = gate?.deny ?? {}
+      const require = gate?.require ?? {}
+      const refs = [String(deny.role ?? '')]
+      if (Array.isArray(require.byRoles)) refs.push(...require.byRoles.map((entry) => String(entry ?? '')))
+      if (require.commandSuccess !== null && typeof require.commandSuccess === 'object') {
+        refs.push(String(require.commandSuccess.role ?? ''))
+      }
+      if (require.invalidateOn !== null && typeof require.invalidateOn === 'object') {
+        refs.push(String(require.invalidateOn.role ?? ''))
+      }
+      return refs.filter((entry) => entry !== '')
+    }
+
+    /** Report the first role reference a gate carries that is not gated-eligible. */
+    function gateRoleProblem(gate, roleIds) {
+      for (const reference of gateRoleRefs(gate)) {
+        if (reference === 'lead') return { key: 'gateParseValidateRole', params: { role: reference } }
+        if (!roleIds.has(reference)) return { key: 'gateParseValidateRole', params: { role: reference } }
+      }
+      return ''
+    }
+
     /** Compose one gate-specific validation message. */
     function gateProblemMessage(t, gate, problem) {
       const label = typeof gate?.id === 'string' && gate.id !== '' ? gate.id : '?'
@@ -971,6 +987,7 @@ window.__ModuleLoader__.load({
         const [consumedNonce, setConsumedNonce] = React.useState('')
         const [parseFieldsPresent, setParseFieldsPresent] = React.useState(true)
         const parseFieldRef = React.useRef(false)
+        const gatesBaselineRef = React.useRef('[]')
         const [engine, setEngine] = React.useState({
           leadPlaybook: '',
           activeTemplate: '',
@@ -1000,6 +1017,7 @@ window.__ModuleLoader__.load({
           setSelectedRole((current) =>
             nextRoles.some((role) => role.id === current) ? current : (nextRoles[0]?.id ?? 'general'))
           setParse({ request: parseRequestOf(view.value), result: parseResultOf(view.value) })
+          gatesBaselineRef.current = JSON.stringify(Array.isArray(view.value?.gates) ? view.value.gates : [])
           // A request left pending by another page keeps this mount polling too.
           const restoredRequest = parseRequestOf(view.value)
           setPendingNonce((current) => (current !== '' ? current : restoredRequest.nonce))
@@ -1204,24 +1222,46 @@ window.__ModuleLoader__.load({
           setError('')
           setNotice('')
           const gateList = Array.isArray(engine.gates) ? engine.gates : []
-          if (gateList.length > MAX_GATES) {
-            setError(fill(t('gateParseErrLimit'), { max: MAX_GATES }))
-            return
-          }
-          const seenIds = new Set()
-          for (const gate of gateList) {
-            const problem = validateGateObject(gate)
-            if (problem !== '') {
-              const reason = problem.params === undefined ? t(problem.key) : fill(t(problem.key), problem.params)
-              setError(`${fill(t('gateParseErrLegacyGate'), { id: gate.id || '?' })} ${reason}`)
+          const gatesChanged = JSON.stringify(gateList) !== gatesBaselineRef.current
+          let legacyWarning = ''
+          const describeProblem = (gate, problem) =>
+            `${fill(t('gateParseErrLegacyGate'), { id: gate?.id || '?' })} ${problem.params === undefined ? t(problem.key) : fill(t(problem.key), problem.params)}`
+          if (gatesChanged) {
+            // The gate list is part of this save: every entry must be fully valid.
+            if (gateList.length > MAX_GATES) {
+              setError(fill(t('gateParseErrLimit'), { max: MAX_GATES }))
               return
             }
-            if (seenIds.has(gate.id)) {
-              setError(fill(t('gateParseErrLegacyGate'), { id: gate.id })
-                + ' ' + fill(t('gateParseValidateDuplicate'), { id: gate.id }))
-              return
+            const roleIds = new Set([...roles.map((role) => role.id), 'general'])
+            const seenIds = new Set()
+            for (const gate of gateList) {
+              const problem = validateGateObject(gate)
+              if (problem !== '') {
+                setError(describeProblem(gate, problem))
+                return
+              }
+              const roleProblem = gateRoleProblem(gate, roleIds)
+              if (roleProblem !== '') {
+                setError(describeProblem(gate, roleProblem))
+                return
+              }
+              if (seenIds.has(gate.id)) {
+                setError(describeProblem(gate, { key: 'gateParseValidateDuplicate', params: { id: gate.id } }))
+                return
+              }
+              seenIds.add(gate.id)
             }
-            seenIds.add(gate.id)
+          } else {
+            // Only other engine fields changed: legacy gate defects are surfaced
+            // as a warning instead of blocking a save that does not touch gates.
+            const roleIds = new Set([...roles.map((role) => role.id), 'general'])
+            for (const gate of gateList) {
+              const problem = validateGateObject(gate) || gateRoleProblem(gate, roleIds)
+              if (problem !== '') {
+                legacyWarning = describeProblem(gate, problem)
+                break
+              }
+            }
           }
           setBusy(true)
           try {
@@ -1247,7 +1287,8 @@ window.__ModuleLoader__.load({
             setParse({ request: parseRequestOf(view.value), result: parseResultOf(view.value) })
             setConsumedNonce('')
             setDirty(false)
-            setNotice(t('saved'))
+            gatesBaselineRef.current = JSON.stringify(Array.isArray(view.value?.gates) ? view.value.gates : [])
+            setNotice(legacyWarning === '' ? t('saved') : `${t('saved')} · ${legacyWarning}`)
           } catch (caught) {
             setError(`${t('saveFailed')}${caught.message}`)
             // Keep the local engine (including adopted drafts); only refresh the
@@ -1337,6 +1378,33 @@ window.__ModuleLoader__.load({
         const consumeParse = (nonce) => {
           if (typeof nonce === 'string' && nonce !== '') setConsumedNonce(nonce)
         }
+
+        /**
+         * Give up on one timed-out request: clear both handshake fields (the
+         * host may have given up writing them) and stop the fallback poll.
+         */
+        const abandonParse = async (nonce) => {
+          setParseTimeoutNonce('')
+          setPendingNonce((current) => (current === nonce ? '' : current))
+          if (!parseFieldRef.current) return
+          try {
+            const view = await writeNamespaceFields(ctx, revision, [
+              { field: 'gateParseRequest', value: emptyParseRequest() },
+              { field: 'gateParseResult', value: emptyParseResult() },
+            ])
+            setRevision(view.revision)
+            setParse({ request: parseRequestOf(view.value), result: parseResultOf(view.value) })
+            setConsumedNonce('')
+          } catch {
+            await refreshParseAndRevision()
+          }
+        }
+
+        React.useEffect(() => {
+          if (parseTimeoutNonce === '') return
+          void abandonParse(parseTimeoutNonce)
+          // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, [parseTimeoutNonce])
 
         const editEngine = (patch) => {
           markDirty()
@@ -1567,6 +1635,21 @@ window.__ModuleLoader__.load({
       const thinking = pending && !(result.status !== '' && result.nonce === pendingNonce)
       const drafts = visible && result.status === 'ok' ? parseDrafts(result, ignored, adopted) : []
       const existingIds = gateList.map((gate) => gate.id)
+      /** Non-fatal warnings shown next to one draft. */
+      const draftWarnings = (gate) => {
+        const list = []
+        const deny = gate?.deny ?? {}
+        const require = gate?.require ?? {}
+        const tools = Array.isArray(deny.tool) ? deny.tool : []
+        if (deny.commandPattern !== undefined && tools.includes('bash') && tools.includes('pwsh')) {
+          list.push(t('gateParseWarnAllShell'))
+        }
+        if (deny.commandPattern === undefined) list.push(t('gateParseWarnAck'))
+        if (require.event !== undefined && Array.isArray(require.byRoles) && require.byRoles.includes(deny.role)) {
+          list.push(t('gateParseWarnSelfKey'))
+        }
+        return list
+      }
       const toast = adopted.length > 0
         ? fill(t('gateParseToastAdopted'), { id: adopted[adopted.length - 1] })
         : ''
@@ -1750,6 +1833,10 @@ window.__ModuleLoader__.load({
                       }, [
                         h(GateCard, { key: 'card', t, gate, off: false, readOnly: true }),
                         h('span', { key: 'summary', style: { ...small, fontSize: 11, lineHeight: 1.5 } }, gateSummary(gate, t)),
+                        ...draftWarnings(gate).map((warning) => h('span', {
+                          key: 'warn-' + warning.slice(0, 12),
+                          style: { ...small, fontSize: 10, color: 'var(--dsw-alias-state-warn-primary)' },
+                        }, warning)),
                         h('div', { key: 'actions', style: row }, [
                           h('button', {
                             key: 'adopt',

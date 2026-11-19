@@ -181,6 +181,56 @@ export function normalizeGates(input) {
   return gates
 }
 
+/**
+ * Report gates the evaluator would silently skip.
+ *
+ * Reads the raw configured list, so duplicates that {@link normalizeGates}
+ * drops are still reported. The optional `warn` callback receives at most one
+ * message per offending id and is never allowed to throw.
+ *
+ * @param rawGates - configured gate list before normalization.
+ * @param warn - optional single-argument diagnostic receiver.
+ * @returns the usable gates plus every invalid or duplicated entry.
+ */
+export function auditGateList(rawGates, warn) {
+  const valid = []
+  const invalid = []
+  const seen = new Set()
+  const reported = new Set()
+  const invalidIds = new Set()
+  const report = (index, id, reason) => {
+    if (id !== '') {
+      // One report per offending id: repeated copies of the same defect are noise.
+      if (invalidIds.has(id)) return
+      invalidIds.add(id)
+    }
+    const label = id === '' ? `gate #${index}` : `gate "${id}"`
+    invalid.push({ index, id, reason })
+    if (typeof warn !== 'function' || reported.has(label)) return
+    reported.add(label)
+    try {
+      warn(`${label}: ${reason}`)
+    } catch {
+      // Diagnostics must never break the fail-open path.
+    }
+  }
+  for (const [index, candidate] of (Array.isArray(rawGates) ? rawGates : []).entries()) {
+    const gate = normalizeGate(candidate)
+    const problem = validateGate(gate)
+    if (problem !== undefined) {
+      report(index, gate.id, problem)
+      continue
+    }
+    if (seen.has(gate.id)) {
+      report(index, gate.id, `duplicate gate id "${gate.id}" is ignored by the evaluator`)
+      continue
+    }
+    seen.add(gate.id)
+    valid.push(gate)
+  }
+  return { valid, invalid }
+}
+
 /** Extract the shell command string from tool arguments, tolerating JSON strings. */
 export function commandFromArgs(args) {
   let parsed = args

@@ -22,6 +22,7 @@ import { activeMembers, leadCatalog, memberPersona } from './prompts.js'
 import { evaluateDeny } from './policy.js'
 import {
   GateSchema,
+  auditGateList,
   commandFromArgs,
   commandSuccessEvent,
   evaluateGates,
@@ -31,7 +32,7 @@ import {
 } from './gates.js'
 import { GateLedger } from './ledger.js'
 import { installGateParser } from './gate-parse.js'
-import { copyTemplateSkills, discoverTemplates, seedTemplates, templatesRoot, upsertRoles } from './templates.js'
+import { copyTemplateSkills, discoverTemplates, mergeTemplateGates, seedTemplates, templatesRoot, upsertRoles } from './templates.js'
 import { MemberSnapshots, RoleStore, RuleStore, stateDir } from './store.js'
 import { spawnRoleMember } from './spawn.js'
 import { createTools } from './tools.js'
@@ -193,12 +194,26 @@ export function apply(ctx, config) {
     return { membership, roleId: role.id }
   }
 
+  // Read-side audit: a configured gate the evaluator would silently skip is a
+  // real defect, so warn once per gate id per process. This never blocks a call.
+  const warnedGateMessages = new Set()
+  const warnGateOnce = (message) => {
+    if (warnedGateMessages.has(message)) return
+    warnedGateMessages.add(message)
+    ctx.logger?.warn(`[agent-team-roles] ${message}`)
+  }
+
   // Host-wide gate enforcement. With no configured gates both listeners return
   // immediately, so existing flows pay nothing and behave identically.
   //
   // Failure philosophy: an evaluator exception fails OPEN (allow + warn). Only
   // a valid configuration whose state is definitely unsatisfied may deny.
   ctx.effect(() => ctx.on('tools/pre-execute', async (exec, next) => {
+    try {
+      auditGateList(readConfig(config, 'gates') ?? [], warnGateOnce)
+    } catch {
+      // Diagnostics must not affect the fail-open path.
+    }
     let gates
     try {
       gates = normalizeGates(readConfig(config, 'gates') ?? [])
@@ -226,6 +241,11 @@ export function apply(ctx, config) {
   }), 'agent-team-roles:gates-pre-execute')
 
   ctx.effect(() => ctx.on('tools/post-execute', async (exec, result, next) => {
+    try {
+      auditGateList(readConfig(config, 'gates') ?? [], warnGateOnce)
+    } catch {
+      // Diagnostics must not affect the fail-open path.
+    }
     const downstream = await next()
     try {
       const gates = normalizeGates(readConfig(config, 'gates') ?? [])
@@ -457,40 +477,23 @@ export function apply(ctx, config) {
         const applied = await upsertRoles(roleStore, template.roles)
         const editor = ctx.get('configEditor')
         const templateGates = Array.isArray(template.gates) ? template.gates : []
-        const gateIds = new Set(templateGates.map((gate) => gate.id))
-        // Validate before writing: a defective template must not replace live
-        // gates with entries the evaluator would silently skip.
-        if (gateIds.size !== templateGates.length) {
-          return { kind: 'error', text: `template "${template.id}" lists duplicate gate ids` }
+        // Validate and cap before writing: a defective or oversized template
+        // must not replace live gates, and the merge is never truncated.
+        const merged = mergeTemplateGates(readConfig(config, 'gates') ?? [], templateGates)
+        if (merged.error !== undefined) {
+          return { kind: 'error', text: `template "${template.id}": ${merged.error}` }
         }
-        for (const gate of templateGates) {
-          const invalid = validateGate(gate)
-          if (invalid !== undefined) {
-            return { kind: 'error', text: `template "${template.id}" gate invalid: ${invalid}` }
-          }
-        }
-        const existingIds = new Set(
-          normalizeGates(readConfig(config, 'gates') ?? []).map((gate) => gate.id),
-        )
-        const replaced = templateGates.filter((gate) => existingIds.has(gate.id)).map((gate) => gate.id)
         await editor.edit(ctx.fiber.entry, (current) => ({
           ...current,
           activeTemplate: template.id,
-          ...(templateGates.length === 0
-            ? {}
-            : {
-                gates: [
-                  ...(Array.isArray(current.gates) ? current.gates : []).filter((gate) => !gateIds.has(gate.id)),
-                  ...templateGates,
-                ],
-              }),
+          ...(templateGates.length === 0 ? {} : { gates: merged.gates }),
         }))
         const skills = await copyTemplateSkills(template.dir, path.join(stateDir(), 'skills'))
         await loadTemplates(true)
         const parts = applied.map((item) => `${item.id} (${item.action})`)
         const skillNote = skills.copied.length === 0 ? 'no skill dirs' : `skills merged: ${skills.copied.join(', ')}`
         const gateNote = templateGates.length === 0 ? 'no gates' : `gates installed: ${templateGates.map((gate) => gate.id).join(', ')}`
-        const replacedNote = replaced.length === 0 ? '' : `; replaced: ${replaced.join(', ')}`
+        const replacedNote = merged.replaced.length === 0 ? '' : `; replaced: ${merged.replaced.join(', ')}`
         return {
           kind: 'success',
           text: `Applied template "${template.id}". Roles: ${parts.join(', ')}. Playbook active. ${gateNote}${replacedNote}. ${skillNote}.`,

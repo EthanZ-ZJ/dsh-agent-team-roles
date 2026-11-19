@@ -127,7 +127,8 @@ $DSH_HOME/agent-team-roles/templates/<模板 id>/
   "name": "Software Development Team", // 必填
   "description": "……",               // 可选
   "leadPlaybook": "……",              // 可选；应用后追加到 Lead 提示词
-  "roles": [ /* 同设置页角色结构，可含 denyCommands */ ]
+  "roles": [ /* 同设置页角色结构，可含 denyCommands */ ],
+  "gates": [ /* 同设置页闸门结构；应用时合并，同 id 覆盖，总条数 ≤50 */ ]
 }
 ```
 
@@ -146,7 +147,7 @@ Team Lead 会话中使用命令：
 /team-template apply software-dev
 ```
 
-`apply` 做三件事：把模板 roles **upsert** 进角色目录（已有的更新、缺失的创建）；设置 `activeTemplate` 使其 playbook 生效（覆盖 `leadPlaybook` 配置）；把模板 `skills/<角色 id>/` 合并复制到 `stateDir/skills/<角色 id>/`（覆盖同名文件，不删除其它文件）。
+`apply` 做四件事：把模板 roles **upsert** 进角色目录（已有的更新、缺失的创建）；设置 `activeTemplate` 使其 playbook 生效（覆盖 `leadPlaybook` 配置）；把模板 `gates` 合并进现有闸门列表（同 id 覆盖并回报 `replaced`，合并后超过 50 条或模板 gate 非法则整次拒绝、不写入）；把模板 `skills/<角色 id>/` 合并复制到 `stateDir/skills/<角色 id>/`（覆盖同名文件，不删除其它文件）。
 
 ## denyCommands：命令级策略
 
@@ -221,8 +222,10 @@ Team Lead（且 Team Lead 预设会话）可用：
 - **仅受管成员**：没有 Team 成员身份或角色解析失败时直接放行。
 - **作废粒度**：事件不携带工具信息，`invalidateOn` 命中即清空整个团队的事件桶。
 - **空配置零行为**：`gates` 为空时 pre/post-execute 监听器立即返回，不引入可感知开销。
-- **解析事件兜底**：宿主以 `settings/document-updated` 事件为主路径；事件丢失时客户端在 thinking 期间每 2 秒重读一次配置作为兜底，超时 90 秒后提示重试。宿主日志以 `started via event|poll` 标注实际路径。
-- **解析结果不自动清理**：`gateParseResult` 会留在 profile 配置中，直到下一次请求、已采用后的保存或用户点「忽略」。
+- **解析事件兜底**：宿主以 `settings/document-updated` 事件为主路径；事件丢失时客户端在 thinking 期间每 2 秒重读一次配置作为兜底，超时 90 秒后提示重试；超时/取消会清空请求与结果并停轮询。宿主日志与审计行以 `started via event|poll`（审计字段 `source`）标注实际路径。
+- **解析结果保留窗口**：`gateParseResult` 不会自动清理，会留在 profile 配置中直到下一次请求、已采用后的保存或用户点「忽略」；设置页只展示 `completedAt` 在 10 分钟内的结果，过期需重新解析。
+- **旧 Host 降级**：若运行中的宿主版本没有 `gateParseRequest`/`gateParseResult` 字段，设置页会禁用「用自然语言新增」（`gateAiUnavailable`），手动新增/编辑/保存路径不受影响。
+- **读侧自检**：配置里存在评估器会静默跳过的 gate（非法字段、重复 id）时，宿主在 pre/post-execute 读取侧每 id 每进程 warn 一次，但不阻断调用（fail-open）。
 
 ### 用自然语言创建闸门（设置页）
 
