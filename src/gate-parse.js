@@ -62,6 +62,9 @@ export const PARSE_POLL_INTERVAL_MS = 1_000
 /** Result-write retry delays: the first attempt, then three retries. */
 export const PARSE_RETRY_DELAYS_MS = Object.freeze([30_000, 60_000, 120_000])
 
+/** Short marker written to the audit file on install, to prove which module runs. */
+export const GATE_PARSE_MODULE_VERSION = 'v6-hmr-exit'
+
 /** Audit file size above which the previous log is rotated away. */
 export const AUDIT_MAX_BYTES = 1024 * 1024
 
@@ -467,6 +470,27 @@ export function gateParseAuditFile() {
   return path.join(stateDir(), 'gate-parse-audit.jsonl')
 }
 
+/** Install-probe path kept separate so it never pollutes the per-parse audit. */
+export function gateParseProbeFile() {
+  return path.join(stateDir(), 'gate-parse-module-probe.jsonl')
+}
+
+/**
+ * Append one install-probe line. This is the observable proof of which module
+ * version the running Host actually loaded.
+ *
+ * @param version - short module marker, e.g. `v6-hmr-exit`.
+ */
+export async function appendGateParseProbe(version) {
+  const file = gateParseProbeFile()
+  await fs.mkdir(path.dirname(file), { recursive: true })
+  await fs.appendFile(
+    file,
+    `${JSON.stringify({ probe: 'gate-parse-module', version, at: Date.now() })}\n`,
+    'utf8',
+  )
+}
+
 /**
  * Append one audit line, rotating the previous log when it grows too large.
  *
@@ -535,18 +559,44 @@ export function installGateParser({ ctx, config }, options = {}) {
     }
   }
 
-  // The settings event is emitted inside the loader's HMR transaction, and that
-  // async context travels through our awaits: writing Config from it throws
-  // "HMR transactions cannot be nested". A resource created here (plugin start,
-  // outside any transaction) gives the parse a clean async context to run in.
+  // The settings event is emitted from Settings.describe() while the loader's
+  // HMR transaction is active, and that AsyncLocalStorage store travels through
+  // every await of our chain. ConfigEditor.edit() then calls hmr.runExclusive()
+  // (which rejects nested transactions). A resource created during plugin apply
+  // is not safe: apply itself runs inside hmr.runReload()/runExclusive(), so the
+  // resource inherits the very store we must escape. Use the HMR service's own
+  // `executing.exit()` escape (the same pattern dsh-hmr uses for watchConfig)
+  // when scheduling out-of-transaction work.
   const scheduler = new AsyncResource('agent-team-roles:gate-parse')
-  const detach = (fn) => {
+  const transactionStore = () => {
     try {
-      scheduler.runInAsyncScope(() => { queueMicrotask(fn) })
+      const hmr = ctx?.get?.('hmr')
+      const als = hmr?.executing
+      return als !== null && typeof als?.getStore === 'function' ? als.getStore() : undefined
     } catch {
-      queueMicrotask(fn)
+      return undefined
     }
   }
+  /** Run `fn` in a fresh async context, outside the HMR transaction if any. */
+  const runOutside = (fn) => new Promise((resolve, reject) => {
+    const invoke = () => { Promise.resolve().then(fn).then(resolve, reject) }
+    try {
+      const hmr = ctx?.get?.('hmr')
+      const als = hmr?.executing
+      if (als !== null && typeof als?.exit === 'function' && als.getStore() !== undefined) {
+        als.exit(invoke)
+        return
+      }
+    } catch {
+      // Fall through to the plain scheduler below.
+    }
+    try {
+      scheduler.runInAsyncScope(() => { queueMicrotask(invoke) })
+    } catch {
+      queueMicrotask(invoke)
+    }
+  })
+  const detach = (fn) => { void runOutside(fn) }
 
   /** Read the request through the live Config reader. */
   const requestNow = () => readParseRequest(config)
@@ -873,6 +923,13 @@ export function installGateParser({ ctx, config }, options = {}) {
   /** Decide what one request needs, then start it when eligible. */
   const check = async (source) => {
     if (disposed) return
+    // Any caller (event, fallback poll, retry timer, manual check) may still be
+    // inside the HMR transaction. Re-enter through the escape hatch first, so
+    // the eventual ConfigEditor.edit() never runs under a nested transaction.
+    if (transactionStore() !== undefined) {
+      await runOutside(() => check(source))
+      return
+    }
     let request
     try {
       request = requestNow()
@@ -994,6 +1051,12 @@ export function installGateParser({ ctx, config }, options = {}) {
 
   const startupTimer = setTimeout(() => { void safeCheck('startup') }, 1_500)
   startupTimer?.unref?.()
+
+  // Install probe: proves which module version is actually running and whether
+  // the escape hatch could see the HMR service. Kept in its own file so the
+  // per-parse audit keeps exactly one line per parse.
+  log('info', `gate parse module ${GATE_PARSE_MODULE_VERSION} installed (hmr=${ctx?.get?.('hmr') === undefined ? 'absent' : 'present'})`)
+  void appendGateParseProbe(GATE_PARSE_MODULE_VERSION).catch(() => undefined)
 
   /** Release listeners, timers, and any in-flight call. */
   const dispose = () => {
