@@ -1040,6 +1040,9 @@ window.__ModuleLoader__.load({
             const stateView = await readSettingsState(ctx)
             setWritable(stateView.writable)
             applyView(stateView.view)
+            // Land on the engine tab when a parse is still pending so the user
+            // can see its state (or the readable timeout error) immediately.
+            if (parseRequestOf(stateView.view.value).nonce !== '') setTab('engine')
           } catch (caught) {
             setError(caught.message === 'settings-remote-unavailable'
               ? t('settingsUnavailable')
@@ -1463,6 +1466,11 @@ window.__ModuleLoader__.load({
 
         React.useEffect(() => {
           if (parseTimeoutNonce === '') return
+          // Keep a readable failure visible after the fields are cleaned up:
+          // the thinking state would otherwise silently return to idle. The
+          // error key is intentionally not the thinking-state string, so an
+          // abandoned request never leaves "正在解析" wording behind.
+          setParseError(t('gateParseErrTimeout'))
           void abandonParse(parseTimeoutNonce)
           // eslint-disable-next-line react-hooks/exhaustive-deps
         }, [parseTimeoutNonce])
@@ -1505,6 +1513,11 @@ window.__ModuleLoader__.load({
             }, t(entry.label)))),
           error !== '' ? h('div', { key: 'error', style: banner('state-error') }, error) : null,
           notice !== '' ? h('div', { key: 'notice', style: banner('state-success') }, notice) : null,
+          // Mirrors a pending-parse failure at page level, so it stays readable
+          // even when the engine tab (and its inline banner) is not mounted.
+          parseError !== ''
+            ? h('div', { key: 'parse-error', role: 'alert', style: banner('state-error') }, parseError)
+            : null,
           tab === 'roles'
             ? h(RolesPanel, {
                 key: 'roles',
@@ -2105,6 +2118,26 @@ window.__ModuleLoader__.load({
             ])
           : null,
         localError !== '' ? h('div', { key: 'err', style: banner('state-error') }, localError) : null,
+        // A timeout/parse failure stays readable after the handshake fields are
+        // cleared, and always offers the manual form as a fallback.
+        parseError !== ''
+          ? h('div', {
+              key: 'parse-error',
+              role: 'alert',
+              'aria-label': t('gateAiA11yError'),
+              style: banner('state-error'),
+            }, [
+              h('div', { key: 'text' }, parseError),
+              h('div', { key: 'actions', style: { ...row, marginTop: 6 } }, [
+                h('button', {
+                  key: 'manual',
+                  type: 'button',
+                  style: button,
+                  onClick: () => { closeDialog(); setEditing('new') },
+                }, t('gateParseManual')),
+              ]),
+            ])
+          : null,
         resultBlock,
         dialogBlock,
         gateList.length === 0
