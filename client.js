@@ -1,4 +1,4 @@
-window.__ModuleLoader__.load({
+﻿window.__ModuleLoader__.load({
   id: 'dsh-agent-team-roles',
   factory(require) {
     const React = require('react')
@@ -164,7 +164,7 @@ window.__ModuleLoader__.load({
       gateAiA11yError: '解析错误',
       gateAiA11yResult: '解析结果已就绪',
       gateParseSettingsUpdated: '配置已在别处更新',
-      engineHint: 'playbook 非空时追加到 Lead 提示词；activeTemplate 命中的模板 playbook 优先。模板用 /team-template apply 应用。',
+      engineHint: '此处 playbook 非空即生效（追加到 Lead 提示词）；为空时回退 activeTemplate 模板自带的 playbook，模板 apply 时也会把模板文本复制到这里便于查看与修改。',
       addRole: '新建角色',
       deleteRole: '删除角色',
       save: '保存',
@@ -380,7 +380,7 @@ window.__ModuleLoader__.load({
       gateAiA11yError: 'Parsing error',
       gateAiA11yResult: 'Parsing result is ready',
       gateParseSettingsUpdated: 'Configuration was updated elsewhere',
-      engineHint: 'A non-empty playbook is appended to the Lead prompt; the active template\'s playbook wins. Apply templates with /team-template apply.',
+      engineHint: 'A non-empty playbook here is appended to the Lead prompt; when empty, the active template\'s playbook is the fallback. Applying a template copies its text here for editing.',
       addRole: 'New role',
       deleteRole: 'Delete role',
       save: 'Save',

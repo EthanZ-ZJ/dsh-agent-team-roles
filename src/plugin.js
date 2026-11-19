@@ -167,19 +167,41 @@ export function apply(ctx, config) {
     templateCache.at = Date.now()
     return templateCache.items
   }
+  // Seed the editable Lead playbook once: a configured value wins, and the
+  // active template's playbook is the fallback. Applying a template copies its
+  // playbook into the config so the Settings page can show and edit it.
+  const adoptTemplatePlaybook = async () => {
+    try {
+      if ((readConfig(config, 'leadPlaybook') ?? '').trim() !== '') return
+      const active = readConfig(config, 'activeTemplate') ?? ''
+      if (active === '') return
+      const template = templateCache.items.find((item) => item.id === active)
+      const playbook = typeof template?.leadPlaybook === 'string' ? template.leadPlaybook.trim() : ''
+      const editor = ctx.get('configEditor')
+      if (playbook === '' || editor === undefined) return
+      await editor.edit(ctx.fiber.entry, (current) => ({ ...current, leadPlaybook: playbook }))
+    } catch (error) {
+      ctx.logger?.warn(`[agent-team-roles] playbook adoption failed: ${error.message}`)
+    }
+  }
   void seedTemplates(templateRoot, builtinTemplatesDir)
     .then(() => loadTemplates(true))
+    .then(() => adoptTemplatePlaybook())
     .catch((error) => ctx.logger?.warn(`[agent-team-roles] template seeding failed: ${error.message}`))
+  // A late retry covers services that are not ready during activation.
+  setTimeout(() => { void adoptTemplatePlaybook() }, 2000)
 
-  // Effective Lead playbook: activeTemplate's playbook wins over the plain
-  // config value; both may be empty, leaving purely generic scheduling rules.
+  // Effective Lead playbook: the configured value wins; the active template's
+  // playbook is the fallback. Both may be empty, leaving purely generic rules.
   const leadPlaybook = () => {
+    const configured = (readConfig(config, 'leadPlaybook') ?? '').trim()
+    if (configured !== '') return configured
     const active = readConfig(config, 'activeTemplate') ?? ''
     if (active !== '') {
       const template = templateCache.items.find((item) => item.id === active)
       if (template !== undefined && template.leadPlaybook.trim() !== '') return template.leadPlaybook
     }
-    return readConfig(config, 'leadPlaybook') ?? ''
+    return ''
   }
 
   /** Resolve the gate caller's team and role; undefined for non-members. */
@@ -487,6 +509,9 @@ export function apply(ctx, config) {
         await editor.edit(ctx.fiber.entry, (current) => ({
           ...current,
           activeTemplate: template.id,
+          // Copy the template playbook into the editable config so the Settings
+          // page shows it; an edited value keeps winning over the template.
+          ...(template.leadPlaybook.trim() === '' ? {} : { leadPlaybook: template.leadPlaybook }),
           ...(templateGates.length === 0 ? {} : { gates: merged.gates }),
         }))
         const skills = await copyTemplateSkills(template.dir, path.join(stateDir(), 'skills'))
