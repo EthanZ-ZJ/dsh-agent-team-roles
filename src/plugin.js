@@ -196,10 +196,11 @@ export function apply(ctx, config) {
 
   // Read-side audit: a configured gate the evaluator would silently skip is a
   // real defect, so warn once per gate id per process. This never blocks a call.
-  const warnedGateMessages = new Set()
-  const warnGateOnce = (message) => {
-    if (warnedGateMessages.has(message)) return
-    warnedGateMessages.add(message)
+  const warnedGateIds = new Set()
+  const warnGateOnce = (message, id) => {
+    const key = typeof id === 'string' && id !== '' ? id : '#empty'
+    if (warnedGateIds.has(key)) return
+    warnedGateIds.add(key)
     ctx.logger?.warn(`[agent-team-roles] ${message}`)
   }
 
@@ -474,15 +475,15 @@ export function apply(ctx, config) {
         return { kind: 'error', text: `unknown template "${argument}"; discovered templates: ${known || '(none)'}` }
       }
       try {
-        const applied = await upsertRoles(roleStore, template.roles)
         const editor = ctx.get('configEditor')
         const templateGates = Array.isArray(template.gates) ? template.gates : []
-        // Validate and cap before writing: a defective or oversized template
-        // must not replace live gates, and the merge is never truncated.
+        // Validate and cap before any write: a defective or oversized template
+        // must not replace live gates, and roles must not be written first.
         const merged = mergeTemplateGates(readConfig(config, 'gates') ?? [], templateGates)
         if (merged.error !== undefined) {
           return { kind: 'error', text: `template "${template.id}": ${merged.error}` }
         }
+        const applied = await upsertRoles(roleStore, template.roles)
         await editor.edit(ctx.fiber.entry, (current) => ({
           ...current,
           activeTemplate: template.id,
@@ -494,9 +495,10 @@ export function apply(ctx, config) {
         const skillNote = skills.copied.length === 0 ? 'no skill dirs' : `skills merged: ${skills.copied.join(', ')}`
         const gateNote = templateGates.length === 0 ? 'no gates' : `gates installed: ${templateGates.map((gate) => gate.id).join(', ')}`
         const replacedNote = merged.replaced.length === 0 ? '' : `; replaced: ${merged.replaced.join(', ')}`
+        const warningNote = merged.warnings.length === 0 ? '' : `; warnings: ${merged.warnings.join('; ')}`
         return {
           kind: 'success',
-          text: `Applied template "${template.id}". Roles: ${parts.join(', ')}. Playbook active. ${gateNote}${replacedNote}. ${skillNote}.`,
+          text: `Applied template "${template.id}". Roles: ${parts.join(', ')}. Playbook active. ${gateNote}${replacedNote}${warningNote}. ${skillNote}.`,
         }
       } catch (error) {
         return { kind: 'error', text: error instanceof Error ? error.message : String(error) }

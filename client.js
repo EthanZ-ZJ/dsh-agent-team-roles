@@ -102,6 +102,7 @@ window.__ModuleLoader__.load({
       gateParseAdopt: '采用',
       gateParseAdoptAll: '全部采用',
       gateParseIgnore: '忽略',
+      gateParseDiscardResult: '丢弃结果（不可恢复）',
       gateParseDetail: '详情：{detail}',
       gateParseCode: '错误码：{code}',
       gateParseWarnings: '提示：{warnings}',
@@ -153,7 +154,7 @@ window.__ModuleLoader__.load({
       gateParseSumSep: ' · ',
       gateParseListSep: '、',
       gateAiFreshHint: '超过该时长后钥匙失效（0 表示永久有效）',
-      gateParseWarnAllShell: '该闸门同时拦截 bash 与 pwsh，且命令正则可能覆盖过宽，请确认影响面。',
+      gateParseWarnAllShell: '该闸门未限定命令正则，将拦截 shell 工具的全部调用，请确认影响面。',
       gateParseWarnSelfKey: '钥匙由被拦角色自己产生，等于闸门可被自己满足，请确认是否预期。',
       gateParseWarnAck: '该闸门会拦截整个工具调用（无命令正则），影响面较大，请确认。',
       gateParseToastAdopted: '已采用 {id}',
@@ -321,6 +322,7 @@ window.__ModuleLoader__.load({
       gateParseAdopt: 'Adopt',
       gateParseAdoptAll: 'Adopt all',
       gateParseIgnore: 'Ignore',
+      gateParseDiscardResult: 'Discard result (cannot be undone)',
       gateParseDetail: 'Detail: {detail}',
       gateParseCode: 'Code: {code}',
       gateParseWarnings: 'Notes: {warnings}',
@@ -368,7 +370,7 @@ window.__ModuleLoader__.load({
       gateParseSumSep: ' · ',
       gateParseListSep: ', ',
       gateAiFreshHint: 'The key expires after this window (0 = valid until invalidated).',
-      gateParseWarnAllShell: 'This gate blocks both bash and pwsh and its command pattern may be too broad; check the impact.',
+      gateParseWarnAllShell: 'This gate has no command pattern, so it blocks every shell tool call; check the impact.',
       gateParseWarnSelfKey: 'The key is produced by the same role this gate blocks, so the gate can satisfy itself; confirm that is intended.',
       gateParseWarnAck: 'This gate blocks a whole tool call (no command pattern), which has a wide impact; confirm it.',
       gateParseToastAdopted: 'Adopted {id}',
@@ -454,6 +456,8 @@ window.__ModuleLoader__.load({
     const PARSE_RESULT_TTL_MS = 10 * 60 * 1000
     /** Client-side wait budget for one parse; the host budget is 45 seconds. */
     const PARSE_CLIENT_TIMEOUT_MS = 90 * 1000
+    /** Fallback describe cadence while a parse is pending (2 periods before first). */
+    const PARSE_POLL_PERIOD_MS = 2000
     /** Gate id grammar; mirrors GATE_ID in src/gates.js. */
     const GATE_ID = /^[a-z][a-z0-9-]{0,63}$/
     const input = {
@@ -1082,6 +1086,35 @@ window.__ModuleLoader__.load({
           }
         }
 
+        const clientPollRef = React.useRef({ start: null, interval: null })
+        const eventSeenNonceRef = React.useRef('')
+        const parseRequestRef = React.useRef(parse.request)
+        const pendingNonceRef = React.useRef('')
+        React.useEffect(() => { parseRequestRef.current = parse.request }, [parse.request])
+        React.useEffect(() => { pendingNonceRef.current = pendingNonce }, [pendingNonce])
+
+        /** Stop the 2s fallback poll and its delayed start. */
+        const stopClientPoll = () => {
+          const poll = clientPollRef.current
+          if (poll.start !== null) {
+            clearTimeout(poll.start)
+            poll.start = null
+          }
+          if (poll.interval !== null) {
+            clearInterval(poll.interval)
+            poll.interval = null
+          }
+        }
+
+        /** Start the fallback poll no earlier than two periods after a request. */
+        const startClientPoll = () => {
+          stopClientPoll()
+          clientPollRef.current.start = setTimeout(() => {
+            clientPollRef.current.start = null
+            clientPollRef.current.interval = setInterval(() => { void refreshParseAndRevision() }, 2000)
+          }, 2 * PARSE_POLL_PERIOD_MS)
+        }
+
         React.useEffect(() => {
           void load()
           // Load once on mount; later reads are explicit refresh or post-save.
@@ -1095,9 +1128,14 @@ window.__ModuleLoader__.load({
             // Some emitters pass the namespace string, others a document object.
             const namespace = typeof payload === 'string' ? payload : payload?.ns
             if (typeof namespace === 'string' && namespace !== NS) return
+            // The event path owns this nonce: never let the poll shadow it.
+            const expected = parseRequestRef.current.nonce || pendingNonceRef.current
+            if (expected !== '') eventSeenNonceRef.current = expected
+            stopClientPoll()
             queueMicrotask(() => { void onExternalUpdate() })
           })
           return () => {
+            stopClientPoll()
             if (typeof off === 'function') off()
           }
           // The subscription reads refs, so it never needs to re-register.
@@ -1105,16 +1143,20 @@ window.__ModuleLoader__.load({
         }, [])
 
         // While one parse is in flight, re-read the handshake fields with a short
-        // poll: the event is best-effort and the poll stops when nothing pends.
+        // poll: the event is best-effort. The poll starts two periods late and
+        // stops as soon as the event arrives or nothing is pending.
         React.useEffect(() => {
           const pending = pendingNonce !== '' || parse.request.nonce !== ''
-          if (!pending) return undefined
+          if (!pending) {
+            stopClientPoll()
+            return undefined
+          }
           const nonce = parse.request.nonce || pendingNonce
           const timeout = setTimeout(() => { setParseTimeoutNonce(nonce) }, PARSE_CLIENT_TIMEOUT_MS)
-          const poll = setInterval(() => { void refreshParseAndRevision() }, 2000)
+          if (eventSeenNonceRef.current !== nonce) startClientPoll()
           return () => {
             clearTimeout(timeout)
-            clearInterval(poll)
+            stopClientPoll()
           }
           // eslint-disable-next-line react-hooks/exhaustive-deps
         }, [pendingNonce, parse.request.nonce])
@@ -1284,10 +1326,15 @@ window.__ModuleLoader__.load({
             }
             const view = await writeNamespaceFields(ctx, revision, fields)
             setRevision(view.revision)
+            // Adopt the Host's canonical shape (schema defaults filled) into the
+            // local editor, then use that same value as the save baseline.
+            const savedGates = Array.isArray(view.value?.gates) ? view.value.gates : []
+            const savedDisabled = Array.isArray(view.value?.gatesDisabled) ? view.value.gatesDisabled : []
+            setEngine((current) => ({ ...current, gates: savedGates, gatesDisabled: savedDisabled }))
             setParse({ request: parseRequestOf(view.value), result: parseResultOf(view.value) })
             setConsumedNonce('')
             setDirty(false)
-            gatesBaselineRef.current = JSON.stringify(Array.isArray(view.value?.gates) ? view.value.gates : [])
+            gatesBaselineRef.current = JSON.stringify(savedGates)
             setNotice(legacyWarning === '' ? t('saved') : `${t('saved')} · ${legacyWarning}`)
           } catch (caught) {
             setError(`${t('saveFailed')}${caught.message}`)
@@ -1382,13 +1429,27 @@ window.__ModuleLoader__.load({
         /**
          * Give up on one timed-out request: clear both handshake fields (the
          * host may have given up writing them) and stop the fallback poll.
+         *
+         * A fresh read + revision guard keeps this from clobbering a newer
+         * request that arrived while the timeout was firing.
          */
         const abandonParse = async (nonce) => {
           setParseTimeoutNonce('')
           setPendingNonce((current) => (current === nonce ? '' : current))
           if (!parseFieldRef.current) return
+          let latestRevision = revision
           try {
-            const view = await writeNamespaceFields(ctx, revision, [
+            const stateView = await readSettingsState(ctx)
+            latestRevision = stateView.view.revision
+            setRevision(latestRevision)
+            const currentRequest = parseRequestOf(stateView.view.value)
+            if (currentRequest.nonce !== '' && currentRequest.nonce !== nonce) return
+          } catch {
+            await refreshParseAndRevision()
+            return
+          }
+          try {
+            const view = await writeNamespaceFields(ctx, latestRevision, [
               { field: 'gateParseRequest', value: emptyParseRequest() },
               { field: 'gateParseResult', value: emptyParseResult() },
             ])
@@ -1621,6 +1682,8 @@ window.__ModuleLoader__.load({
       const [localError, setLocalError] = React.useState('')
       const [ignored, setIgnored] = React.useState([])
       const [adopted, setAdopted] = React.useState([])
+      const [acknowledged, setAcknowledged] = React.useState(false)
+      const [discardPending, setDiscardPending] = React.useState(false)
       const gateList = Array.isArray(gates) ? gates : []
       const disabledList = Array.isArray(disabled) ? disabled : []
       const request = parse?.request ?? emptyParseRequest()
@@ -1635,21 +1698,32 @@ window.__ModuleLoader__.load({
       const thinking = pending && !(result.status !== '' && result.nonce === pendingNonce)
       const drafts = visible && result.status === 'ok' ? parseDrafts(result, ignored, adopted) : []
       const existingIds = gateList.map((gate) => gate.id)
+      /** Whether one gate blocks every shell call (no command pattern). */
+      const needsAck = (gate) => {
+        const deny = gate?.deny ?? {}
+        const tools = Array.isArray(deny.tool) ? deny.tool : []
+        const pattern = typeof deny.commandPattern === 'string' ? deny.commandPattern : ''
+        return pattern === '' && (tools.includes('bash') || tools.includes('pwsh'))
+      }
       /** Non-fatal warnings shown next to one draft. */
       const draftWarnings = (gate) => {
         const list = []
         const deny = gate?.deny ?? {}
         const require = gate?.require ?? {}
-        const tools = Array.isArray(deny.tool) ? deny.tool : []
-        if (deny.commandPattern !== undefined && tools.includes('bash') && tools.includes('pwsh')) {
-          list.push(t('gateParseWarnAllShell'))
-        }
-        if (deny.commandPattern === undefined) list.push(t('gateParseWarnAck'))
-        if (require.event !== undefined && Array.isArray(require.byRoles) && require.byRoles.includes(deny.role)) {
-          list.push(t('gateParseWarnSelfKey'))
-        }
+        if (needsAck(gate)) list.push(t('gateParseWarnAllShell'))
+        const commandSuccess = require.commandSuccess
+        const byRoles = Array.isArray(require.byRoles) ? require.byRoles : []
+        const selfKey = (require.event !== undefined && byRoles.includes(deny.role))
+          || (commandSuccess !== null && typeof commandSuccess === 'object'
+            && String(commandSuccess.role ?? '') === String(deny.role ?? ''))
+        if (selfKey) list.push(t('gateParseWarnSelfKey'))
         return list
       }
+      const ackRequired = drafts.some((gate) => needsAck(gate))
+      React.useEffect(() => {
+        setAcknowledged(false)
+        setDiscardPending(false)
+      }, [result.nonce])
       const toast = adopted.length > 0
         ? fill(t('gateParseToastAdopted'), { id: adopted[adopted.length - 1] })
         : ''
@@ -1704,6 +1778,10 @@ window.__ModuleLoader__.load({
 
       /** Adopt one draft into the local gate list; never writes configuration. */
       const adoptOne = (gate) => {
+        if (needsAck(gate) && !acknowledged) {
+          setLocalError(t('gateParseWarnAck'))
+          return
+        }
         if (gateList.length >= MAX_GATES) {
           setLocalError(fill(t('gateParseValidateLimit'), { max: MAX_GATES }))
           return
@@ -1726,6 +1804,10 @@ window.__ModuleLoader__.load({
       const adoptAll = () => {
         const candidates = drafts
         if (candidates.length === 0) return
+        if (candidates.some((gate) => needsAck(gate)) && !acknowledged) {
+          setLocalError(t('gateParseWarnAck'))
+          return
+        }
         if (gateList.length + candidates.length > MAX_GATES) {
           setLocalError(fill(t('gateParseValidateLimit'), { max: MAX_GATES }))
           return
@@ -1810,19 +1892,47 @@ window.__ModuleLoader__.load({
                       key: 'all',
                       type: 'button',
                       style: primaryButton,
-                      disabled: drafts.length === 0,
+                      disabled: drafts.length === 0 || (ackRequired && !acknowledged),
                       onClick: adoptAll,
                     }, t('gateParseAdoptAll'))
                   : null,
-                h('button', {
-                  key: 'drop',
-                  type: 'button',
-                  style: button,
-                  onClick: () => { void onClearParseResult() },
-                }, t('gateParseIgnore')),
+                ...(discardPending
+                  ? [
+                      h('button', {
+                        key: 'discard-confirm',
+                        type: 'button',
+                        style: button,
+                        onClick: () => { setDiscardPending(false); void onClearParseResult() },
+                      }, t('gateParseDiscardResult')),
+                      h('button', {
+                        key: 'discard-cancel',
+                        type: 'button',
+                        style: button,
+                        onClick: () => setDiscardPending(false),
+                      }, t('gateAiCancel')),
+                    ]
+                  : [
+                      h('button', {
+                        key: 'discard',
+                        type: 'button',
+                        style: button,
+                        onClick: () => setDiscardPending(true),
+                      }, t('gateParseDiscardResult')),
+                    ]),
               ]),
             ]),
             h('span', { key: 'hint', style: { ...small, fontSize: 11 } }, t('gateParseResultHint')),
+            ackRequired
+              ? h('label', { key: 'ack', style: { ...row, gap: 8, alignItems: 'flex-start' } }, [
+                  h('input', {
+                    key: 'i',
+                    type: 'checkbox',
+                    checked: acknowledged,
+                    onChange: (event) => setAcknowledged(event.target.checked === true),
+                  }),
+                  h('span', { key: 'l', style: { ...small, fontSize: 11 } }, t('gateParseWarnAck')),
+                ])
+              : null,
             result.status === 'ok'
               ? (drafts.length === 0
                   ? h('span', { key: 'none', style: small }, t('gateEmpty'))
@@ -1842,6 +1952,7 @@ window.__ModuleLoader__.load({
                             key: 'adopt',
                             type: 'button',
                             style: primaryButton,
+                            disabled: needsAck(gate) && !acknowledged,
                             onClick: () => adoptOne(gate),
                           }, t('gateParseAdopt')),
                           h('button', {
@@ -1923,7 +2034,6 @@ window.__ModuleLoader__.load({
                 }, parseError || localError)
               : null,
             thinkingBlock,
-            resultBlock,
             h('div', { key: 'actions', style: row }, [
               h('button', {
                 key: 'submit',
@@ -1995,16 +2105,7 @@ window.__ModuleLoader__.load({
             ])
           : null,
         localError !== '' ? h('div', { key: 'err', style: banner('state-error') }, localError) : null,
-        visible && !dialog
-          ? h('button', {
-              key: 'open-result',
-              type: 'button',
-              style: { ...button, alignSelf: 'flex-start' },
-              onClick: () => setDialog(true),
-            }, result.status === 'ok'
-              ? `${t('gateParseResultTitle')} (${drafts.length})`
-              : t('gateParseResultTitle'))
-          : null,
+        resultBlock,
         dialogBlock,
         gateList.length === 0
           ? h('div', { key: 'empty', style: { ...small, padding: '8px 0' } }, t('gateEmpty'))

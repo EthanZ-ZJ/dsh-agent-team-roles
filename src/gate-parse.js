@@ -13,6 +13,7 @@
  * and the stored configuration keep working exactly as before.
  */
 
+import { AsyncResource } from 'node:async_hooks'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { mergeRoles, readConfig } from './config.js'
@@ -534,6 +535,19 @@ export function installGateParser({ ctx, config }, options = {}) {
     }
   }
 
+  // The settings event is emitted inside the loader's HMR transaction, and that
+  // async context travels through our awaits: writing Config from it throws
+  // "HMR transactions cannot be nested". A resource created here (plugin start,
+  // outside any transaction) gives the parse a clean async context to run in.
+  const scheduler = new AsyncResource('agent-team-roles:gate-parse')
+  const detach = (fn) => {
+    try {
+      scheduler.runInAsyncScope(() => { queueMicrotask(fn) })
+    } catch {
+      queueMicrotask(fn)
+    }
+  }
+
   /** Read the request through the live Config reader. */
   const requestNow = () => readParseRequest(config)
 
@@ -543,22 +557,40 @@ export function installGateParser({ ctx, config }, options = {}) {
     return result.nonce === nonce && result.status !== '' ? result : undefined
   }
 
+  /** Drop every retry artifact (timer included) for one nonce. */
+  const clearRetry = (nonce) => {
+    const state = retryState.get(nonce)
+    if (state?.timer !== undefined) clearTimeout(state.timer)
+    retryState.delete(nonce)
+  }
+
+  /** Drop every retry artifact for all nonces. */
+  const clearAllRetries = () => {
+    for (const nonce of [...retryState.keys()]) clearRetry(nonce)
+  }
+
   /**
    * Record one failed result write: keep the computed result for a Config-only
-   * retry, or give up after the first attempt plus three retries.
+   * retry, or give up after the first attempt plus three retries. Retries are
+   * driven by their own timer, not by the fallback poll.
    */
   const notePersistFailure = (nonce, result, auditRecord = undefined) => {
     const state = retryState.get(nonce) ?? { retries: 0, notBefore: 0, result, audit: auditRecord }
     state.result = result
+    state.inFlight = false
     if (auditRecord !== undefined) state.audit = auditRecord
     state.retries += 1
     if (state.retries > retryDelays.length) {
-      retryState.delete(nonce)
+      clearRetry(nonce)
       lastHandledNonce = nonce
       log('warn', `gate parse ${nonce} gave up after ${state.retries} result writes; the client clears the request`)
       return
     }
-    state.notBefore = now() + retryDelays[state.retries - 1]
+    const delay = retryDelays[state.retries - 1]
+    state.notBefore = now() + delay
+    if (state.timer !== undefined) clearTimeout(state.timer)
+    state.timer = setTimeout(() => { void safeCheck('retry') }, delay)
+    state.timer?.unref?.()
     retryState.set(nonce, state)
   }
 
@@ -576,13 +608,20 @@ export function installGateParser({ ctx, config }, options = {}) {
     pollTimer = null
   }
 
-  /** Write one result and clear the request in a single atomic edit. */
+  /**
+   * Write one result and clear the request in a single atomic edit.
+   *
+   * @returns `'written'`, `'skipped'` when the request was cleared/replaced
+   *   meanwhile, or throws when the edit fails.
+   */
   const persist = async (nonce, result) => {
+    // Re-read before writing: a cancelled or superseded request must never be
+    // resurrected by a late write.
+    if (requestNow().nonce !== nonce) return 'skipped'
     const editor = ctx?.get?.('configEditor')
     const entry = ctx?.fiber?.entry
     if (editor === undefined || editor === null || typeof editor.edit !== 'function' || entry === undefined) {
-      log('warn', 'gate parse result cannot be persisted: config editor is unavailable')
-      return false
+      throw new Error('config editor is unavailable')
     }
     await editor.edit(entry, (currentConfig) => ({
       ...currentConfig,
@@ -590,8 +629,8 @@ export function installGateParser({ ctx, config }, options = {}) {
       gateParseResult: result,
     }))
     lastHandledNonce = nonce
-    retryState.delete(nonce)
-    return true
+    clearRetry(nonce)
+    return 'written'
   }
 
   /** Append one audit record, never failing the caller. */
@@ -607,19 +646,25 @@ export function installGateParser({ ctx, config }, options = {}) {
   const fail = async (nonce, code, detail, extra = {}) => {
     const result = failure(nonce, code, detail)
     const auditRecord = { at: Date.now(), nonce, code, detail: result.detail, ...extra }
-    let persisted = false
+    let outcome
     try {
-      persisted = await persist(nonce, result)
+      outcome = await persist(nonce, result)
     } catch (error) {
       log('warn', `gate parse result write failed: ${error.message}`)
-      await audit({ ...auditRecord, code: 'persist-failed', detail: clamp(error.message, MAX_PARSE_DETAIL) })
-      // Keep the request retryable: a later check rewrites Config only.
+      // Schedule the retry before the (async) audit so a fake/blocked audit
+      // cannot delay the backoff timer.
       started.delete(nonce)
       notePersistFailure(nonce, result, auditRecord)
+      await audit({ ...auditRecord, code: 'persist-failed', detail: clamp(error.message, MAX_PARSE_DETAIL) })
       return
     }
-    retryState.delete(nonce)
-    await audit({ ...auditRecord, persisted })
+    if (outcome === 'skipped') {
+      clearRetry(nonce)
+      await audit({ ...auditRecord, code: 'cancelled', skipped: true })
+      return
+    }
+    clearRetry(nonce)
+    await audit({ ...auditRecord, persisted: true })
   }
 
   /** Consume one model stream, honouring the injected timeout without relying on abort. */
@@ -772,27 +817,46 @@ export function installGateParser({ ctx, config }, options = {}) {
       completedAt: Date.now(),
     }
     try {
-      const persisted = await persist(nonce, result)
-      await audit({ ...base, code: result.code, detail: result.detail, status: result.status, persisted, ms: result.completedAt - startedAt })
+      const outcome = await persist(nonce, result)
+      if (outcome === 'skipped') {
+        await audit({ ...base, code: 'cancelled', status: result.status, skipped: true })
+        return
+      }
+      await audit({ ...base, code: result.code, detail: result.detail, status: result.status, persisted: true, ms: result.completedAt - startedAt })
     } catch (error) {
       log('warn', `gate parse result write failed: ${error.message}`)
-      await audit({ ...base, code: 'persist-failed', detail: clamp(error.message, MAX_PARSE_DETAIL) })
       started.delete(nonce)
       notePersistFailure(nonce, result, base)
+      await audit({ ...base, code: 'persist-failed', detail: clamp(error.message, MAX_PARSE_DETAIL) })
     }
   }
 
-  /** Rewrite one cached result without calling the model again. */
+  /** Rewrite one cached result without calling the model again (single-flight). */
   const retryPersist = async (nonce, source) => {
     const state = retryState.get(nonce)
-    if (state === undefined) return
+    if (state === undefined || state.inFlight === true) return
+    if (state.notBefore > now()) return
+    state.inFlight = true
+    if (state.timer !== undefined) {
+      clearTimeout(state.timer)
+      state.timer = undefined
+    }
     try {
-      const persisted = await persist(nonce, state.result)
-      await audit({ ...(state.audit ?? { at: Date.now(), nonce }), source, retried: true, persisted })
+      const outcome = await persist(nonce, state.result)
+      if (outcome === 'skipped') {
+        clearRetry(nonce)
+        await audit({ ...(state.audit ?? { at: Date.now(), nonce }), source, code: 'cancelled', skipped: true })
+        return
+      }
+      clearRetry(nonce)
+      await audit({ ...(state.audit ?? { at: Date.now(), nonce }), source, retried: true, persisted: true })
     } catch (error) {
       log('warn', `gate parse result rewrite failed: ${error.message}`)
-      await audit({ at: Date.now(), nonce, code: 'persist-failed', detail: clamp(error.message, MAX_PARSE_DETAIL), source })
       notePersistFailure(nonce, state.result, state.audit)
+      await audit({ at: Date.now(), nonce, code: 'persist-failed', detail: clamp(error.message, MAX_PARSE_DETAIL), source })
+    } finally {
+      const latest = retryState.get(nonce)
+      if (latest !== undefined) latest.inFlight = false
     }
   }
 
@@ -832,12 +896,14 @@ export function installGateParser({ ctx, config }, options = {}) {
     }
     if (nonce === '' && description === '') {
       stopPoll()
-      retryState.clear()
+      clearAllRetries()
       return
     }
-    // A pending request keeps one lightweight poll alive; event delivery stays
-    // the primary path and a successful clear stops the poll again.
-    ensurePoll()
+    // D5/D8: once an event owns this request the fallback poll must stop; a
+    // request that never produced an event keeps one lightweight poll alive.
+    const seenEvent = nonce !== '' && eventSeen.has(nonce)
+    if (seenEvent) stopPoll()
+    else ensurePoll()
     // Startup checks handle leftovers from a previous process only. A request
     // minted after install belongs to the live event path, which must stay the
     // source reported in the diagnostic log.
@@ -857,10 +923,8 @@ export function installGateParser({ ctx, config }, options = {}) {
       return
     }
     if (nonce !== '' && started.has(nonce)) return
-    // D5: the event path owns a request whenever one was observed. Only a
-    // request that never produced an event may be taken over by the poll, and
-    // only after two poll periods so a late event still wins.
-    const seenEvent = nonce !== '' && eventSeen.has(nonce)
+    // Only a request that never produced an event may be taken over by the
+    // poll, and only after two poll periods so a late event still wins.
     if (source === 'poll' && !seenEvent && request.at > 0
       && Date.now() - request.at < 2 * PARSE_POLL_INTERVAL_MS) return
     const effectiveSource = seenEvent ? 'event' : 'poll'
@@ -915,7 +979,10 @@ export function installGateParser({ ctx, config }, options = {}) {
     } catch {
       // A read failure only loses the attribution hint.
     }
-    queueMicrotask(() => { void safeCheck('event') })
+    stopPoll()
+    // Run outside the loader's HMR transaction; writing Config from inside it
+    // would throw "HMR transactions cannot be nested".
+    detach(() => { void safeCheck('event') })
   }
 
   try {
@@ -934,6 +1001,7 @@ export function installGateParser({ ctx, config }, options = {}) {
     disposed = true
     clearTimeout(startupTimer)
     stopPoll()
+    clearAllRetries()
     for (const off of disposers.splice(0)) {
       try {
         off()

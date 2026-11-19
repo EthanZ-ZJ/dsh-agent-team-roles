@@ -209,7 +209,7 @@ export function auditGateList(rawGates, warn) {
     if (typeof warn !== 'function' || reported.has(label)) return
     reported.add(label)
     try {
-      warn(`${label}: ${reason}`)
+      warn(`${label}: ${reason}`, id)
     } catch {
       // Diagnostics must never break the fail-open path.
     }

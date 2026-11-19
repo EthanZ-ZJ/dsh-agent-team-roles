@@ -147,7 +147,7 @@ Team Lead 会话中使用命令：
 /team-template apply software-dev
 ```
 
-`apply` 做四件事：把模板 roles **upsert** 进角色目录（已有的更新、缺失的创建）；设置 `activeTemplate` 使其 playbook 生效（覆盖 `leadPlaybook` 配置）；把模板 `gates` 合并进现有闸门列表（同 id 覆盖并回报 `replaced`，合并后超过 50 条或模板 gate 非法则整次拒绝、不写入）；把模板 `skills/<角色 id>/` 合并复制到 `stateDir/skills/<角色 id>/`（覆盖同名文件，不删除其它文件）。
+`apply` 做四件事：把模板 roles **upsert** 进角色目录（已有的更新、缺失的创建）；设置 `activeTemplate` 使其 playbook 生效（覆盖 `leadPlaybook` 配置）；把模板 `gates` 合并进现有闸门列表（同 id 覆盖并回报 `replaced`；只校验模板自身 gates，合并后超过 50 条或模板 gate 非法则整次拒绝、不写入；现有列表里的非法 gate 原样保留、计入上限并在成功文本里以 `warnings:` 回报）；把模板 `skills/<角色 id>/` 合并复制到 `stateDir/skills/<角色 id>/`（覆盖同名文件，不删除其它文件）。gates 校验在任何写操作之前完成。
 
 ## denyCommands：命令级策略
 
