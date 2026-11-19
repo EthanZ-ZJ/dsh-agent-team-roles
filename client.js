@@ -1,4 +1,4 @@
-﻿window.__ModuleLoader__.load({
+window.__ModuleLoader__.load({
   id: 'dsh-agent-team-roles',
   factory(require) {
     const React = require('react')
@@ -77,6 +77,96 @@
       gateErrCsRole: '命令执行角色必填',
       gateErrCsTool: '监听工具至少填一个',
       gateErrInvalidate: '配置了作废触发角色时，触发工具至少填一个',
+      gateAiAdd: '用自然语言新增',
+      gateAiTitle: '自然语言新增闸门',
+      gateAiHint: '用一句话描述“谁在什么操作前、需要谁的什么结果、何时失效”。解析后可确认再保存。',
+      gateAiPlaceholder: '例：dev 提交前必须由 cr 检视批准，dev 再改代码就失效',
+      gateAiSubmit: '解析',
+      gateAiCancel: '取消',
+      gateAiClose: '关闭',
+      gateAiCharCount: '{count} / {max}',
+      gateAiEmpty: '请先描述闸门需求',
+      gateAiTooLong: '描述过长（最多 {max} 字符）',
+      gateAiUnavailable: '当前环境不支持解析',
+      gateAiReadonly: '配置为只读，无法解析',
+      gateAiThinking: '正在解析…',
+      gateAiThinkingHint: '通常数秒即可完成，可随时取消。',
+      gateAiCancelParse: '取消解析',
+      gateAiThinkingTimeout: '解析超过 {seconds} 秒仍未返回，请重试',
+      gateParseRetry: '重试',
+      gateParseManual: '手动填写',
+      gateParseResultTitle: '解析结果',
+      gateParseResultHint: '采用后进入本地列表，点上方「保存」才生效。',
+      gateParseResultCount: '{count} 条',
+      gateParseNeedsInput: '还需要补充信息：{note}',
+      gateParseAdopt: '采用',
+      gateParseAdoptAll: '全部采用',
+      gateParseIgnore: '忽略',
+      gateParseDetail: '详情：{detail}',
+      gateParseCode: '错误码：{code}',
+      gateParseWarnings: '提示：{warnings}',
+      gateParseNote: '说明：{note}',
+      gateParseAdopted: '已采用 {id}',
+      gateParseIgnored: '已忽略',
+      gateParseStale: '结果已过期（{age}前），请重新解析',
+      gateParseErrEmpty: '没有可解析的描述',
+      gateParseErrTooLong: '描述过长（最多 {max} 字符）',
+      gateParseErrPromptTooLarge: '描述或角色目录过长',
+      gateParseErrNoRoute: '当前没有可用的默认模型，请先在设置中配置模型',
+      gateParseErrUnavailable: '当前环境不支持解析',
+      gateParseErrLlm: '模型调用失败（{detail}）',
+      gateParseErrTimeout: '解析超时',
+      gateParseErrCancelled: '解析已取消',
+      gateParseErrInvalid: '模型输出无法解析（{detail}）',
+      gateParseErrStale: '请求已过期，请重试',
+      gateParseErrUnknown: '解析失败',
+      gateParseErrPending: '已有一个 {age} 前的解析请求未完成，可重试或取消',
+      gateParseErrLegacyGate: '闸门 {id} 配置无效，无法保存',
+      gateParseErrRequestFailed: '写入解析请求失败',
+      gateParseErrConflict: '配置已被其它页面/会话修改，请刷新后重试',
+      gateParseErrLimit: '闸门数量已达上限 {max}',
+      gateErrDenyRole: '被拦角色必填',
+      gateErrPatternLong: '正则过长（最多 {max} 字符）',
+      gateErrToolsMax: '工具列表最多 {max} 个',
+      gateErrInvalid: '闸门配置无效（需要且只能需要一把钥匙）',
+      gateParseValidateId: '闸门 ID 不合法（{id}）',
+      gateParseValidateDuplicate: '已存在同 ID 的闸门（{id}）',
+      gateParseValidateTools: '被拦工具需为 1-8 个',
+      gateParseValidatePattern: '正则无法编译或超过 200 字符',
+      gateParseValidateEvent: '事件名不合法',
+      gateParseValidateByRoles: '钥匙角色至少填一个',
+      gateParseValidateCommandSuccess: '命令成功钥匙缺必填项',
+      gateParseValidateInvalidate: '作废触发配置不一致',
+      gateParseValidateRole: '角色不在当前配置中（{role}）',
+      gateParseValidateLimit: '采用后闸门数量超过上限 {max}',
+      gateParseSumTemplate: '{deny} → {key}{invalidateBlock}',
+      gateParseSumDeny: '@ {role} {tools}{patternBlock}',
+      gateParseSumPattern: '/{pattern}/',
+      gateParseSumKeyEvent: '"{event}" ← {byRoles}{freshForBlock}',
+      gateParseSumKeyCommand: '{role} · {tools} {patternLabel}{freshForBlock}',
+      gateParseSumInvalidate: '{role} 使用 {tools}',
+      gateParseSumFreshForever: '永久有效',
+      gateParseSumFreshFor: '{value} {unit}内有效',
+      gateParseUnitSecond: '秒',
+      gateParseUnitMinute: '分钟',
+      gateParseUnitHour: '小时',
+      gateParseSumAny: '任意命令',
+      gateParseSumAnyRole: '任一成员（不含 Lead）',
+      gateParseSumNone: '无法生成摘要',
+      gateParseSumSep: ' · ',
+      gateParseListSep: '、',
+      gateAiFreshHint: '超过该时长后钥匙失效（0 表示永久有效）',
+      gateParseWarnShell: '已自动补上 shell 工具，确认是否真的需要拦截整条命令。',
+      gateParseWarnCatchAll: '该闸门会拦截整工具调用，影响面较大。',
+      gateParseWarnRole: '检测到未在角色目录中的角色引用，请确认。',
+      gateParseToastAdopted: '已采用 {id}',
+      gateParseUndo: '撤销',
+      gateParseToastIgnored: '已忽略该条',
+      gateAiA11yDialog: '自然语言新增闸门：{title}',
+      gateAiA11ySpinner: '正在解析闸门描述',
+      gateAiA11yError: '解析错误',
+      gateAiA11yResult: '解析结果已就绪',
+      gateParseSettingsUpdated: '配置已在别处更新',
       engineHint: 'playbook 非空时追加到 Lead 提示词；activeTemplate 命中的模板 playbook 优先。模板用 /team-template apply 应用。',
       addRole: '新建角色',
       deleteRole: '删除角色',
@@ -206,6 +296,96 @@
       gateErrCsRole: 'Command role is required',
       gateErrCsTool: 'List at least one watched tool',
       gateErrInvalidate: 'List at least one trigger tool when a trigger role is set',
+      gateErrDenyRole: 'Denied role is required',
+      gateErrPatternLong: 'Pattern too long (max {max} characters)',
+      gateErrToolsMax: 'At most {max} entries in one tool list',
+      gateErrInvalid: 'Invalid gate: exactly one key source is required',
+      gateAiAdd: 'Add with natural language',
+      gateAiTitle: 'Describe a gate',
+      gateAiHint: 'One sentence: who is blocked before what, whose result is required, and when it expires. Review the draft before saving.',
+      gateAiPlaceholder: 'e.g. the implementer cannot submit until the reviewer approves; further edits invalidate it',
+      gateAiSubmit: 'Parse',
+      gateAiCancel: 'Cancel',
+      gateAiClose: 'Close',
+      gateAiCharCount: '{count} / {max}',
+      gateAiEmpty: 'Describe the gate first',
+      gateAiTooLong: 'Too long (max {max} characters)',
+      gateAiUnavailable: 'Parsing is unavailable here',
+      gateAiReadonly: 'Configuration is read-only',
+      gateAiThinking: 'Parsing…',
+      gateAiThinkingHint: 'Usually a few seconds; you can cancel at any time.',
+      gateAiCancelParse: 'Cancel parsing',
+      gateAiThinkingTimeout: 'No result after {seconds} seconds; try again',
+      gateParseRetry: 'Retry',
+      gateParseManual: 'Fill in manually',
+      gateParseResultTitle: 'Parsed result',
+      gateParseResultHint: 'Adopted drafts stay local until you save above.',
+      gateParseResultCount: '{count} draft(s)',
+      gateParseNeedsInput: 'More information needed: {note}',
+      gateParseAdopt: 'Adopt',
+      gateParseAdoptAll: 'Adopt all',
+      gateParseIgnore: 'Ignore',
+      gateParseDetail: 'Detail: {detail}',
+      gateParseCode: 'Code: {code}',
+      gateParseWarnings: 'Notes: {warnings}',
+      gateParseNote: 'Note: {note}',
+      gateParseAdopted: 'Adopted {id}',
+      gateParseIgnored: 'Ignored',
+      gateParseStale: 'Result expired ({age} ago); parse again',
+      gateParseErrEmpty: 'Nothing to parse',
+      gateParseErrTooLong: 'Description too long (max {max} characters)',
+      gateParseErrPromptTooLarge: 'Description or role catalog too long',
+      gateParseErrNoRoute: 'No default model is configured',
+      gateParseErrUnavailable: 'Parsing is unavailable here',
+      gateParseErrLlm: 'Model call failed ({detail})',
+      gateParseErrTimeout: 'Parsing timed out',
+      gateParseErrCancelled: 'Parsing cancelled',
+      gateParseErrInvalid: 'The model returned an invalid result ({detail})',
+      gateParseErrStale: 'Request expired; try again',
+      gateParseErrUnknown: 'Parsing failed',
+      gateParseErrPending: 'A parse request from {age} ago is still pending; retry or cancel',
+      gateParseErrLegacyGate: 'Gate {id} is invalid and blocks the save',
+      gateParseErrRequestFailed: 'Could not write the parse request',
+      gateParseErrConflict: 'Configuration changed elsewhere; refresh and retry',
+      gateParseErrLimit: 'Gate limit {max} reached',
+      gateParseValidateId: 'Invalid gate id ({id})',
+      gateParseValidateDuplicate: 'A gate with this id already exists ({id})',
+      gateParseValidateTools: 'Denied tools must be 1-8 entries',
+      gateParseValidatePattern: 'RegExp does not compile or exceeds 200 characters',
+      gateParseValidateEvent: 'Event name is invalid',
+      gateParseValidateByRoles: 'List at least one key producer role',
+      gateParseValidateCommandSuccess: 'Command key is missing required fields',
+      gateParseValidateInvalidate: 'Invalidation trigger is inconsistent',
+      gateParseValidateRole: 'Role is not in the current catalog ({role})',
+      gateParseValidateLimit: 'Adopting these drafts exceeds the limit {max}',
+      gateParseSumTemplate: '{deny} → {key}{invalidateBlock}',
+      gateParseSumDeny: '@ {role} {tools}{patternBlock}',
+      gateParseSumPattern: '/{pattern}/',
+      gateParseSumKeyEvent: '"{event}" ← {byRoles}{freshForBlock}',
+      gateParseSumKeyCommand: '{role} · {tools} {patternLabel}{freshForBlock}',
+      gateParseSumInvalidate: '{role} uses {tools}',
+      gateParseSumFreshForever: 'valid until invalidated',
+      gateParseSumFreshFor: 'valid for {value} {unit}',
+      gateParseUnitSecond: 's',
+      gateParseUnitMinute: 'min',
+      gateParseUnitHour: 'h',
+      gateParseSumAny: 'Any command',
+      gateParseSumAnyRole: 'any member (not the Lead)',
+      gateParseSumNone: 'Cannot summarize this gate',
+      gateParseSumSep: ' · ',
+      gateParseListSep: ', ',
+      gateAiFreshHint: 'The key expires after this window (0 = valid until invalidated).',
+      gateParseWarnShell: 'Shell tools were added automatically; confirm the whole tool really must be blocked.',
+      gateParseWarnCatchAll: 'This gate blocks a whole tool call, which has a wide impact.',
+      gateParseWarnRole: 'A role reference is not in the role catalog; confirm it.',
+      gateParseToastAdopted: 'Adopted {id}',
+      gateParseUndo: 'Undo',
+      gateParseToastIgnored: 'Ignored',
+      gateAiA11yDialog: 'Describe a gate: {title}',
+      gateAiA11ySpinner: 'Parsing the gate description',
+      gateAiA11yError: 'Parsing error',
+      gateAiA11yResult: 'Parsing result is ready',
+      gateParseSettingsUpdated: 'Configuration was updated elsewhere',
       engineHint: 'A non-empty playbook is appended to the Lead prompt; the active template\'s playbook wins. Apply templates with /team-template apply.',
       addRole: 'New role',
       deleteRole: 'Delete role',
@@ -270,6 +450,20 @@
     }
 
     const ROLE_ID = /^[a-z][a-z0-9-]{0,63}$/
+    /** Gate cap; mirrors MAX_GATES in src/gates.js. */
+    const MAX_GATES = 50
+    /** Per-gate tool list cap; mirrors MAX_GATE_TOOLS in src/gates.js. */
+    const MAX_GATE_TOOLS = 8
+    /** RegExp source cap; mirrors MAX_GATE_PATTERN in src/gates.js. */
+    const MAX_GATE_PATTERN = 200
+    /** Longest natural-language description; mirrors MAX_PARSE_TEXT in src/gate-parse.js. */
+    const MAX_PARSE_TEXT = 4000
+    /** How long a parse result stays presentable; mirrors PARSE_RESULT_TTL_MS in src/gate-parse.js. */
+    const PARSE_RESULT_TTL_MS = 10 * 60 * 1000
+    /** Client-side wait budget for one parse; the host budget is 45 seconds. */
+    const PARSE_CLIENT_TIMEOUT_MS = 90 * 1000
+    /** Gate id grammar; mirrors GATE_ID in src/gates.js. */
+    const GATE_ID = /^[a-z][a-z0-9-]{0,63}$/
     const input = {
       width: '100%',
       boxSizing: 'border-box',
@@ -351,6 +545,351 @@
       return Array.isArray(value) ? value.join(', ') : ''
     }
 
+    /** Fill {placeholders} in one localized template; unknown names disappear. */
+    function fill(template, params) {
+      return String(template ?? '').replace(/\{(\w+)\}/g, (match, name) =>
+        params !== undefined && name in params ? String(params[name]) : '')
+    }
+
+    /** Human-readable age built from the localized unit keys. */
+    function ageLabel(t, milliseconds) {
+      const value = Number.isFinite(milliseconds) ? Math.max(0, Math.round(milliseconds / 1000)) : 0
+      if (value >= 3600) return fill(t('gateParseSumFreshFor'), { value: String(Math.round(value / 3600)), unit: t('gateParseUnitHour') })
+      if (value >= 60) return fill(t('gateParseSumFreshFor'), { value: String(Math.round(value / 60)), unit: t('gateParseUnitMinute') })
+      return fill(t('gateParseSumFreshFor'), { value: String(value), unit: t('gateParseUnitSecond') })
+    }
+
+    /** Join one list with the localized separator. */
+    function joinList(t, values) {
+      return (Array.isArray(values) ? values : []).join(t('gateParseListSep'))
+    }
+
+    /** One ` /pattern/` block, or an empty string when the pattern is empty. */
+    function patternBlock(t, pattern) {
+      return typeof pattern === 'string' && pattern !== ''
+        ? ` ${fill(t('gateParseSumPattern'), { pattern })}`
+        : ''
+    }
+
+    /** Localized freshness window for one gate requirement. */
+    function freshnessLabel(t, freshFor) {
+      const value = Number(freshFor)
+      if (!Number.isFinite(value) || value <= 0) return t('gateParseSumFreshForever')
+      const unit = value % 3600 === 0 ? t('gateParseUnitHour') : value % 60 === 0 ? t('gateParseUnitMinute') : t('gateParseUnitSecond')
+      const amount = value % 3600 === 0 ? value / 3600 : value % 60 === 0 ? value / 60 : value
+      return fill(t('gateParseSumFreshFor'), { value: String(amount), unit })
+    }
+
+    /** Human summary of one gate; preview only, never written back. */
+    function gateSummary(gate, t) {
+      const deny = gate?.deny ?? {}
+      const require = gate?.require ?? {}
+      const tools = Array.isArray(deny.tool) ? deny.tool.filter((entry) => typeof entry === 'string' && entry !== '') : []
+      if (tools.length === 0) return t('gateParseSumNone')
+      const sep = t('gateParseSumSep')
+      const denyText = fill(t('gateParseSumDeny'), {
+        role: String(deny.role ?? ''),
+        tools: joinList(t, tools),
+        patternBlock: patternBlock(t, deny.commandPattern),
+      })
+      const freshForBlock = `${sep}${freshnessLabel(t, require.freshFor)}`
+      const commandSuccess = require.commandSuccess
+      let keyText
+      if (commandSuccess !== null && typeof commandSuccess === 'object') {
+        const patternLabel = typeof commandSuccess.pattern === 'string' && commandSuccess.pattern !== ''
+          ? patternBlock(t, commandSuccess.pattern)
+          : t('gateParseSumAny')
+        keyText = fill(t('gateParseSumKeyCommand'), {
+          role: String(commandSuccess.role ?? ''),
+          tools: joinList(t, commandSuccess.tool),
+          patternLabel,
+          freshForBlock,
+        })
+      } else {
+        keyText = fill(t('gateParseSumKeyEvent'), {
+          event: String(require.event ?? ''),
+          byRoles: joinList(t, require.byRoles),
+          freshForBlock,
+        })
+      }
+      const invalidateOn = require.invalidateOn
+      const invalidateTools = Array.isArray(invalidateOn?.tool) ? invalidateOn.tool : []
+      const invalidateBlock = invalidateTools.length === 0
+        ? ''
+        : `${sep}${fill(t('gateParseSumInvalidate'), {
+            role: String(invalidateOn?.role ?? '') === '' ? t('gateParseSumAnyRole') : String(invalidateOn.role),
+            tools: joinList(t, invalidateTools),
+          })}`
+      return fill(t('gateParseSumTemplate'), { deny: denyText, key: keyText, invalidateBlock })
+    }
+
+    /** An empty parse request shape. */
+    function emptyParseRequest() {
+      return { nonce: '', text: '', at: 0 }
+    }
+
+    /** An empty parse result shape. */
+    function emptyParseResult() {
+      return {
+        nonce: '',
+        status: '',
+        gates: [],
+        note: '',
+        warnings: [],
+        code: '',
+        detail: '',
+        completedAt: 0,
+      }
+    }
+
+    /** Read one parse request out of a settings view value. */
+    function parseRequestOf(value) {
+      const raw = value?.gateParseRequest
+      return {
+        nonce: typeof raw?.nonce === 'string' ? raw.nonce : '',
+        text: typeof raw?.text === 'string' ? raw.text : '',
+        at: Number.isFinite(raw?.at) ? raw.at : 0,
+      }
+    }
+
+    /** Read one parse result out of a settings view value. */
+    function parseResultOf(value) {
+      const raw = value?.gateParseResult
+      return {
+        nonce: typeof raw?.nonce === 'string' ? raw.nonce : '',
+        status: typeof raw?.status === 'string' ? raw.status : '',
+        gates: Array.isArray(raw?.gates) ? raw.gates : [],
+        note: typeof raw?.note === 'string' ? raw.note : '',
+        warnings: Array.isArray(raw?.warnings)
+          ? raw.warnings.filter((entry) => typeof entry === 'string')
+          : [],
+        code: typeof raw?.code === 'string' ? raw.code : '',
+        detail: typeof raw?.detail === 'string' ? raw.detail : '',
+        completedAt: Number.isFinite(raw?.completedAt) ? raw.completedAt : 0,
+      }
+    }
+
+    /** Whether one parsed result is still inside its presentation window. */
+    function parseResultFresh(result) {
+      return result !== undefined
+        && result !== null
+        && result.completedAt > 0
+        && Date.now() - result.completedAt <= PARSE_RESULT_TTL_MS
+    }
+
+    /** Mint one request id well inside the 64-character bound. */
+    function makeNonce() {
+      const holder = typeof crypto !== 'undefined' ? crypto : undefined
+      if (typeof holder?.randomUUID === 'function') return holder.randomUUID()
+      return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`
+    }
+
+    /** Localization key for one stable host error code. */
+    const PARSE_ERROR_KEYS = {
+      'empty-text': 'gateParseErrEmpty',
+      'text-too-long': 'gateParseErrTooLong',
+      'prompt-too-large': 'gateParseErrPromptTooLarge',
+      'no-route': 'gateParseErrNoRoute',
+      'llm-unavailable': 'gateParseErrUnavailable',
+      'llm-error': 'gateParseErrLlm',
+      timeout: 'gateParseErrTimeout',
+      cancelled: 'gateParseErrCancelled',
+      'invalid-output': 'gateParseErrInvalid',
+      'stale-request': 'gateParseErrStale',
+      // `persist-failed` is audit-only by contract (D7): never client-visible.
+      unknown: 'gateParseErrUnknown',
+    }
+
+    /** Localized headline for one failed parse result. */
+    function parseErrorText(result, t) {
+      const key = PARSE_ERROR_KEYS[result?.code] ?? 'gateParseErrUnknown'
+      return fill(t(key), {
+        max: MAX_PARSE_TEXT,
+        detail: result?.detail ?? '',
+        code: result?.code ?? '',
+      })
+    }
+
+    /** Project one stored gate into the editable form shape. */
+    function formFromGate(gate) {
+      const base = gate !== null && typeof gate === 'object' ? gate : {}
+      const deny = base.deny ?? {}
+      const require = base.require ?? {}
+      const commandSuccess = require.commandSuccess
+        && (require.commandSuccess.role || require.commandSuccess.pattern)
+        ? require.commandSuccess
+        : undefined
+      return {
+        id: base.id ?? '',
+        description: base.description ?? '',
+        denyRole: deny.role ?? '',
+        denyTools: Array.isArray(deny.tool) ? deny.tool.join(', ') : '',
+        commandPattern: deny.commandPattern ?? '',
+        kind: commandSuccess !== undefined ? 'command' : 'event',
+        event: require.event ?? '',
+        byRoles: Array.isArray(require.byRoles) ? require.byRoles.join(', ') : '',
+        freshFor: require.freshFor ?? 0,
+        invalidateRole: require.invalidateOn?.role ?? '',
+        invalidateTools: Array.isArray(require.invalidateOn?.tool) ? require.invalidateOn.tool.join(', ') : '',
+        csRole: commandSuccess?.role ?? '',
+        csTool: Array.isArray(commandSuccess?.tool) ? commandSuccess.tool.join(', ') : '',
+        csPattern: commandSuccess?.pattern ?? '',
+      }
+    }
+
+    /** Build the canonical gate object from the editable form. */
+    function gateFromForm(form) {
+      const id = String(form.id ?? '').trim().toLowerCase()
+      const denyTools = listOf(form.denyTools)
+      const commandPattern = String(form.commandPattern ?? '').trim()
+      const byRoles = listOf(form.byRoles)
+      const freshFor = Number(form.freshFor) > 0 ? Number(form.freshFor) : undefined
+      const invalidateTools = listOf(form.invalidateTools)
+      const invalidateRole = String(form.invalidateRole ?? '').trim()
+      const invalidateOn = invalidateTools.length === 0 && invalidateRole === ''
+        ? undefined
+        : {
+            ...(invalidateRole === '' ? {} : { role: invalidateRole.toLowerCase() }),
+            tool: invalidateTools,
+          }
+      return {
+        id,
+        deny: {
+          role: String(form.denyRole ?? '').trim().toLowerCase(),
+          tool: denyTools,
+          ...(commandPattern === '' ? {} : { commandPattern }),
+        },
+        require: form.kind === 'event'
+          ? {
+              event: String(form.event ?? '').trim().toLowerCase(),
+              byRoles,
+              ...(freshFor === undefined ? {} : { freshFor }),
+              ...(invalidateOn === undefined ? {} : { invalidateOn }),
+            }
+          : {
+              commandSuccess: {
+                role: String(form.csRole ?? '').trim().toLowerCase(),
+                tool: listOf(form.csTool),
+                pattern: String(form.csPattern ?? '').trim(),
+              },
+              ...(freshFor === undefined ? {} : { freshFor }),
+              ...(invalidateOn === undefined ? {} : { invalidateOn }),
+            },
+        description: String(form.description ?? '').trim(),
+      }
+    }
+
+    /** Validate one editable form; returns `''` or `{key, params}`. */
+    function validateGateInput(form, existingIds, originalId) {
+      const id = String(form.id ?? '').trim().toLowerCase()
+      if (!GATE_ID.test(id)) return { key: 'gateErrId' }
+      const taken = (Array.isArray(existingIds) ? existingIds : [])
+        .filter((entry) => entry !== (originalId ?? ''))
+      if (taken.includes(id)) return { key: 'gateErrDup' }
+      const denyTools = listOf(form.denyTools)
+      if (denyTools.length === 0) return { key: 'gateErrTools' }
+      if (denyTools.length > MAX_GATE_TOOLS) return { key: 'gateErrToolsMax', params: { max: MAX_GATE_TOOLS } }
+      const commandPattern = String(form.commandPattern ?? '').trim()
+      if (commandPattern !== '') {
+        if (commandPattern.length > MAX_GATE_PATTERN) {
+          return { key: 'gateErrPatternLong', params: { max: MAX_GATE_PATTERN } }
+        }
+        try { void new RegExp(commandPattern) } catch { return { key: 'gateErrPattern' } }
+      }
+      const invalidateTools = listOf(form.invalidateTools)
+      if (invalidateTools.length > MAX_GATE_TOOLS) {
+        return { key: 'gateErrToolsMax', params: { max: MAX_GATE_TOOLS } }
+      }
+      if (String(form.invalidateRole ?? '').trim() !== '' && invalidateTools.length === 0) {
+        return { key: 'gateErrInvalidate' }
+      }
+      if (form.kind === 'event') {
+        if (!GATE_ID.test(String(form.event ?? '').trim().toLowerCase())) return { key: 'gateErrEvent' }
+        const byRoles = listOf(form.byRoles)
+        if (byRoles.length === 0) return { key: 'gateErrByRoles' }
+        if (byRoles.length > MAX_GATE_TOOLS) return { key: 'gateErrToolsMax', params: { max: MAX_GATE_TOOLS } }
+      } else {
+        if (String(form.csRole ?? '').trim() === '') return { key: 'gateErrCsRole' }
+        const csTool = listOf(form.csTool)
+        if (csTool.length === 0) return { key: 'gateErrCsTool' }
+        if (csTool.length > MAX_GATE_TOOLS) return { key: 'gateErrToolsMax', params: { max: MAX_GATE_TOOLS } }
+        const csPattern = String(form.csPattern ?? '').trim()
+        if (csPattern.length > MAX_GATE_PATTERN) {
+          return { key: 'gateErrPatternLong', params: { max: MAX_GATE_PATTERN } }
+        }
+        try { void new RegExp(csPattern) } catch { return { key: 'gateErrPattern' } }
+      }
+      return ''
+    }
+
+    /** Validate one canonical gate before persisting it; returns `''` or `{key, params}`. */
+    function validateGateObject(gate) {
+      const base = gate !== null && typeof gate === 'object' ? gate : {}
+      const deny = base.deny ?? {}
+      const require = base.require ?? {}
+      if (!GATE_ID.test(String(base.id ?? ''))) return { key: 'gateErrId' }
+      if (String(deny.role ?? '').trim() === '') return { key: 'gateErrDenyRole' }
+      const denyTools = Array.isArray(deny.tool)
+        ? deny.tool.filter((entry) => typeof entry === 'string' && entry.trim() !== '')
+        : []
+      if (denyTools.length === 0) return { key: 'gateErrTools' }
+      if (denyTools.length > MAX_GATE_TOOLS) return { key: 'gateErrToolsMax', params: { max: MAX_GATE_TOOLS } }
+      const commandPattern = typeof deny.commandPattern === 'string' ? deny.commandPattern : ''
+      if (commandPattern !== '') {
+        if (commandPattern.length > MAX_GATE_PATTERN) {
+          return { key: 'gateErrPatternLong', params: { max: MAX_GATE_PATTERN } }
+        }
+        try { void new RegExp(commandPattern) } catch { return { key: 'gateErrPattern' } }
+      }
+      const event = typeof require.event === 'string' ? require.event.trim() : ''
+      const commandSuccess = require.commandSuccess !== null && typeof require.commandSuccess === 'object'
+        ? require.commandSuccess
+        : undefined
+      const hasEvent = event !== ''
+      const hasCommand = commandSuccess !== undefined
+      if (hasEvent && hasCommand) return { key: 'gateErrInvalid' }
+      if (!hasEvent && !hasCommand) return { key: 'gateErrInvalid' }
+      if (hasEvent) {
+        if (!GATE_ID.test(event.toLowerCase())) return { key: 'gateErrEvent' }
+        const byRoles = Array.isArray(require.byRoles)
+          ? require.byRoles.filter((entry) => typeof entry === 'string' && entry.trim() !== '')
+          : []
+        if (byRoles.length === 0) return { key: 'gateErrByRoles' }
+        if (byRoles.length > MAX_GATE_TOOLS) return { key: 'gateErrToolsMax', params: { max: MAX_GATE_TOOLS } }
+      } else {
+        if (String(commandSuccess.role ?? '').trim() === '') return { key: 'gateErrCsRole' }
+        const tools = Array.isArray(commandSuccess.tool)
+          ? commandSuccess.tool.filter((entry) => typeof entry === 'string' && entry.trim() !== '')
+          : []
+        if (tools.length === 0) return { key: 'gateErrCsTool' }
+        if (tools.length > MAX_GATE_TOOLS) return { key: 'gateErrToolsMax', params: { max: MAX_GATE_TOOLS } }
+        const pattern = typeof commandSuccess.pattern === 'string' ? commandSuccess.pattern : ''
+        if (pattern.length > MAX_GATE_PATTERN) {
+          return { key: 'gateErrPatternLong', params: { max: MAX_GATE_PATTERN } }
+        }
+        try { void new RegExp(pattern) } catch { return { key: 'gateErrPattern' } }
+      }
+      const invalidateOn = require.invalidateOn
+      if (invalidateOn !== null && typeof invalidateOn === 'object') {
+        const tools = Array.isArray(invalidateOn.tool)
+          ? invalidateOn.tool.filter((entry) => typeof entry === 'string' && entry.trim() !== '')
+          : []
+        if (tools.length > MAX_GATE_TOOLS) return { key: 'gateErrToolsMax', params: { max: MAX_GATE_TOOLS } }
+        if (tools.length === 0 && String(invalidateOn.role ?? '').trim() === '') {
+          return ''
+        }
+        if (tools.length === 0) return { key: 'gateErrInvalidate' }
+      }
+      return ''
+    }
+
+    /** Compose one gate-specific validation message. */
+    function gateProblemMessage(t, gate, problem) {
+      const label = typeof gate?.id === 'string' && gate.id !== '' ? gate.id : '?'
+      const reason = problem.params === undefined ? t(problem.key) : fill(t(problem.key), problem.params)
+      return `${t('gates')} "${label}": ${reason}`
+    }
+
     /** Validate one role before writing it. */
     function validate(role, roles, t) {
       if (!ROLE_ID.test(role.id)) return `${t('invalidRole')}${role.id}`
@@ -365,14 +904,27 @@
       return ''
     }
 
-    /** Read this plugin's namespace from the settings Remote. */
-    async function readNamespace(ctx) {
+    /** Build one Error that carries the Remote's stable failure code. */
+    function remoteError(response, fallback) {
+      const error = new Error(response?.error?.message ?? fallback)
+      if (typeof response?.error?.code === 'string') error.code = response.error.code
+      return error
+    }
+
+    /** Read the plugin namespace plus the deployment's write capability. */
+    async function readSettingsState(ctx) {
       if (ctx.remote?.settings === undefined) throw new Error('settings-remote-unavailable')
       const response = await ctx.remote.settings.describe()
-      if (!response.ok) throw new Error(response.error.message)
+      if (!response.ok) throw remoteError(response, 'settings-describe-failed')
       const view = response.value.namespaces.find((entry) => entry.ns === NS)
       if (view === undefined) throw new Error(`settings namespace "${NS}" is not active`)
-      return view
+      return { view, writable: response.value.writable !== false }
+    }
+
+    /** Read this plugin's namespace from the settings Remote. */
+    async function readNamespace(ctx) {
+      const state = await readSettingsState(ctx)
+      return state.view
     }
 
     /** Write one volatile field under the current revision. */
@@ -385,8 +937,18 @@
       if (ctx.remote?.settings === undefined) throw new Error('settings-remote-unavailable')
       const ops = fields.map(({ field, value }) => ({ op: 'set', path: [field], value }))
       const response = await ctx.remote.settings.mutate(NS, ops, revision)
-      if (!response.ok) throw new Error(response.error.message)
+      if (!response.ok) {
+        // Keep the Remote's stable failure code reachable for conflict handling.
+        const error = new Error(response?.error?.message ?? 'settings-mutate-failed')
+        if (typeof response?.error?.code === 'string') error.code = response.error.code
+        throw error
+      }
       return readNamespace(ctx)
+    }
+
+    /** Whether one caught failure is a stale-revision conflict. */
+    function isConflict(error) {
+      return error?.code === 'settings/conflict' || /conflict/i.test(String(error?.message ?? ''))
     }
 
     function createSection(ctx, t) {
@@ -400,6 +962,15 @@
         const [roles, setRoles] = React.useState([])
         const [rules, setRules] = React.useState([])
         const [selectedRole, setSelectedRole] = React.useState('general')
+        const [writable, setWritable] = React.useState(true)
+        const [dirty, setDirty] = React.useState(false)
+        const [parse, setParse] = React.useState({ request: emptyParseRequest(), result: emptyParseResult() })
+        const [parseError, setParseError] = React.useState('')
+        const [parseTimeoutNonce, setParseTimeoutNonce] = React.useState('')
+        const [pendingNonce, setPendingNonce] = React.useState('')
+        const [consumedNonce, setConsumedNonce] = React.useState('')
+        const [parseFieldsPresent, setParseFieldsPresent] = React.useState(true)
+        const parseFieldRef = React.useRef(false)
         const [engine, setEngine] = React.useState({
           leadPlaybook: '',
           activeTemplate: '',
@@ -408,27 +979,45 @@
           gates: [],
           gatesDisabled: [],
         })
+        const dirtyRef = React.useRef(false)
+        const busyRef = React.useRef(false)
+        React.useEffect(() => { dirtyRef.current = dirty }, [dirty])
+        React.useEffect(() => { busyRef.current = busy }, [busy])
+
+        /** Adopt one settings view into every local slice. */
+        const applyView = React.useCallback((view) => {
+          const nextRoles = Array.isArray(view.value?.roles) ? view.value.roles : []
+          setRoles(nextRoles)
+          setRules(Array.isArray(view.value?.rules) ? view.value.rules : [])
+          setEngine({
+            leadPlaybook: typeof view.value?.leadPlaybook === 'string' ? view.value.leadPlaybook : '',
+            activeTemplate: typeof view.value?.activeTemplate === 'string' ? view.value.activeTemplate : '',
+            freshProvider: typeof view.value?.freshProvider === 'string' && view.value.freshProvider !== '' ? view.value.freshProvider : 'spawn',
+            forkProvider: typeof view.value?.forkProvider === 'string' && view.value.forkProvider !== '' ? view.value.forkProvider : 'fork',
+            gates: Array.isArray(view.value?.gates) ? view.value.gates : [],
+            gatesDisabled: Array.isArray(view.value?.gatesDisabled) ? view.value.gatesDisabled : [],
+          })
+          setSelectedRole((current) =>
+            nextRoles.some((role) => role.id === current) ? current : (nextRoles[0]?.id ?? 'general'))
+          setParse({ request: parseRequestOf(view.value), result: parseResultOf(view.value) })
+          // A request left pending by another page keeps this mount polling too.
+          const restoredRequest = parseRequestOf(view.value)
+          setPendingNonce((current) => (current !== '' ? current : restoredRequest.nonce))
+          const present = Object.prototype.hasOwnProperty.call(view.value ?? {}, 'gateParseResult')
+            && Object.prototype.hasOwnProperty.call(view.value ?? {}, 'gateParseRequest')
+          parseFieldRef.current = present
+          setParseFieldsPresent(present)
+          setRevision(view.revision)
+          setDirty(false)
+        }, [])
 
         const load = React.useCallback(async () => {
           setLoading(true)
           setError('')
           try {
-            const view = await readNamespace(ctx)
-            setRevision(view.revision)
-            const nextRoles = Array.isArray(view.value?.roles) ? view.value.roles : []
-            setRoles(nextRoles)
-            setRules(Array.isArray(view.value?.rules) ? view.value.rules : [])
-            setEngine({
-              leadPlaybook: typeof view.value?.leadPlaybook === 'string' ? view.value.leadPlaybook : '',
-              activeTemplate: typeof view.value?.activeTemplate === 'string' ? view.value.activeTemplate : '',
-              freshProvider: typeof view.value?.freshProvider === 'string' && view.value.freshProvider !== '' ? view.value.freshProvider : 'spawn',
-              forkProvider: typeof view.value?.forkProvider === 'string' && view.value.forkProvider !== '' ? view.value.forkProvider : 'fork',
-              gates: Array.isArray(view.value?.gates) ? view.value.gates : [],
-              gatesDisabled: Array.isArray(view.value?.gatesDisabled) ? view.value.gatesDisabled : [],
-            })
-            if (!nextRoles.some((role) => role.id === selectedRole)) {
-              setSelectedRole(nextRoles[0]?.id ?? 'general')
-            }
+            const stateView = await readSettingsState(ctx)
+            setWritable(stateView.writable)
+            applyView(stateView.view)
           } catch (caught) {
             setError(caught.message === 'settings-remote-unavailable'
               ? t('settingsUnavailable')
@@ -436,7 +1025,44 @@
           } finally {
             setLoading(false)
           }
-        }, [ctx, selectedRole, t])
+        }, [ctx, t, applyView])
+
+        /** Re-read revision and parse fields without touching local edits. */
+        const refreshParseAndRevision = async () => {
+          try {
+            const stateView = await readSettingsState(ctx)
+            setRevision(stateView.view.revision)
+            setWritable(stateView.writable)
+            setParse({ request: parseRequestOf(stateView.view.value), result: parseResultOf(stateView.view.value) })
+            const present = Object.prototype.hasOwnProperty.call(stateView.view.value ?? {}, 'gateParseResult')
+              && Object.prototype.hasOwnProperty.call(stateView.view.value ?? {}, 'gateParseRequest')
+            parseFieldRef.current = present
+            setParseFieldsPresent(present)
+          } catch {
+            // Keep the local view; the next event or explicit refresh retries.
+          }
+        }
+
+        /** React to the configuration changing in another page or mount. */
+        const onExternalUpdate = async () => {
+          try {
+            const stateView = await readSettingsState(ctx)
+            setRevision(stateView.view.revision)
+            setWritable(stateView.writable)
+            setParse({ request: parseRequestOf(stateView.view.value), result: parseResultOf(stateView.view.value) })
+            const present = Object.prototype.hasOwnProperty.call(stateView.view.value ?? {}, 'gateParseResult')
+              && Object.prototype.hasOwnProperty.call(stateView.view.value ?? {}, 'gateParseRequest')
+            parseFieldRef.current = present
+            setParseFieldsPresent(present)
+            if (!dirtyRef.current && !busyRef.current) {
+              applyView(stateView.view)
+            } else {
+              setNotice(t('gateParseSettingsUpdated'))
+            }
+          } catch {
+            // A transient read failure keeps the local view intact.
+          }
+        }
 
         React.useEffect(() => {
           void load()
@@ -444,15 +1070,57 @@
           // eslint-disable-next-line react-hooks/exhaustive-deps
         }, [])
 
+        React.useEffect(() => {
+          const remote = ctx.remote
+          if (typeof remote?.$on !== 'function') return undefined
+          const off = remote.$on('settings/document-updated', (payload) => {
+            // Some emitters pass the namespace string, others a document object.
+            const namespace = typeof payload === 'string' ? payload : payload?.ns
+            if (typeof namespace === 'string' && namespace !== NS) return
+            queueMicrotask(() => { void onExternalUpdate() })
+          })
+          return () => {
+            if (typeof off === 'function') off()
+          }
+          // The subscription reads refs, so it never needs to re-register.
+          // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, [])
+
+        // While one parse is in flight, re-read the handshake fields with a short
+        // poll: the event is best-effort and the poll stops when nothing pends.
+        React.useEffect(() => {
+          const pending = pendingNonce !== '' || parse.request.nonce !== ''
+          if (!pending) return undefined
+          const nonce = parse.request.nonce || pendingNonce
+          const timeout = setTimeout(() => { setParseTimeoutNonce(nonce) }, PARSE_CLIENT_TIMEOUT_MS)
+          const poll = setInterval(() => { void refreshParseAndRevision() }, 2000)
+          return () => {
+            clearTimeout(timeout)
+            clearInterval(poll)
+          }
+          // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, [pendingNonce, parse.request.nonce])
+
+        // Only a result answering the local request is consumed; anything else is
+        // treated as stale and leaves the thinking state alone until timeout.
+        React.useEffect(() => {
+          if (pendingNonce === '' || parse.result.status === '') return
+          if (parse.result.nonce !== pendingNonce) return
+          setPendingNonce('')
+          setParseTimeoutNonce('')
+        }, [pendingNonce, parse.result.nonce, parse.result.status])
+
         const selected = roles.find((role) => role.id === selectedRole)
 
         const editSelected = (patch) => {
+          setDirty(true)
           setRoles((current) => current.map((role) =>
             role.id === selectedRole ? { ...role, ...patch } : role,
           ))
         }
 
         const renameSelected = (id) => {
+          setDirty(true)
           const previous = selectedRole
           setRoles((current) => current.map((role) =>
             role.id === previous ? { ...role, id } : role,
@@ -461,6 +1129,7 @@
         }
 
         const addRole = () => {
+          setDirty(true)
           let index = 1
           while (roles.some((role) => role.id === `role-${index}`)) index += 1
           const role = {
@@ -483,6 +1152,7 @@
 
         const removeRole = () => {
           if (selectedRole === 'general') return
+          setDirty(true)
           setRoles((current) => current.filter((role) => role.id !== selectedRole))
           setSelectedRole('general')
         }
@@ -502,10 +1172,11 @@
             const view = await writeNamespace(ctx, revision, 'roles', roles)
             setRevision(view.revision)
             setRoles(Array.isArray(view.value?.roles) ? view.value.roles : roles)
+            setDirty(false)
             setNotice(t('saved'))
           } catch (caught) {
             setError(`${t('saveFailed')}${caught.message}`)
-            await load()
+            await refreshParseAndRevision()
           } finally {
             setBusy(false)
           }
@@ -519,10 +1190,11 @@
             const view = await writeNamespace(ctx, revision, 'rules', rules)
             setRevision(view.revision)
             setRules(Array.isArray(view.value?.rules) ? view.value.rules : rules)
+            setDirty(false)
             setNotice(t('saved'))
           } catch (caught) {
             setError(`${t('saveFailed')}${caught.message}`)
-            await load()
+            await refreshParseAndRevision()
           } finally {
             setBusy(false)
           }
@@ -531,23 +1203,146 @@
         const saveEngine = async () => {
           setError('')
           setNotice('')
+          const gateList = Array.isArray(engine.gates) ? engine.gates : []
+          if (gateList.length > MAX_GATES) {
+            setError(fill(t('gateParseErrLimit'), { max: MAX_GATES }))
+            return
+          }
+          const seenIds = new Set()
+          for (const gate of gateList) {
+            const problem = validateGateObject(gate)
+            if (problem !== '') {
+              const reason = problem.params === undefined ? t(problem.key) : fill(t(problem.key), problem.params)
+              setError(`${fill(t('gateParseErrLegacyGate'), { id: gate.id || '?' })} ${reason}`)
+              return
+            }
+            if (seenIds.has(gate.id)) {
+              setError(fill(t('gateParseErrLegacyGate'), { id: gate.id })
+                + ' ' + fill(t('gateParseValidateDuplicate'), { id: gate.id }))
+              return
+            }
+            seenIds.add(gate.id)
+          }
           setBusy(true)
           try {
-            const view = await writeNamespaceFields(ctx, revision, [
+            const gateIds = new Set(gateList.map((gate) => gate.id))
+            const keptDisabled = (Array.isArray(engine.gatesDisabled) ? engine.gatesDisabled : [])
+              .filter((id) => gateIds.has(id))
+            const fields = [
               { field: 'leadPlaybook', value: engine.leadPlaybook },
               { field: 'activeTemplate', value: engine.activeTemplate },
               { field: 'freshProvider', value: engine.freshProvider.trim() || 'spawn' },
               { field: 'forkProvider', value: engine.forkProvider.trim() || 'fork' },
               { field: 'gates', value: engine.gates },
-              { field: 'gatesDisabled', value: engine.gatesDisabled },
-            ])
+              { field: 'gatesDisabled', value: keptDisabled },
+            ]
+            // An adopted result is consumed by this save: drop it in the same write.
+            // Older Hosts do not declare the field, so the cleanup is skipped
+            // there instead of failing the whole save.
+            if (consumedNonce !== '' && parse.result.nonce === consumedNonce && parseFieldRef.current) {
+              fields.push({ field: 'gateParseResult', value: emptyParseResult() })
+            }
+            const view = await writeNamespaceFields(ctx, revision, fields)
             setRevision(view.revision)
+            setParse({ request: parseRequestOf(view.value), result: parseResultOf(view.value) })
+            setConsumedNonce('')
+            setDirty(false)
             setNotice(t('saved'))
           } catch (caught) {
             setError(`${t('saveFailed')}${caught.message}`)
-            await load()
+            // Keep the local engine (including adopted drafts); only refresh the
+            // revision and parse fields so the user can retry the save.
+            await refreshParseAndRevision()
           } finally {
             setBusy(false)
+          }
+        }
+
+        const markDirty = () => setDirty(true)
+
+        /** Ask the host to parse one natural-language gate description. */
+        const startParse = async (textValue) => {
+          const description = String(textValue ?? '').trim()
+          if (description === '') {
+            setParseError(t('gateAiEmpty'))
+            return
+          }
+          if (description.length > MAX_PARSE_TEXT) {
+            setParseError(fill(t('gateAiTooLong'), { max: MAX_PARSE_TEXT }))
+            return
+          }
+          setParseError('')
+          setParseTimeoutNonce('')
+          setNotice('')
+          try {
+            const nonce = makeNonce()
+            setPendingNonce(nonce)
+            const view = await writeNamespaceFields(ctx, revision, [
+              { field: 'gateParseRequest', value: { nonce, text: description, at: Date.now() } },
+              { field: 'gateParseResult', value: emptyParseResult() },
+            ])
+            setRevision(view.revision)
+            setParse({ request: parseRequestOf(view.value), result: parseResultOf(view.value) })
+          } catch (caught) {
+            setPendingNonce('')
+            setParseError(isConflict(caught)
+              ? t('gateParseErrConflict')
+              : `${t('gateParseErrRequestFailed')} ${caught.message}`)
+            await refreshParseAndRevision()
+          }
+        }
+
+        /** Clear both handshake fields; the host drops any in-flight reply. */
+        const cancelParse = async () => {
+          setParseError('')
+          setParseTimeoutNonce('')
+          setPendingNonce('')
+          setNotice('')
+          try {
+            const view = await writeNamespaceFields(ctx, revision, [
+              { field: 'gateParseRequest', value: emptyParseRequest() },
+              { field: 'gateParseResult', value: emptyParseResult() },
+            ])
+            setRevision(view.revision)
+            setParse({ request: parseRequestOf(view.value), result: parseResultOf(view.value) })
+            setConsumedNonce('')
+          } catch (caught) {
+            setParseError(`${t('gateParseErrRequestFailed')} ${caught.message}`)
+            await refreshParseAndRevision()
+          }
+        }
+
+        /** Drop the stored result without touching the gate list. */
+        const clearParseResult = async () => {
+          setConsumedNonce('')
+          setParseTimeoutNonce('')
+          setPendingNonce('')
+          if (!parseFieldRef.current) {
+            // An older Host does not declare the field: clear only the local copy.
+            setParse({ request: parseRequestOf({}), result: emptyParseResult() })
+            return
+          }
+          try {
+            const view = await writeNamespaceFields(ctx, revision, [
+              { field: 'gateParseResult', value: emptyParseResult() },
+            ])
+            setRevision(view.revision)
+            setParse({ request: parseRequestOf(view.value), result: parseResultOf(view.value) })
+          } catch {
+            await refreshParseAndRevision()
+          }
+        }
+
+        /** Remember which result the user adopted, so the save can clear it. */
+        const consumeParse = (nonce) => {
+          if (typeof nonce === 'string' && nonce !== '') setConsumedNonce(nonce)
+        }
+
+        const editEngine = (patch) => {
+          markDirty()
+          // The engine editor API takes a patch object; anything else is ignored.
+          if (patch !== null && typeof patch === 'object') {
+            setEngine((current) => ({ ...current, ...patch }))
           }
         }
 
@@ -603,10 +1398,20 @@
                   key: 'engine',
                   t,
                   engine,
-                  setEngine,
+                  setEngine: editEngine,
                   busy,
                   onSave: saveEngine,
                   onRefresh: load,
+                  parse,
+                  parseError,
+                  parseTimeoutNonce,
+                  pendingNonce,
+                  writable,
+                  parseFieldsPresent,
+                  onStartParse: startParse,
+                  onCancelParse: cancelParse,
+                  onClearParseResult: clearParseResult,
+                  onConsumeParse: consumeParse,
                 })
               : h(RulesPanel, {
                   key: 'rules',
@@ -614,7 +1419,7 @@
                   roles,
                   rules,
                   busy,
-                  setRules,
+                  setRules: (updater) => { setDirty(true); setRules(updater) },
                   onSave: saveRules,
                   onRefresh: load,
                 }),
@@ -622,8 +1427,12 @@
       }
     }
 
-    function EnginePanel({ t, engine, setEngine, busy, onSave, onRefresh }) {
-      const edit = (patch) => setEngine((current) => ({ ...current, ...patch }))
+    function EnginePanel({
+      t, engine, setEngine, busy, onSave, onRefresh,
+      parse, parseError, parseTimeoutNonce, pendingNonce, writable, parseFieldsPresent,
+      onStartParse, onCancelParse, onClearParseResult, onConsumeParse,
+    }) {
+      const edit = (patch) => setEngine(patch)
       return h('div', { style: { ...panel, ...card, maxWidth: 860 } }, [
         h('div', { key: 'head', style: { ...row, justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, [
           h('strong', { key: 'title', style: { fontSize: 13 } }, t('engine')),
@@ -685,6 +1494,16 @@
           gates: engine.gates,
           disabled: engine.gatesDisabled,
           onChange: (patch) => edit(patch),
+          parse,
+          parseError,
+          parseTimeoutNonce,
+          pendingNonce,
+          writable,
+          parseFieldsPresent,
+          onStartParse,
+          onCancelParse,
+          onClearParseResult,
+          onConsumeParse,
         }),
       ])
     }
@@ -716,11 +1535,41 @@
       return t('gateFreshFor').replace('{v}', String(freshFor)).replace('{u}', t('unitSecond'))
     }
 
-    /** List of gate cards with a visual deny -> key flow, plus add/edit form. */
-    function GatesPanel({ t, gates, disabled, onChange }) {
+    /** Drafts of one parse result that are still offered for adoption. */
+    function parseDrafts(result, ignored, adopted) {
+      const gates = Array.isArray(result?.gates) ? result.gates : []
+      return gates.filter((gate) => !ignored.includes(gate.id) && !adopted.includes(gate.id))
+    }
+
+    /** List of gate cards, the add/edit form, and the natural-language dialog. */
+    function GatesPanel({
+      t, gates, disabled, onChange,
+      parse, parseError, parseTimeoutNonce, pendingNonce, writable, parseFieldsPresent,
+      onStartParse, onCancelParse, onClearParseResult, onConsumeParse,
+    }) {
       const [editing, setEditing] = React.useState(null)
+      const [dialog, setDialog] = React.useState(false)
+      const [draft, setDraft] = React.useState('')
+      const [localError, setLocalError] = React.useState('')
+      const [ignored, setIgnored] = React.useState([])
+      const [adopted, setAdopted] = React.useState([])
       const gateList = Array.isArray(gates) ? gates : []
       const disabledList = Array.isArray(disabled) ? disabled : []
+      const request = parse?.request ?? emptyParseRequest()
+      const result = parse?.result ?? emptyParseResult()
+      const pending = pendingNonce !== '' || request.nonce !== ''
+      const timedOut = pendingNonce !== '' && parseTimeoutNonce === pendingNonce
+      const fresh = parseResultFresh(result)
+      // Only the answer to the local request is consumed; a late reply to an
+      // older request must not replace the state the user is watching.
+      const matchesPending = pendingNonce === '' || result.nonce === pendingNonce
+      const visible = fresh && result.status !== '' && matchesPending
+      const thinking = pending && !(result.status !== '' && result.nonce === pendingNonce)
+      const drafts = visible && result.status === 'ok' ? parseDrafts(result, ignored, adopted) : []
+      const existingIds = gateList.map((gate) => gate.id)
+      const toast = adopted.length > 0
+        ? fill(t('gateParseToastAdopted'), { id: adopted[adopted.length - 1] })
+        : ''
 
       const toggle = (id) => {
         const next = disabledList.includes(id)
@@ -734,31 +1583,342 @@
           gatesDisabled: disabledList.filter((entry) => entry !== id),
         })
       }
-      const upsert = (gate) => {
-        const next = gateList.some((entry) => entry.id === gate.id)
-          ? gateList.map((entry) => (entry.id === gate.id ? gate : entry))
-          : [...gateList, gate]
-        onChange({ gates: next })
+      /** Add or replace one gate; create never overwrites an existing id. */
+      const upsert = (gate, mode, originalId) => {
+        if (mode === 'create') {
+          if (gateList.some((entry) => entry.id === gate.id)) return false
+          onChange({ gates: [...gateList, gate] })
+        } else {
+          const previous = originalId ?? gate.id
+          onChange({ gates: gateList.map((entry) => (entry.id === previous ? gate : entry)) })
+        }
         setEditing(null)
+        return true
       }
 
+      const openDialog = () => {
+        setDialog(true)
+        setLocalError('')
+        if (draft === '' && request.text !== '') setDraft(request.text)
+      }
+      const closeDialog = () => {
+        setDialog(false)
+        setLocalError('')
+      }
+      const submitDialog = () => {
+        const value = draft.trim()
+        if (value === '') {
+          setLocalError(t('gateAiEmpty'))
+          return
+        }
+        if (value.length > MAX_PARSE_TEXT) {
+          setLocalError(fill(t('gateAiTooLong'), { max: MAX_PARSE_TEXT }))
+          return
+        }
+        setLocalError('')
+        void onStartParse(value)
+      }
+
+      /** Adopt one draft into the local gate list; never writes configuration. */
+      const adoptOne = (gate) => {
+        if (gateList.length >= MAX_GATES) {
+          setLocalError(fill(t('gateParseValidateLimit'), { max: MAX_GATES }))
+          return
+        }
+        const problem = validateGateObject(gate)
+        if (problem !== '') {
+          setLocalError(gateProblemMessage(t, gate, problem))
+          return
+        }
+        if (existingIds.includes(gate.id)) {
+          setLocalError(gateProblemMessage(t, gate, { key: 'gateParseValidateDuplicate', params: { id: gate.id } }))
+          return
+        }
+        onChange({ gates: [...gateList, gate] })
+        setAdopted((current) => (current.includes(gate.id) ? current : [...current, gate.id]))
+        if (result.nonce !== '') onConsumeParse(result.nonce)
+        setLocalError('')
+      }
+      /** Adopt every remaining draft, refusing the batch when any draft is invalid. */
+      const adoptAll = () => {
+        const candidates = drafts
+        if (candidates.length === 0) return
+        if (gateList.length + candidates.length > MAX_GATES) {
+          setLocalError(fill(t('gateParseValidateLimit'), { max: MAX_GATES }))
+          return
+        }
+        const seen = new Set(existingIds)
+        for (const gate of candidates) {
+          const problem = validateGateObject(gate)
+          if (problem !== '') {
+            setLocalError(gateProblemMessage(t, gate, problem))
+            return
+          }
+          if (seen.has(gate.id)) {
+            setLocalError(gateProblemMessage(t, gate, { key: 'gateParseValidateDuplicate', params: { id: gate.id } }))
+            return
+          }
+          seen.add(gate.id)
+        }
+        onChange({ gates: [...gateList, ...candidates] })
+        setAdopted((current) => [...current, ...candidates.map((gate) => gate.id)])
+        if (result.nonce !== '') onConsumeParse(result.nonce)
+        setLocalError('')
+      }
+      /** Undo the most recent adoption (local only). */
+      const undoAdopt = () => {
+        const last = adopted[adopted.length - 1]
+        if (last === undefined) return
+        onChange({
+          gates: gateList.filter((gate) => gate.id !== last),
+          gatesDisabled: disabledList.filter((entry) => entry !== last),
+        })
+        setAdopted((current) => current.filter((entry) => entry !== last))
+      }
+
+      const thinkingBlock = thinking
+        ? h('div', {
+            key: 'thinking',
+            role: 'status',
+            'aria-label': t('gateAiA11ySpinner'),
+            style: { ...row, gap: 8, flexWrap: 'wrap' },
+          }, [
+            h('span', { key: 's', style: small }, timedOut
+              ? fill(t('gateAiThinkingTimeout'), { seconds: Math.round(PARSE_CLIENT_TIMEOUT_MS / 1000) })
+              : t('gateAiThinking')),
+            h('span', { key: 'h', style: { ...small, fontSize: 11 } }, t('gateAiThinkingHint')),
+            h('button', {
+              key: 'cancel',
+              type: 'button',
+              style: button,
+              onClick: () => { void onCancelParse() },
+            }, t('gateAiCancelParse')),
+            h('button', {
+              key: 'retry',
+              type: 'button',
+              style: button,
+              disabled: draft.trim() === '',
+              onClick: submitDialog,
+            }, t('gateParseRetry')),
+          ])
+        : null
+
+      const resultBlock = visible
+        ? h('div', {
+            key: 'result',
+            role: 'status',
+            'aria-label': t('gateAiA11yResult'),
+            style: {
+              ...card,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+              background: 'var(--dsw-alias-bg-layer-2)',
+            },
+          }, [
+            h('div', { key: 'head', style: { ...row, justifyContent: 'space-between', flexWrap: 'wrap' } }, [
+              h('strong', { key: 't', style: { fontSize: 12 } }, t('gateParseResultTitle')),
+              result.status === 'ok'
+                ? h('span', { key: 'count', style: { ...small, fontSize: 11 } }, fill(t('gateParseResultCount'), { count: drafts.length }))
+                : null,
+              h('div', { key: 'actions', style: row }, [
+                result.status === 'ok'
+                  ? h('button', {
+                      key: 'all',
+                      type: 'button',
+                      style: primaryButton,
+                      disabled: drafts.length === 0,
+                      onClick: adoptAll,
+                    }, t('gateParseAdoptAll'))
+                  : null,
+                h('button', {
+                  key: 'drop',
+                  type: 'button',
+                  style: button,
+                  onClick: () => { void onClearParseResult() },
+                }, t('gateParseIgnore')),
+              ]),
+            ]),
+            h('span', { key: 'hint', style: { ...small, fontSize: 11 } }, t('gateParseResultHint')),
+            result.status === 'ok'
+              ? (drafts.length === 0
+                  ? h('span', { key: 'none', style: small }, t('gateEmpty'))
+                  : h('div', { key: 'drafts', style: { display: 'flex', flexDirection: 'column', gap: 8 } },
+                      drafts.map((gate) => h('div', {
+                        key: gate.id,
+                        style: { display: 'flex', flexDirection: 'column', gap: 6 },
+                      }, [
+                        h(GateCard, { key: 'card', t, gate, off: false, readOnly: true }),
+                        h('span', { key: 'summary', style: { ...small, fontSize: 11, lineHeight: 1.5 } }, gateSummary(gate, t)),
+                        h('div', { key: 'actions', style: row }, [
+                          h('button', {
+                            key: 'adopt',
+                            type: 'button',
+                            style: primaryButton,
+                            onClick: () => adoptOne(gate),
+                          }, t('gateParseAdopt')),
+                          h('button', {
+                            key: 'ignore',
+                            type: 'button',
+                            style: button,
+                            onClick: () => setIgnored((current) => [...current, gate.id]),
+                          }, t('gateParseIgnore')),
+                        ]),
+                      ]))))
+              : null,
+            result.status === 'needs-input'
+              ? h('span', { key: 'need', style: small }, fill(t('gateParseNeedsInput'), { note: result.note }))
+              : null,
+            result.status === 'error'
+              ? h('div', { key: 'error', role: 'alert', 'aria-label': t('gateAiA11yError'), style: banner('state-error') }, [
+                  h('div', { key: 'h' }, parseErrorText(result, t)),
+                  result.code !== ''
+                    ? h('div', {
+                        key: 'c',
+                        style: { fontSize: 11, opacity: 0.75, marginTop: 3 },
+                      }, fill(t('gateParseCode'), { code: result.code }))
+                    : null,
+                  result.detail !== ''
+                    ? h('div', {
+                        key: 'd',
+                        style: { fontSize: 11, opacity: 0.75, marginTop: 3 },
+                      }, fill(t('gateParseDetail'), { detail: result.detail }))
+                    : null,
+                ])
+              : null,
+            result.status === 'ok' && result.note !== ''
+              ? h('span', { key: 'note', style: small }, fill(t('gateParseNote'), { note: result.note }))
+              : null,
+            result.warnings.length > 0
+              ? h('span', {
+                  key: 'warnings',
+                  style: { ...small, fontSize: 11 },
+                }, fill(t('gateParseWarnings'), { warnings: result.warnings.join('; ') }))
+              : null,
+            toast !== ''
+              ? h('div', { key: 'toast', style: { ...row, gap: 6, flexWrap: 'wrap' } }, [
+                  h('span', { key: 't', style: { ...small, fontSize: 11 } }, toast),
+                  h('button', { key: 'undo', type: 'button', style: button, onClick: undoAdopt }, t('gateParseUndo')),
+                ])
+              : null,
+          ])
+        : null
+
+      const dialogBlock = dialog
+        ? h('div', {
+            key: 'ai',
+            role: 'dialog',
+            'aria-label': fill(t('gateAiA11yDialog'), { title: t('gateAiTitle') }),
+            style: { ...card, display: 'flex', flexDirection: 'column', gap: 8 },
+          }, [
+            h('div', { key: 'head', style: { ...row, justifyContent: 'space-between' } }, [
+              h('strong', { key: 't', style: { fontSize: 12 } }, t('gateAiTitle')),
+              h('button', { key: 'close', type: 'button', style: button, title: t('gateAiCancel'), onClick: closeDialog }, t('gateAiClose')),
+            ]),
+            h('span', { key: 'hint', style: { ...small, fontSize: 11 } }, t('gateAiHint')),
+            h('textarea', {
+              key: 'input',
+              style: { ...input, minHeight: 80, resize: 'vertical', lineHeight: 1.5 },
+              placeholder: t('gateAiPlaceholder'),
+              value: draft,
+              disabled: pending,
+              maxLength: MAX_PARSE_TEXT,
+              onChange: (event) => { setDraft(event.target.value); setLocalError('') },
+            }),
+            h('span', { key: 'count', style: { ...small, fontSize: 10 } },
+              fill(t('gateAiCharCount'), { count: draft.length, max: MAX_PARSE_TEXT })),
+            localError !== '' || parseError !== ''
+              ? h('div', {
+                  key: 'err',
+                  role: 'alert',
+                  'aria-label': t('gateAiA11yError'),
+                  style: banner('state-error'),
+                }, parseError || localError)
+              : null,
+            thinkingBlock,
+            resultBlock,
+            h('div', { key: 'actions', style: row }, [
+              h('button', {
+                key: 'submit',
+                type: 'button',
+                style: primaryButton,
+                disabled: pending,
+                onClick: submitDialog,
+              }, t('gateAiSubmit')),
+              h('button', {
+                key: 'manual',
+                type: 'button',
+                style: button,
+                onClick: () => { closeDialog(); setEditing('new') },
+              }, t('gateParseManual')),
+            ]),
+          ])
+        : null
+
       if (editing !== null) {
+        const isCreate = editing === 'new'
         return h(GateForm, {
           key: 'form',
           t,
-          initial: editing === 'new' ? null : editing,
-          existingIds: gateList.map((gate) => gate.id),
-          onSubmit: upsert,
+          mode: isCreate ? 'create' : 'edit',
+          initial: isCreate ? null : editing,
+          originalId: isCreate ? undefined : editing.id,
+          existingIds,
+          onSubmit: (gate) => {
+            const ok = upsert(gate, isCreate ? 'create' : 'edit', isCreate ? undefined : editing.id)
+            if (!ok) setLocalError(gateProblemMessage(t, gate, { key: 'gateErrDup' }))
+          },
           onCancel: () => setEditing(null),
         })
       }
 
       return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, [
-        h('div', { key: 'head', style: { ...row, justifyContent: 'space-between' } }, [
+        h('div', { key: 'head', style: { ...row, justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 } }, [
           h('span', { key: 'l', style: { fontSize: 12, fontWeight: 600 } }, t('gates')),
-          h('button', { key: 'add', type: 'button', style: button, onClick: () => setEditing('new') }, t('gateAdd')),
+          h('div', { key: 'actions', style: row }, [
+            h('button', {
+              key: 'ai',
+              type: 'button',
+              style: button,
+              disabled: !writable || parseFieldsPresent === false,
+              title: !writable
+                ? t('gateAiReadonly')
+                : (parseFieldsPresent === false ? t('gateAiUnavailable') : t('gateAiTitle')),
+              onClick: openDialog,
+            }, t('gateAiAdd')),
+            h('button', {
+              key: 'add',
+              type: 'button',
+              style: button,
+              onClick: () => setEditing('new'),
+            }, t('gateAdd')),
+          ]),
         ]),
         h('span', { key: 'hint', style: { ...small, fontSize: 11 } }, t('gatesHint')),
+        result.completedAt > 0 && result.status !== '' && !fresh
+          ? h('div', { key: 'stale', style: { ...row, gap: 8, flexWrap: 'wrap' } }, [
+              h('span', { key: 's', style: { ...small, fontSize: 11 } },
+                fill(t('gateParseStale'), { age: ageLabel(t, Date.now() - result.completedAt) })),
+              h('button', {
+                key: 'drop',
+                type: 'button',
+                style: button,
+                onClick: () => { void onClearParseResult() },
+              }, t('gateParseIgnore')),
+            ])
+          : null,
+        localError !== '' ? h('div', { key: 'err', style: banner('state-error') }, localError) : null,
+        visible && !dialog
+          ? h('button', {
+              key: 'open-result',
+              type: 'button',
+              style: { ...button, alignSelf: 'flex-start' },
+              onClick: () => setDialog(true),
+            }, result.status === 'ok'
+              ? `${t('gateParseResultTitle')} (${drafts.length})`
+              : t('gateParseResultTitle'))
+          : null,
+        dialogBlock,
         gateList.length === 0
           ? h('div', { key: 'empty', style: { ...small, padding: '8px 0' } }, t('gateEmpty'))
           : h('div', { key: 'list', style: { display: 'flex', flexDirection: 'column', gap: 10 } },
@@ -775,7 +1935,7 @@
     }
 
     /** One gate rendered as a deny -> key flow card. */
-    function GateCard({ t, gate, off, onToggle, onEdit, onDelete }) {
+    function GateCard({ t, gate, off, readOnly, onToggle, onEdit, onDelete }) {
       const deny = gate.deny ?? {}
       const require = gate.require ?? {}
       // Schema defaults leave empty objects behind; only a filled commandSuccess counts.
@@ -810,7 +1970,7 @@
       }, [
         h('div', { key: 'head', style: { ...row, justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 } }, [
           h('div', { key: 'name', style: { ...row, gap: 8, minWidth: 0 } }, [
-            h('button', {
+            readOnly ? null : h('button', {
               key: 'toggle',
               type: 'button',
               title: `${off ? t('gateEnable') : t('gateDisable')}: ${gate.id}`,
@@ -830,10 +1990,12 @@
             h('code', { key: 'id', style: { fontWeight: 600, fontSize: 12 } }, gate.id),
             off ? gateChip(t('gateOff'), 'muted') : gateChip(t('gateOn'), 'key'),
           ]),
-          h('div', { key: 'actions', style: row }, [
-            h('button', { key: 'edit', type: 'button', style: button, title: `${t('gateEdit')}: ${gate.id}`, 'aria-label': `${t('gateEdit')}: ${gate.id}`, onClick: onEdit }, t('gateEdit')),
-            h('button', { key: 'delete', type: 'button', style: button, title: `${t('gateDelete')}: ${gate.id}`, 'aria-label': `${t('gateDelete')}: ${gate.id}`, onClick: onDelete }, t('gateDelete')),
-          ]),
+          readOnly
+            ? null
+            : h('div', { key: 'actions', style: row }, [
+                h('button', { key: 'edit', type: 'button', style: button, title: `${t('gateEdit')}: ${gate.id}`, 'aria-label': `${t('gateEdit')}: ${gate.id}`, onClick: onEdit }, t('gateEdit')),
+                h('button', { key: 'delete', type: 'button', style: button, title: `${t('gateDelete')}: ${gate.id}`, 'aria-label': `${t('gateDelete')}: ${gate.id}`, onClick: onDelete }, t('gateDelete')),
+              ]),
         ]),
         gate.description ? h('div', { key: 'desc', style: { ...small, fontSize: 11 } }, gate.description) : null,
         h('div', {
@@ -861,7 +2023,7 @@
             commandSuccess ? gateChip(`/ ${commandSuccess.pattern} /`, 'muted') : null,
             gateChip(freshLabel(require.freshFor, t), 'muted'),
             invalidateOn
-              ? gateChip(`${t('gateInvalidateOn')} ${invalidateOn.role ?? '*'} ${(invalidateOn.tool ?? []).join('/')}`, 'deny')
+              ? gateChip(`${t('gateInvalidateOn')} ${invalidateOn.role ?? t('gateParseSumAnyRole')} ${(invalidateOn.tool ?? []).join('/')}`, 'deny')
               : null,
           ]),
         ]),
@@ -869,91 +2031,19 @@
     }
 
     /** Structured add/edit form for one gate. */
-    function GateForm({ t, initial, existingIds, onSubmit, onCancel }) {
-      const [form, setForm] = React.useState(() => {
-        const gate = initial ?? {}
-        const deny = gate.deny ?? {}
-        const require = gate.require ?? {}
-        const commandSuccess = require.commandSuccess && (require.commandSuccess.role || require.commandSuccess.pattern)
-          ? require.commandSuccess
-          : undefined
-        return {
-          id: gate.id ?? '',
-          description: gate.description ?? '',
-          denyRole: deny.role ?? '',
-          denyTools: Array.isArray(deny.tool) ? deny.tool.join(', ') : '',
-          commandPattern: deny.commandPattern ?? '',
-          kind: commandSuccess ? 'command' : 'event',
-          event: require.event ?? '',
-          byRoles: Array.isArray(require.byRoles) ? require.byRoles.join(', ') : '',
-          freshFor: require.freshFor ?? 0,
-          invalidateRole: require.invalidateOn?.role ?? '',
-          invalidateTools: require.invalidateOn?.tool ? require.invalidateOn.tool.join(', ') : '',
-          csRole: commandSuccess?.role ?? '',
-          csTool: commandSuccess?.tool ? commandSuccess.tool.join(', ') : '',
-          csPattern: commandSuccess?.pattern ?? '',
-        }
-      })
+    function GateForm({ t, mode, initial, originalId, existingIds, onSubmit, onCancel }) {
+      const editingExisting = mode === 'edit'
+      const [form, setForm] = React.useState(() => formFromGate(editingExisting ? initial : null))
       const [error, setError] = React.useState('')
       const set = (patch) => setForm((current) => ({ ...current, ...patch }))
-      const listOf = (value) => [...new Set(
-        String(value ?? '').split(/[\n,]/).map((entry) => entry.trim()).filter(Boolean),
-      )]
 
       const submit = () => {
-        const id = form.id.trim().toLowerCase()
-        if (!/^[a-z][a-z0-9-]{0,63}$/.test(id)) {
-          setError(t('gateErrId')); return
+        const problem = validateGateInput(form, existingIds, editingExisting ? (originalId ?? initial?.id) : undefined)
+        if (problem !== '') {
+          setError(problem.params === undefined ? t(problem.key) : fill(t(problem.key), problem.params))
+          return
         }
-        if (initial === null && existingIds.includes(id)) {
-          setError(t('gateErrDup')); return
-        }
-        const denyTools = listOf(form.denyTools)
-        if (denyTools.length === 0) { setError(t('gateErrTools')); return }
-        const commandPattern = form.commandPattern.trim()
-        if (commandPattern !== '') {
-          try { void new RegExp(commandPattern) } catch { setError(t('gateErrPattern')); return }
-        }
-        const byRoles = listOf(form.byRoles)
-        const freshFor = Number(form.freshFor) > 0 ? Number(form.freshFor) : undefined
-        const invalidateTools = listOf(form.invalidateTools)
-        const invalidateOn = invalidateTools.length === 0 && form.invalidateRole.trim() === ''
-          ? undefined
-          : {
-              ...(form.invalidateRole.trim() === '' ? {} : { role: form.invalidateRole.trim().toLowerCase() }),
-              tool: invalidateTools,
-            }
-        if (invalidateOn !== undefined && invalidateOn.tool.length === 0) {
-          setError(t('gateErrInvalidate')); return
-        }
-        const gate = {
-          id,
-          deny: { role: form.denyRole.trim().toLowerCase(), tool: denyTools, ...(commandPattern === '' ? {} : { commandPattern }) },
-          require: {
-            ...(form.kind === 'event'
-              ? { event: form.event.trim().toLowerCase(), byRoles }
-              : {
-                  commandSuccess: {
-                    role: form.csRole.trim().toLowerCase(),
-                    tool: listOf(form.csTool),
-                    pattern: form.csPattern.trim(),
-                  },
-                }),
-            ...(freshFor === undefined ? {} : { freshFor }),
-            ...(invalidateOn === undefined ? {} : { invalidateOn }),
-          },
-          description: form.description.trim(),
-        }
-        if (form.kind === 'event' && !/^[a-z][a-z0-9-]{0,63}$/.test(gate.require.event)) {
-          setError(t('gateErrEvent')); return
-        }
-        if (form.kind === 'event' && byRoles.length === 0) { setError(t('gateErrByRoles')); return }
-        if (form.kind === 'command') {
-          if (gate.require.commandSuccess.role === '') { setError(t('gateErrCsRole')); return }
-          if (gate.require.commandSuccess.tool.length === 0) { setError(t('gateErrCsTool')); return }
-          try { void new RegExp(gate.require.commandSuccess.pattern) } catch { setError(t('gateErrPattern')); return }
-        }
-        onSubmit(gate)
+        onSubmit(gateFromForm(form))
       }
 
       const field = (key, text, placeholder, value, onChange, extra) => h('label', { key, style: label }, [
@@ -969,7 +2059,7 @@
         },
       }, [
         h('div', { key: 'head', style: { ...row, justifyContent: 'space-between' } }, [
-          h('strong', { key: 't', style: { fontSize: 13 } }, initial === null ? t('gateAdd') : `${t('gateEdit')}: ${initial.id}`),
+          h('strong', { key: 't', style: { fontSize: 13 } }, editingExisting ? `${t('gateEdit')}: ${initial?.id ?? ''}` : t('gateAdd')),
           h('button', { key: 'cancel', type: 'button', style: button, onClick: onCancel }, t('gateFormCancel')),
         ]),
         h('div', { key: 'grid1', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,2fr)', gap: 12 } }, [
@@ -999,7 +2089,7 @@
               field('csPattern', t('gateFormCsPattern'), '\\b(pnpm|npm)\\s+test\\b', form.csPattern, (v) => set({ csPattern: v })),
             ]),
         h('div', { key: 'grid3', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)', gap: 12 } }, [
-          field('freshFor', t('gateFormFreshFor'), '14400', String(form.freshFor), (v) => set({ freshFor: v }), h('span', { key: 'h', style: { ...small, fontSize: 11 } }, `${t('gateFreshHint')}（0 = ${t('gateFreshAlways')}）`)),
+          field('freshFor', t('gateFormFreshFor'), '14400', String(form.freshFor), (v) => set({ freshFor: v }), h('span', { key: 'h', style: { ...small, fontSize: 11 } }, t('gateAiFreshHint'))),
         ]),
         h('div', { key: 'inv-title', style: row }, gateChip(t('gateInvalidateOn'), 'deny')),
         h('div', { key: 'grid4', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 12 } }, [

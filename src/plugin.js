@@ -27,8 +27,10 @@ import {
   evaluateGates,
   gateRequirement,
   normalizeGates,
+  validateGate,
 } from './gates.js'
 import { GateLedger } from './ledger.js'
+import { installGateParser } from './gate-parse.js'
 import { copyTemplateSkills, discoverTemplates, seedTemplates, templatesRoot, upsertRoles } from './templates.js'
 import { MemberSnapshots, RoleStore, RuleStore, stateDir } from './store.js'
 import { spawnRoleMember } from './spawn.js'
@@ -101,6 +103,23 @@ export const Config = z.object({
     .description('Stateful workflow gates: conditionally deny a role tool call until a fresh event exists.'),
   gatesDisabled: z.array(z.string()).default([]).volatile()
     .description('Gate ids manually disabled from /team-gates.'),
+  gateParseRequest: z.object({
+    nonce: z.string().default('').description('Client-minted request id; dedupes host work.'),
+    text: z.string().default('').description('User description, at most 4000 characters; cleared after the parse.'),
+    at: z.number().default(0).description('Epoch milliseconds; requests older than 120 seconds are ignored.'),
+  }).default({}).volatile()
+    .description('Pending natural-language gate parse request.'),
+  gateParseResult: z.object({
+    nonce: z.string().default('').description('Request id this result answers.'),
+    status: z.string().default('').description('ok | needs-input | error.'),
+    gates: z.array(GateSchema).default([]).description('Normalized gate drafts; 0..5.'),
+    note: z.string().default('').description('Assumptions or the missing-information note; at most 2000 characters.'),
+    warnings: z.array(z.string()).default([]).description('Non-fatal normalization notes; at most 10 x 200 characters.'),
+    code: z.string().default('').description('Stable error code for status=error.'),
+    detail: z.string().default('').description('English diagnostic detail; at most 500 characters; secondary UI line.'),
+    completedAt: z.number().default(0).description('Epoch milliseconds; 0 = no result.'),
+  }).default({}).volatile()
+    .description('Latest natural-language gate parse result.'),
 })
 
 /** Install the plugin's runtime contributions. */
@@ -128,6 +147,12 @@ export function apply(ctx, config) {
     roles: rolesReader,
     ledger: gateLedger,
   })
+
+  // The Settings page writes a natural-language request into the volatile
+  // Config; this host-side parser answers into the matching result field. It
+  // never edits the gate list itself, and every failure stays contained here.
+  const gateParser = installGateParser({ ctx, config })
+  ctx.effect(() => () => gateParser.dispose(), 'agent-team-roles:gate-parse')
 
   // Team templates: built-ins are seeded into the state dir once (missing dirs
   // only), and discovered templates are cached for the synchronous Lead-prompt
@@ -433,6 +458,21 @@ export function apply(ctx, config) {
         const editor = ctx.get('configEditor')
         const templateGates = Array.isArray(template.gates) ? template.gates : []
         const gateIds = new Set(templateGates.map((gate) => gate.id))
+        // Validate before writing: a defective template must not replace live
+        // gates with entries the evaluator would silently skip.
+        if (gateIds.size !== templateGates.length) {
+          return { kind: 'error', text: `template "${template.id}" lists duplicate gate ids` }
+        }
+        for (const gate of templateGates) {
+          const invalid = validateGate(gate)
+          if (invalid !== undefined) {
+            return { kind: 'error', text: `template "${template.id}" gate invalid: ${invalid}` }
+          }
+        }
+        const existingIds = new Set(
+          normalizeGates(readConfig(config, 'gates') ?? []).map((gate) => gate.id),
+        )
+        const replaced = templateGates.filter((gate) => existingIds.has(gate.id)).map((gate) => gate.id)
         await editor.edit(ctx.fiber.entry, (current) => ({
           ...current,
           activeTemplate: template.id,
@@ -450,9 +490,10 @@ export function apply(ctx, config) {
         const parts = applied.map((item) => `${item.id} (${item.action})`)
         const skillNote = skills.copied.length === 0 ? 'no skill dirs' : `skills merged: ${skills.copied.join(', ')}`
         const gateNote = templateGates.length === 0 ? 'no gates' : `gates installed: ${templateGates.map((gate) => gate.id).join(', ')}`
+        const replacedNote = replaced.length === 0 ? '' : `; replaced: ${replaced.join(', ')}`
         return {
           kind: 'success',
-          text: `Applied template "${template.id}". Roles: ${parts.join(', ')}. Playbook active. ${gateNote}. ${skillNote}.`,
+          text: `Applied template "${template.id}". Roles: ${parts.join(', ')}. Playbook active. ${gateNote}${replacedNote}. ${skillNote}.`,
         }
       } catch (error) {
         return { kind: 'error', text: error instanceof Error ? error.message : String(error) }

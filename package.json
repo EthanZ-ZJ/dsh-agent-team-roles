@@ -26,6 +26,7 @@
     "locale/*.json",
     "icon.svg",
     "templates/**",
+    "docs/**/*.md",
     "README.md"
   ],
   "dsh": {
