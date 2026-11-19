@@ -591,7 +591,8 @@ window.__ModuleLoader__.load({
       const freshForBlock = `${sep}${freshnessLabel(t, require.freshFor)}`
       const commandSuccess = require.commandSuccess
       let keyText
-      if (commandSuccess !== null && typeof commandSuccess === 'object') {
+      // A schema-filled `{}` / empty role is not a command-success key.
+      if (hasCommandSuccessKey(require)) {
         const patternLabel = typeof commandSuccess.pattern === 'string' && commandSuccess.pattern !== ''
           ? patternBlock(t, commandSuccess.pattern)
           : t('gateParseSumAny')
@@ -818,6 +819,69 @@ window.__ModuleLoader__.load({
       return ''
     }
 
+    /** Whether one gate truly carries a command-success key (schema fills `{}`). */
+    function hasCommandSuccessKey(require) {
+      const command = require?.commandSuccess
+      return command !== null && typeof command === 'object' && String(command.role ?? '').trim() !== ''
+    }
+
+    /** Whether one gate truly carries an event key (the schema default is `''`). */
+    function hasEventKey(require) {
+      return typeof require?.event === 'string' && require.event.trim() !== ''
+    }
+
+    /**
+     * Strip schema-filled empty objects so an adopted draft matches the shape
+     * the Host itself normalizes (and keeps `commandSuccess` only when it has a
+     * role). Adoption and the subsequent save both use this shape.
+     */
+    function canonicalAdoptableGate(gate) {
+      const base = gate !== null && typeof gate === 'object' ? gate : {}
+      const deny = base.deny ?? {}
+      const require = base.require ?? {}
+      const list = (value) => (Array.isArray(value)
+        ? [...new Set(value.map((entry) => String(entry ?? '').trim()).filter(Boolean))]
+        : [])
+      const commandPattern = typeof deny.commandPattern === 'string' ? deny.commandPattern.trim() : ''
+      const event = hasEventKey(require) ? require.event.trim().toLowerCase() : ''
+      const command = hasCommandSuccessKey(require)
+        ? {
+            role: String(require.commandSuccess.role).trim().toLowerCase(),
+            tool: list(require.commandSuccess.tool),
+            pattern: typeof require.commandSuccess.pattern === 'string'
+              ? require.commandSuccess.pattern.trim()
+              : '',
+          }
+        : undefined
+      const invalidateOnRaw = require.invalidateOn !== null && typeof require.invalidateOn === 'object'
+        ? require.invalidateOn
+        : undefined
+      const invalidateRole = String(invalidateOnRaw?.role ?? '').trim().toLowerCase()
+      const invalidateTools = list(invalidateOnRaw?.tool)
+      const invalidateOn = invalidateRole === '' && invalidateTools.length === 0
+        ? undefined
+        : { ...(invalidateRole === '' ? {} : { role: invalidateRole }), tool: invalidateTools }
+      const freshFor = Number.isFinite(Number(require.freshFor)) && Number(require.freshFor) > 0
+        ? Number(require.freshFor)
+        : undefined
+      return {
+        id: String(base.id ?? '').trim().toLowerCase(),
+        deny: {
+          role: String(deny.role ?? '').trim().toLowerCase(),
+          tool: list(deny.tool),
+          ...(commandPattern === '' ? {} : { commandPattern }),
+        },
+        require: {
+          ...(event === '' ? {} : { event }),
+          ...(command === undefined ? {} : { commandSuccess: command }),
+          byRoles: list(require.byRoles).map((entry) => entry.toLowerCase()),
+          ...(freshFor === undefined ? {} : { freshFor }),
+          ...(invalidateOn === undefined ? {} : { invalidateOn }),
+        },
+        description: String(base.description ?? '').trim(),
+      }
+    }
+
     /** Validate one canonical gate before persisting it; returns `''` or `{key, params}`. */
     function validateGateObject(gate) {
       const base = gate !== null && typeof gate === 'object' ? gate : {}
@@ -838,11 +902,11 @@ window.__ModuleLoader__.load({
         try { void new RegExp(commandPattern) } catch { return { key: 'gateErrPattern' } }
       }
       const event = typeof require.event === 'string' ? require.event.trim() : ''
-      const commandSuccess = require.commandSuccess !== null && typeof require.commandSuccess === 'object'
-        ? require.commandSuccess
-        : undefined
       const hasEvent = event !== ''
-      const hasCommand = commandSuccess !== undefined
+      // `GateSchema` fills `require.commandSuccess` with an empty object; only a
+      // non-empty role makes it a real key, otherwise event gates look like
+      // they carry two key sources.
+      const hasCommand = hasCommandSuccessKey(require)
       if (hasEvent && hasCommand) return { key: 'gateErrInvalid' }
       if (!hasEvent && !hasCommand) return { key: 'gateErrInvalid' }
       if (hasEvent) {
@@ -853,7 +917,7 @@ window.__ModuleLoader__.load({
         if (byRoles.length === 0) return { key: 'gateErrByRoles' }
         if (byRoles.length > MAX_GATE_TOOLS) return { key: 'gateErrToolsMax', params: { max: MAX_GATE_TOOLS } }
       } else {
-        if (String(commandSuccess.role ?? '').trim() === '') return { key: 'gateErrCsRole' }
+        const commandSuccess = require.commandSuccess
         const tools = Array.isArray(commandSuccess.tool)
           ? commandSuccess.tool.filter((entry) => typeof entry === 'string' && entry.trim() !== '')
           : []
@@ -1790,7 +1854,8 @@ window.__ModuleLoader__.load({
       }
 
       /** Adopt one draft into the local gate list; never writes configuration. */
-      const adoptOne = (gate) => {
+      const adoptOne = (rawGate) => {
+        const gate = canonicalAdoptableGate(rawGate)
         if (needsAck(gate) && !acknowledged) {
           setLocalError(t('gateParseWarnAck'))
           return
@@ -1815,7 +1880,7 @@ window.__ModuleLoader__.load({
       }
       /** Adopt every remaining draft, refusing the batch when any draft is invalid. */
       const adoptAll = () => {
-        const candidates = drafts
+        const candidates = drafts.map((gate) => canonicalAdoptableGate(gate))
         if (candidates.length === 0) return
         if (candidates.some((gate) => needsAck(gate)) && !acknowledged) {
           setLocalError(t('gateParseWarnAck'))
@@ -2209,7 +2274,11 @@ window.__ModuleLoader__.load({
               },
             })),
             h('code', { key: 'id', style: { fontWeight: 600, fontSize: 12 } }, gate.id),
-            off ? gateChip(t('gateOff'), 'muted') : gateChip(t('gateOn'), 'key'),
+            off
+              ? gateChip(t('gateOff'), 'muted')
+              : readOnly
+                ? gateChip(t('candidate'), 'muted')
+                : gateChip(t('gateOn'), 'key'),
           ]),
           readOnly
             ? null
