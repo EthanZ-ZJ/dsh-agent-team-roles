@@ -1,4 +1,4 @@
-window.__ModuleLoader__.load({
+﻿window.__ModuleLoader__.load({
   id: 'dsh-agent-team-roles',
   factory(require) {
     const React = require('react')
@@ -28,10 +28,55 @@ window.__ModuleLoader__.load({
       freshProvider: 'fresh 成员后端',
       forkProvider: 'fork 成员后端',
       backendHint: '可选值：spawn（全新子 Agent）/ fork（继承 Lead 已完成回合）。留空回退默认。',
-      gates: '工序闸门（JSON）',
-      gatesHint: 'GateSchema 数组：{ id, deny:{role,tool,commandPattern?}, require:{event|commandSuccess,...} }。一般由 /team-template apply 写入；也可在这里直接编辑。',
-      gatesDisabled: '停用的 gate id',
-      gatesDisabledHint: '逗号或换行分隔；对应 /team-gates disable。',
+      gates: '工序闸门',
+      gatesHint: '闸门 = 拦截 + 钥匙：命中「拦截」的调用必须存在一把未过期的「钥匙」事件才放行。修改后点上方「保存」生效；模板可用 /team-template apply 应用。',
+      gateEmpty: '尚未配置任何闸门。点「新增闸门」创建，或用 /team-template apply 从模板安装。',
+      gateAdd: '新增闸门',
+      gateEdit: '编辑',
+      gateDelete: '删除',
+      gateOn: '启用中',
+      gateOff: '已停用',
+      gateEnable: '点击启用',
+      gateDisable: '点击停用',
+      gateDeny: '拦截',
+      gateKey: '钥匙',
+      gateNeedKey: '需要钥匙',
+      gateKeyBy: '由',
+      gateKindEvent: '事件钥匙',
+      gateKindCommand: '命令成功钥匙',
+      gateFreshAlways: '永久有效（直到作废）',
+      gateFreshFor: '{v} {u}内有效',
+      unitHour: '小时',
+      unitMinute: '分钟',
+      unitSecond: '秒',
+      gateInvalidateOn: '作废触发',
+      gateFormId: '闸门 ID',
+      gateFormDesc: '说明（可选）',
+      gateFormDenyRole: '被拦角色',
+      gateFormDenyTools: '被拦工具（逗号分隔）',
+      gateFormPattern: '命令匹配（可选，仅 bash/pwsh）',
+      gatePatternHint: '正则；只对 shell 命令参数匹配，留空 = 整工具拦截。',
+      gateFormKeyKind: '钥匙类型',
+      gateFormEvent: '事件名',
+      gateFormByRoles: '可产生钥匙的角色（逗号分隔）',
+      gateFormFreshFor: '新鲜期（秒）',
+      gateFreshHint: '超过该时长后钥匙失效',
+      gateFormInvRole: '作废触发角色（可选）',
+      gateFormInvTools: '作废触发工具（逗号分隔，可空）',
+      gateFormCsRole: '命令执行角色',
+      gateFormCsTool: '监听的 shell 工具（逗号分隔）',
+      gateFormCsPattern: '命令匹配正则',
+      gateFormSave: '保存闸门',
+      gateFormCancel: '取消',
+      gateErrId: 'ID 必须是小写字母开头的 kebab-case（字母/数字/连字符，≤64 字符）',
+      gateErrDup: '已存在同 ID 的闸门',
+      gateErrTools: '被拦工具至少填一个',
+      gateErrPattern: '正则无法编译',
+      gateErrEvent: '事件名必须是小写 kebab-case',
+      gateErrByRoles: '钥匙角色至少填一个',
+      gateErrCsRole: '命令执行角色必填',
+      gateErrCsTool: '监听工具至少填一个',
+      gateErrInvalidate: '配置了作废触发角色时，触发工具至少填一个',
       engineHint: 'playbook 非空时追加到 Lead 提示词；activeTemplate 命中的模板 playbook 优先。模板用 /team-template apply 应用。',
       addRole: '新建角色',
       deleteRole: '删除角色',
@@ -112,10 +157,55 @@ window.__ModuleLoader__.load({
       freshProvider: 'Fresh member backend',
       forkProvider: 'Fork member backend',
       backendHint: 'Values: spawn (brand-new child agent) / fork (inherits the Lead\'s completed turns). Empty falls back to the default.',
-      gates: 'Workflow gates (JSON)',
-      gatesHint: 'GateSchema array: { id, deny:{role,tool,commandPattern?}, require:{event|commandSuccess,...} }. Usually written by /team-template apply; editable here too.',
-      gatesDisabled: 'Disabled gate ids',
-      gatesDisabledHint: 'Comma or newline separated; mirrors /team-gates disable.',
+      gates: 'Workflow gates',
+      gatesHint: 'A gate = deny + key: a matching call is rejected unless a fresh key event exists. Click Save above to apply; install templates with /team-template apply.',
+      gateEmpty: 'No gates configured. Click "Add gate" or install a template with /team-template apply.',
+      gateAdd: 'Add gate',
+      gateEdit: 'Edit',
+      gateDelete: 'Delete',
+      gateOn: 'Enabled',
+      gateOff: 'Disabled',
+      gateEnable: 'Click to enable',
+      gateDisable: 'Click to disable',
+      gateDeny: 'Deny',
+      gateKey: 'Key',
+      gateNeedKey: 'requires key',
+      gateKeyBy: 'from',
+      gateKindEvent: 'Reported event',
+      gateKindCommand: 'Command success',
+      gateFreshAlways: 'Valid until invalidated',
+      gateFreshFor: 'valid {v} {u}',
+      unitHour: 'h',
+      unitMinute: 'min',
+      unitSecond: 's',
+      gateInvalidateOn: 'Invalidated by',
+      gateFormId: 'Gate ID',
+      gateFormDesc: 'Description (optional)',
+      gateFormDenyRole: 'Denied role',
+      gateFormDenyTools: 'Denied tools (comma separated)',
+      gateFormPattern: 'Command pattern (optional, bash/pwsh only)',
+      gatePatternHint: 'RegExp matched against shell command; empty = whole tool denied.',
+      gateFormKeyKind: 'Key type',
+      gateFormEvent: 'Event name',
+      gateFormByRoles: 'Key producer roles (comma separated)',
+      gateFormFreshFor: 'Fresh window (seconds)',
+      gateFreshHint: 'the key expires after this window',
+      gateFormInvRole: 'Invalidation trigger role (optional)',
+      gateFormInvTools: 'Invalidation trigger tools (comma separated, optional)',
+      gateFormCsRole: 'Command role',
+      gateFormCsTool: 'Watched shell tools (comma separated)',
+      gateFormCsPattern: 'Command pattern (RegExp)',
+      gateFormSave: 'Save gate',
+      gateFormCancel: 'Cancel',
+      gateErrId: 'ID must be lowercase kebab-case (letters/digits/hyphens, at most 64 characters)',
+      gateErrDup: 'A gate with this ID already exists',
+      gateErrTools: 'List at least one denied tool',
+      gateErrPattern: 'RegExp does not compile',
+      gateErrEvent: 'Event name must be lowercase kebab-case',
+      gateErrByRoles: 'List at least one key producer role',
+      gateErrCsRole: 'Command role is required',
+      gateErrCsTool: 'List at least one watched tool',
+      gateErrInvalidate: 'List at least one trigger tool when a trigger role is set',
       engineHint: 'A non-empty playbook is appended to the Lead prompt; the active template\'s playbook wins. Apply templates with /team-template apply.',
       addRole: 'New role',
       deleteRole: 'Delete role',
@@ -287,12 +377,14 @@ window.__ModuleLoader__.load({
 
     /** Write one volatile field under the current revision. */
     async function writeNamespace(ctx, revision, field, value) {
+      return writeNamespaceFields(ctx, revision, [{ field, value }])
+    }
+
+    /** Write several volatile fields in one atomic mutate under one revision. */
+    async function writeNamespaceFields(ctx, revision, fields) {
       if (ctx.remote?.settings === undefined) throw new Error('settings-remote-unavailable')
-      const response = await ctx.remote.settings.mutate(
-        NS,
-        [{ op: 'set', path: [field], value }],
-        revision,
-      )
+      const ops = fields.map(({ field, value }) => ({ op: 'set', path: [field], value }))
+      const response = await ctx.remote.settings.mutate(NS, ops, revision)
       if (!response.ok) throw new Error(response.error.message)
       return readNamespace(ctx)
     }
@@ -313,8 +405,8 @@ window.__ModuleLoader__.load({
           activeTemplate: '',
           freshProvider: 'spawn',
           forkProvider: 'fork',
-          gatesText: '[]',
-          gatesDisabledText: '',
+          gates: [],
+          gatesDisabled: [],
         })
 
         const load = React.useCallback(async () => {
@@ -331,8 +423,8 @@ window.__ModuleLoader__.load({
               activeTemplate: typeof view.value?.activeTemplate === 'string' ? view.value.activeTemplate : '',
               freshProvider: typeof view.value?.freshProvider === 'string' && view.value.freshProvider !== '' ? view.value.freshProvider : 'spawn',
               forkProvider: typeof view.value?.forkProvider === 'string' && view.value.forkProvider !== '' ? view.value.forkProvider : 'fork',
-              gatesText: JSON.stringify(Array.isArray(view.value?.gates) ? view.value.gates : [], null, 2),
-              gatesDisabledText: (Array.isArray(view.value?.gatesDisabled) ? view.value.gatesDisabled : []).join(', '),
+              gates: Array.isArray(view.value?.gates) ? view.value.gates : [],
+              gatesDisabled: Array.isArray(view.value?.gatesDisabled) ? view.value.gatesDisabled : [],
             })
             if (!nextRoles.some((role) => role.id === selectedRole)) {
               setSelectedRole(nextRoles[0]?.id ?? 'general')
@@ -439,42 +531,17 @@ window.__ModuleLoader__.load({
         const saveEngine = async () => {
           setError('')
           setNotice('')
-          let gates
-          try {
-            gates = engine.gatesText.trim() === '' ? [] : JSON.parse(engine.gatesText)
-          } catch (caught) {
-            setError(`${t('saveFailed')}gates: ${caught.message}`)
-            return
-          }
-          if (!Array.isArray(gates)) {
-            setError(`${t('saveFailed')}gates must be a JSON array`)
-            return
-          }
-          const gatesDisabled = String(engine.gatesDisabledText ?? '')
-            .split(/[\n,]/)
-            .map((entry) => entry.trim())
-            .filter(Boolean)
           setBusy(true)
           try {
-            let view = await writeNamespace(ctx, revision, 'leadPlaybook', engine.leadPlaybook)
+            const view = await writeNamespaceFields(ctx, revision, [
+              { field: 'leadPlaybook', value: engine.leadPlaybook },
+              { field: 'activeTemplate', value: engine.activeTemplate },
+              { field: 'freshProvider', value: engine.freshProvider.trim() || 'spawn' },
+              { field: 'forkProvider', value: engine.forkProvider.trim() || 'fork' },
+              { field: 'gates', value: engine.gates },
+              { field: 'gatesDisabled', value: engine.gatesDisabled },
+            ])
             setRevision(view.revision)
-            view = await writeNamespace(ctx, view.revision, 'activeTemplate', engine.activeTemplate)
-            setRevision(view.revision)
-            view = await writeNamespace(ctx, view.revision, 'freshProvider', engine.freshProvider.trim() || 'spawn')
-            setRevision(view.revision)
-            view = await writeNamespace(ctx, view.revision, 'forkProvider', engine.forkProvider.trim() || 'fork')
-            setRevision(view.revision)
-            view = await writeNamespace(ctx, view.revision, 'gates', gates)
-            setRevision(view.revision)
-            view = await writeNamespace(ctx, view.revision, 'gatesDisabled', gatesDisabled)
-            setRevision(view.revision)
-            setEngine((current) => ({
-              ...current,
-              freshProvider: engine.freshProvider.trim() || 'spawn',
-              forkProvider: engine.forkProvider.trim() || 'fork',
-              gatesText: JSON.stringify(gates, null, 2),
-              gatesDisabledText: gatesDisabled.join(', '),
-            }))
             setNotice(t('saved'))
           } catch (caught) {
             setError(`${t('saveFailed')}${caught.message}`)
@@ -612,26 +679,336 @@ window.__ModuleLoader__.load({
           ]),
           h('span', { key: 'backend-hint', style: { ...small, fontSize: 11, alignSelf: 'end' } }, t('backendHint')),
         ]),
-        h('label', { key: 'gates', style: label }, [
-          h('span', { key: 'l' }, t('gates')),
-          h('textarea', {
-            key: 'i',
-            style: { ...input, minHeight: 180, resize: 'vertical', lineHeight: 1.5, fontFamily: 'monospace' },
-            value: engine.gatesText,
-            onChange: (event) => edit({ gatesText: event.target.value }),
-          }),
-          h('span', { key: 'hint', style: { ...small, fontSize: 11 } }, t('gatesHint')),
+        h(GatesPanel, {
+          key: 'gates',
+          t,
+          gates: engine.gates,
+          disabled: engine.gatesDisabled,
+          onChange: (patch) => edit(patch),
+        }),
+      ])
+    }
+
+    /** Chip-style badge used inside gate cards. */
+    function gateChip(text, tone) {
+      const tones = {
+        neutral: { background: 'var(--dsw-alias-bg-layer-2)', color: 'var(--dsw-alias-label-primary)' },
+        deny: { background: 'rgba(229,72,77,0.12)', color: '#e5484d' },
+        key: { background: 'rgba(70,167,88,0.12)', color: '#46a758' },
+        muted: { background: 'transparent', color: 'var(--dsw-alias-label-secondary)' },
+      }
+      return h('span', {
+        style: {
+          ...tones[tone] ?? tones.neutral,
+          fontSize: 11,
+          padding: '2px 8px',
+          borderRadius: 10,
+          whiteSpace: 'nowrap',
+        },
+      }, text)
+    }
+
+    /** Human summary of one freshness window. */
+    function freshLabel(freshFor, t) {
+      if (!Number.isFinite(freshFor) || freshFor <= 0) return t('gateFreshAlways')
+      if (freshFor % 3600 === 0) return t('gateFreshFor').replace('{v}', String(freshFor / 3600)).replace('{u}', t('unitHour'))
+      if (freshFor % 60 === 0) return t('gateFreshFor').replace('{v}', String(freshFor / 60)).replace('{u}', t('unitMinute'))
+      return t('gateFreshFor').replace('{v}', String(freshFor)).replace('{u}', t('unitSecond'))
+    }
+
+    /** List of gate cards with a visual deny -> key flow, plus add/edit form. */
+    function GatesPanel({ t, gates, disabled, onChange }) {
+      const [editing, setEditing] = React.useState(null)
+      const gateList = Array.isArray(gates) ? gates : []
+      const disabledList = Array.isArray(disabled) ? disabled : []
+
+      const toggle = (id) => {
+        const next = disabledList.includes(id)
+          ? disabledList.filter((entry) => entry !== id)
+          : [...disabledList, id]
+        onChange({ gatesDisabled: next })
+      }
+      const remove = (id) => {
+        onChange({
+          gates: gateList.filter((gate) => gate.id !== id),
+          gatesDisabled: disabledList.filter((entry) => entry !== id),
+        })
+      }
+      const upsert = (gate) => {
+        const next = gateList.some((entry) => entry.id === gate.id)
+          ? gateList.map((entry) => (entry.id === gate.id ? gate : entry))
+          : [...gateList, gate]
+        onChange({ gates: next })
+        setEditing(null)
+      }
+
+      if (editing !== null) {
+        return h(GateForm, {
+          key: 'form',
+          t,
+          initial: editing === 'new' ? null : editing,
+          existingIds: gateList.map((gate) => gate.id),
+          onSubmit: upsert,
+          onCancel: () => setEditing(null),
+        })
+      }
+
+      return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, [
+        h('div', { key: 'head', style: { ...row, justifyContent: 'space-between' } }, [
+          h('span', { key: 'l', style: { fontSize: 12, fontWeight: 600 } }, t('gates')),
+          h('button', { key: 'add', type: 'button', style: button, onClick: () => setEditing('new') }, t('gateAdd')),
         ]),
-        h('label', { key: 'gates-disabled', style: label }, [
-          h('span', { key: 'l' }, t('gatesDisabled')),
-          h('input', {
-            key: 'i',
-            style: input,
-            value: engine.gatesDisabledText,
-            placeholder: 'gate-one, gate-two',
-            onChange: (event) => edit({ gatesDisabledText: event.target.value }),
-          }),
-          h('span', { key: 'hint', style: { ...small, fontSize: 11 } }, t('gatesDisabledHint')),
+        h('span', { key: 'hint', style: { ...small, fontSize: 11 } }, t('gatesHint')),
+        gateList.length === 0
+          ? h('div', { key: 'empty', style: { ...small, padding: '8px 0' } }, t('gateEmpty'))
+          : h('div', { key: 'list', style: { display: 'flex', flexDirection: 'column', gap: 10 } },
+              gateList.map((gate) => h(GateCard, {
+                key: gate.id,
+                t,
+                gate,
+                off: disabledList.includes(gate.id),
+                onToggle: () => toggle(gate.id),
+                onEdit: () => setEditing(gate),
+                onDelete: () => remove(gate.id),
+              }))),
+      ])
+    }
+
+    /** One gate rendered as a deny -> key flow card. */
+    function GateCard({ t, gate, off, onToggle, onEdit, onDelete }) {
+      const deny = gate.deny ?? {}
+      const require = gate.require ?? {}
+      // Schema defaults leave empty objects behind; only a filled commandSuccess counts.
+      const commandSuccess = require.commandSuccess && (require.commandSuccess.role || require.commandSuccess.pattern)
+        ? require.commandSuccess
+        : undefined
+      const invalidateOn = require.invalidateOn && ((require.invalidateOn.tool ?? []).length > 0 || require.invalidateOn.role)
+        ? require.invalidateOn
+        : undefined
+      const chipBox = {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 4,
+        alignItems: 'center',
+        border: '1px solid var(--dsw-alias-border-l1)',
+        borderRadius: 8,
+        padding: '8px 10px',
+        flex: '1 1 220px',
+        minWidth: 0,
+        opacity: off ? 0.55 : 1,
+      }
+      return h('div', {
+        style: {
+          border: '1px solid var(--dsw-alias-border-l1)',
+          borderRadius: 10,
+          padding: '10px 12px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          background: 'var(--dsw-alias-bg-layer-1)',
+        },
+      }, [
+        h('div', { key: 'head', style: { ...row, justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 } }, [
+          h('div', { key: 'name', style: { ...row, gap: 8, minWidth: 0 } }, [
+            h('button', {
+              key: 'toggle',
+              type: 'button',
+              title: `${off ? t('gateEnable') : t('gateDisable')}: ${gate.id}`,
+              'aria-label': `${off ? t('gateEnable') : t('gateDisable')}: ${gate.id}`,
+              onClick: onToggle,
+              style: {
+                width: 34, height: 18, borderRadius: 9, border: 'none', cursor: 'pointer',
+                background: off ? 'var(--dsw-alias-bg-layer-2)' : '#46a758',
+                position: 'relative', flex: '0 0 auto',
+              },
+            }, h('span', {
+              style: {
+                position: 'absolute', top: 2, left: off ? 2 : 18, width: 14, height: 14,
+                borderRadius: 7, background: '#fff', transition: 'left 0.15s',
+              },
+            })),
+            h('code', { key: 'id', style: { fontWeight: 600, fontSize: 12 } }, gate.id),
+            off ? gateChip(t('gateOff'), 'muted') : gateChip(t('gateOn'), 'key'),
+          ]),
+          h('div', { key: 'actions', style: row }, [
+            h('button', { key: 'edit', type: 'button', style: button, title: `${t('gateEdit')}: ${gate.id}`, 'aria-label': `${t('gateEdit')}: ${gate.id}`, onClick: onEdit }, t('gateEdit')),
+            h('button', { key: 'delete', type: 'button', style: button, title: `${t('gateDelete')}: ${gate.id}`, 'aria-label': `${t('gateDelete')}: ${gate.id}`, onClick: onDelete }, t('gateDelete')),
+          ]),
+        ]),
+        gate.description ? h('div', { key: 'desc', style: { ...small, fontSize: 11 } }, gate.description) : null,
+        h('div', {
+          key: 'flow',
+          style: { display: 'flex', alignItems: 'stretch', gap: 8, flexWrap: 'wrap' },
+        }, [
+          h('div', { key: 'deny', style: chipBox }, [
+            gateChip(t('gateDeny'), 'deny'),
+            gateChip(`@ ${deny.role ?? '?'}`, 'neutral'),
+            ...(Array.isArray(deny.tool) ? deny.tool.map((tool) => gateChip(tool, 'neutral')) : []),
+            deny.commandPattern ? gateChip(`/ ${deny.commandPattern} /`, 'muted') : null,
+          ]),
+          h('div', { key: 'arrow', style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' } }, [
+            h('span', { style: { fontSize: 16, lineHeight: '16px' } }, '→'),
+            h('span', { style: { ...small, fontSize: 10 } }, t('gateNeedKey')),
+          ]),
+          h('div', { key: 'key', style: chipBox }, [
+            gateChip(t('gateKey'), 'key'),
+            commandSuccess
+              ? gateChip(t('gateKindCommand'), 'neutral')
+              : gateChip(`"${require.event || '?'}"`, 'neutral'),
+            commandSuccess
+              ? gateChip(`@ ${commandSuccess.role}`, 'neutral')
+              : gateChip(`${t('gateKeyBy')} ${(require.byRoles ?? []).join('/')}`, 'neutral'),
+            commandSuccess ? gateChip(`/ ${commandSuccess.pattern} /`, 'muted') : null,
+            gateChip(freshLabel(require.freshFor, t), 'muted'),
+            invalidateOn
+              ? gateChip(`${t('gateInvalidateOn')} ${invalidateOn.role ?? '*'} ${(invalidateOn.tool ?? []).join('/')}`, 'deny')
+              : null,
+          ]),
+        ]),
+      ])
+    }
+
+    /** Structured add/edit form for one gate. */
+    function GateForm({ t, initial, existingIds, onSubmit, onCancel }) {
+      const [form, setForm] = React.useState(() => {
+        const gate = initial ?? {}
+        const deny = gate.deny ?? {}
+        const require = gate.require ?? {}
+        const commandSuccess = require.commandSuccess && (require.commandSuccess.role || require.commandSuccess.pattern)
+          ? require.commandSuccess
+          : undefined
+        return {
+          id: gate.id ?? '',
+          description: gate.description ?? '',
+          denyRole: deny.role ?? '',
+          denyTools: Array.isArray(deny.tool) ? deny.tool.join(', ') : '',
+          commandPattern: deny.commandPattern ?? '',
+          kind: commandSuccess ? 'command' : 'event',
+          event: require.event ?? '',
+          byRoles: Array.isArray(require.byRoles) ? require.byRoles.join(', ') : '',
+          freshFor: require.freshFor ?? 0,
+          invalidateRole: require.invalidateOn?.role ?? '',
+          invalidateTools: require.invalidateOn?.tool ? require.invalidateOn.tool.join(', ') : '',
+          csRole: commandSuccess?.role ?? '',
+          csTool: commandSuccess?.tool ? commandSuccess.tool.join(', ') : '',
+          csPattern: commandSuccess?.pattern ?? '',
+        }
+      })
+      const [error, setError] = React.useState('')
+      const set = (patch) => setForm((current) => ({ ...current, ...patch }))
+      const listOf = (value) => [...new Set(
+        String(value ?? '').split(/[\n,]/).map((entry) => entry.trim()).filter(Boolean),
+      )]
+
+      const submit = () => {
+        const id = form.id.trim().toLowerCase()
+        if (!/^[a-z][a-z0-9-]{0,63}$/.test(id)) {
+          setError(t('gateErrId')); return
+        }
+        if (initial === null && existingIds.includes(id)) {
+          setError(t('gateErrDup')); return
+        }
+        const denyTools = listOf(form.denyTools)
+        if (denyTools.length === 0) { setError(t('gateErrTools')); return }
+        const commandPattern = form.commandPattern.trim()
+        if (commandPattern !== '') {
+          try { void new RegExp(commandPattern) } catch { setError(t('gateErrPattern')); return }
+        }
+        const byRoles = listOf(form.byRoles)
+        const freshFor = Number(form.freshFor) > 0 ? Number(form.freshFor) : undefined
+        const invalidateTools = listOf(form.invalidateTools)
+        const invalidateOn = invalidateTools.length === 0 && form.invalidateRole.trim() === ''
+          ? undefined
+          : {
+              ...(form.invalidateRole.trim() === '' ? {} : { role: form.invalidateRole.trim().toLowerCase() }),
+              tool: invalidateTools,
+            }
+        if (invalidateOn !== undefined && invalidateOn.tool.length === 0) {
+          setError(t('gateErrInvalidate')); return
+        }
+        const gate = {
+          id,
+          deny: { role: form.denyRole.trim().toLowerCase(), tool: denyTools, ...(commandPattern === '' ? {} : { commandPattern }) },
+          require: {
+            ...(form.kind === 'event'
+              ? { event: form.event.trim().toLowerCase(), byRoles }
+              : {
+                  commandSuccess: {
+                    role: form.csRole.trim().toLowerCase(),
+                    tool: listOf(form.csTool),
+                    pattern: form.csPattern.trim(),
+                  },
+                }),
+            ...(freshFor === undefined ? {} : { freshFor }),
+            ...(invalidateOn === undefined ? {} : { invalidateOn }),
+          },
+          description: form.description.trim(),
+        }
+        if (form.kind === 'event' && !/^[a-z][a-z0-9-]{0,63}$/.test(gate.require.event)) {
+          setError(t('gateErrEvent')); return
+        }
+        if (form.kind === 'event' && byRoles.length === 0) { setError(t('gateErrByRoles')); return }
+        if (form.kind === 'command') {
+          if (gate.require.commandSuccess.role === '') { setError(t('gateErrCsRole')); return }
+          if (gate.require.commandSuccess.tool.length === 0) { setError(t('gateErrCsTool')); return }
+          try { void new RegExp(gate.require.commandSuccess.pattern) } catch { setError(t('gateErrPattern')); return }
+        }
+        onSubmit(gate)
+      }
+
+      const field = (key, text, placeholder, value, onChange, extra) => h('label', { key, style: label }, [
+        h('span', { key: 'l' }, text),
+        h('input', { key: 'i', style: input, placeholder, value, onChange: (event) => onChange(event.target.value) }),
+        extra ?? null,
+      ])
+
+      return h('div', {
+        style: {
+          border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 10, padding: '12px 14px',
+          display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--dsw-alias-bg-layer-1)',
+        },
+      }, [
+        h('div', { key: 'head', style: { ...row, justifyContent: 'space-between' } }, [
+          h('strong', { key: 't', style: { fontSize: 13 } }, initial === null ? t('gateAdd') : `${t('gateEdit')}: ${initial.id}`),
+          h('button', { key: 'cancel', type: 'button', style: button, onClick: onCancel }, t('gateFormCancel')),
+        ]),
+        h('div', { key: 'grid1', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,2fr)', gap: 12 } }, [
+          field('id', t('gateFormId'), 'review-before-commit', form.id, (v) => set({ id: v })),
+          field('desc', t('gateFormDesc'), '', form.description, (v) => set({ description: v })),
+        ]),
+        h('div', { key: 'deny-title', style: row }, gateChip(t('gateDeny'), 'deny')),
+        h('div', { key: 'grid2', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr) minmax(0,1.4fr)', gap: 12 } }, [
+          field('denyRole', t('gateFormDenyRole'), 'dev', form.denyRole, (v) => set({ denyRole: v })),
+          field('denyTools', t('gateFormDenyTools'), 'bash, pwsh', form.denyTools, (v) => set({ denyTools: v })),
+          field('pattern', t('gateFormPattern'), '\\bgit\\s+commit\\b', form.commandPattern, (v) => set({ commandPattern: v }), h('span', { key: 'h', style: { ...small, fontSize: 11 } }, t('gatePatternHint'))),
+        ]),
+        h('div', { key: 'key-title', style: row }, [
+          gateChip(t('gateKey'), 'key'),
+          h('span', { key: 'kind', style: { ...small, fontSize: 11 } }, `${t('gateFormKeyKind')}:`),
+          h('button', { key: 'ke', type: 'button', style: tabStyle(form.kind === 'event'), onClick: () => set({ kind: 'event' }) }, t('gateKindEvent')),
+          h('button', { key: 'kc', type: 'button', style: tabStyle(form.kind === 'command'), onClick: () => set({ kind: 'command' }) }, t('gateKindCommand')),
+        ]),
+        form.kind === 'event'
+          ? h('div', { key: 'event-fields', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)', gap: 12 } }, [
+              field('event', t('gateFormEvent'), 'review-approved', form.event, (v) => set({ event: v })),
+              field('byRoles', t('gateFormByRoles'), 'cr', form.byRoles, (v) => set({ byRoles: v })),
+            ])
+          : h('div', { key: 'cs-fields', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr) minmax(0,1.4fr)', gap: 12 } }, [
+              field('csRole', t('gateFormCsRole'), 'tse', form.csRole, (v) => set({ csRole: v })),
+              field('csTool', t('gateFormCsTool'), 'pwsh', form.csTool, (v) => set({ csTool: v })),
+              field('csPattern', t('gateFormCsPattern'), '\\b(pnpm|npm)\\s+test\\b', form.csPattern, (v) => set({ csPattern: v })),
+            ]),
+        h('div', { key: 'grid3', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)', gap: 12 } }, [
+          field('freshFor', t('gateFormFreshFor'), '14400', String(form.freshFor), (v) => set({ freshFor: v }), h('span', { key: 'h', style: { ...small, fontSize: 11 } }, `${t('gateFreshHint')}（0 = ${t('gateFreshAlways')}）`)),
+        ]),
+        h('div', { key: 'inv-title', style: row }, gateChip(t('gateInvalidateOn'), 'deny')),
+        h('div', { key: 'grid4', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 12 } }, [
+          field('invRole', t('gateFormInvRole'), 'dev', form.invalidateRole, (v) => set({ invalidateRole: v })),
+          field('invTools', t('gateFormInvTools'), 'write, edit', form.invalidateTools, (v) => set({ invalidateTools: v })),
+        ]),
+        error !== '' ? h('div', { key: 'err', style: banner('state-error') }, error) : null,
+        h('div', { key: 'foot', style: { ...row, justifyContent: 'flex-end' } }, [
+          h('button', { key: 'save', type: 'button', style: primaryButton, onClick: submit }, t('gateFormSave')),
         ]),
       ])
     }

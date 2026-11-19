@@ -91,8 +91,8 @@ const RuleSchema = z.object({
 export const Config = z.object({
   roles: z.array(RoleSchema).default([]).volatile().description('Configured role presets.'),
   rules: z.array(RuleSchema).default([]).volatile().description('Learned standing rules.'),
-  freshProvider: z.string().default('spawn').description('Subagent backend for fresh teammates.'),
-  forkProvider: z.string().default('fork').description('Subagent backend for forked teammates.'),
+  freshProvider: z.string().default('spawn').volatile().description('Subagent backend for fresh teammates.'),
+  forkProvider: z.string().default('fork').volatile().description('Subagent backend for forked teammates.'),
   leadPlaybook: z.string().default('').volatile()
     .description('Optional orchestration playbook appended to the Lead prompt after the role catalog.'),
   activeTemplate: z.string().default('').volatile()
