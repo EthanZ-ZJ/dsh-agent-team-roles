@@ -45,10 +45,17 @@ test('the seeded leadPlaybook and software-dev template carry the domain flow', 
   assert.match(template.leadPlaybook, /派回 DEV 修复 → 修复后重新走 CR\+TSE/)
   const roles = Object.fromEntries(template.roles.map((role) => [role.id, role]))
   const pushDeny = '\\bgit(\\.exe)?\\s+push\\b'
-  assert.deepEqual(roles.dev.denyCommands, [pushDeny])
+  // DEV may push: a workflow gate (checks-green-before-push) gates it instead of
+  // an unconditional denyCommands block.
+  assert.equal(roles.dev.denyCommands, undefined)
+  assert.match(roles.dev.persona, /git push 由你执行/)
   assert.deepEqual(roles.tse.denyCommands, [pushDeny])
   assert.equal(roles.se.denyCommands, undefined)
   assert.equal(roles.cr.denyCommands, undefined)
+  const pushGate = template.gates.find((gate) => gate.id === 'checks-green-before-push')
+  assert.ok(pushGate, 'checks-green-before-push gate must exist')
+  assert.equal(pushGate.deny.role, 'dev')
+  assert.match(pushGate.deny.commandPattern, /push/)
 })
 
 /**

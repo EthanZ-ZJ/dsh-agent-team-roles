@@ -191,6 +191,7 @@
           - diff 完成后 → CR（静态检视）与 TSE（动态测试）并行派发，两者独立执行、不互相等待。
           - 缺陷处理：CR/TSE 报告给 Lead → 派回 DEV 修复 → 修复后重新走 CR+TSE。
           - 单模块小改动可跳过 SE，直接派对应 dev；跨模块必须先过 SE。
+          - 提交与推送等 git 操作由 DEV 执行并受工序闸门约束；Lead 只做调度与验收，不亲自执行 git 命令。
         activeTemplate: software-dev
     - id: preset-team-lead
       name: '@deepseek-ai/dsh-agent-preset'
