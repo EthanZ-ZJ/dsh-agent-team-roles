@@ -2409,34 +2409,31 @@ window.__ModuleLoader__.load({
         : rules
             .filter((rule) => rule.roleId === selectedRole)
             .sort((left, right) => (right.updatedAt ?? right.createdAt ?? 0) - (left.updatedAt ?? left.createdAt ?? 0))
-      // Pure dropdowns for the route fields: providers come from the host's
-      // built-in adapter registry (remote.llm.listProviders); models come from
-      // the roles catalog — the models actually in use in this deployment.
-      // No free-text entry: an unlisted current value is kept as an extra
-      // option so nothing is silently lost.
-      const [registryProviders, setRegistryProviders] = React.useState(null)
+      // Combined model-route dropdown backed by the host catalog route — the
+      // same models the chat dialog offers. Picking one route sets provider
+      // and model together; the empty option inherits the session route. If
+      // the catalog is unavailable the options degrade to the roles' routes.
+      const [catalog, setCatalog] = React.useState(null)
       React.useEffect(() => {
         let cancelled = false
-        try {
-          ctx.remote?.llm?.listProviders?.()?.then((info) => {
-            if (cancelled) return
-            const names = (Array.isArray(info) ? info : [])
-              .map((entry) => (entry !== null && typeof entry === 'object' ? entry.provider ?? entry.id ?? entry.name : entry))
-              .filter((name) => typeof name === 'string' && name !== '')
-            setRegistryProviders(names.length === 0 ? null : names)
-          }).catch(() => { })
-        } catch {
-          // Remote absent: the fallback option list stays.
-        }
+        fetch('/agent-team-roles/model-catalog')
+          .then((response) => (response.ok ? response.json() : Promise.reject(new Error('catalog unavailable'))))
+          .then((data) => {
+            if (!cancelled) setCatalog({ routes: Array.isArray(data.routes) ? data.routes : [], efforts: Array.isArray(data.efforts) ? data.efforts : null })
+          })
+          .catch(() => {
+            if (!cancelled) setCatalog({ routes: [], efforts: null })
+          })
         return () => {
           cancelled = true
         }
       }, [])
-      const providerOptions = [...new Set(registryProviders ?? [
-        'deepseek-account', 'zai', 'openai', 'anthropic', 'google', 'openrouter',
-        ...roles.map((role) => role.provider).filter(Boolean),
-      ])]
-      const modelOptions = [...new Set(roles.map((role) => role.model).filter(Boolean))]
+      const catalogPairs = catalog === null
+        ? roles
+            .filter((role) => role.provider !== '' && role.model !== '')
+            .map((role) => ({ provider: role.provider, id: role.model, name: role.name }))
+        : catalog.routes
+      const effortLevels = catalog?.efforts ?? ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
       const [installedSkills, setInstalledSkills] = React.useState([])
       const [skillView, setSkillView] = React.useState(null)
       React.useEffect(() => {
@@ -2567,42 +2564,40 @@ window.__ModuleLoader__.load({
                 }),
               ]),
               h('div', { key: 'route', style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 12 } }, [
-                h('label', { key: 'provider', style: label }, [
-                  h('span', { key: 'l' }, t('provider')),
-                  (() => {
-                    const current = selected.provider ?? ''
-                    const options = [...new Set(providerOptions.includes(current) || current === '' ? providerOptions : [current, ...providerOptions])]
-                    return h('select', {
-                      key: 'i',
-                      style: input,
-                      value: current,
-                      onChange: (event) => onEdit({ provider: event.target.value }),
-                    }, [
-                      h('option', { key: 'inherit', value: '' }, t('effortDefault')),
-                      ...options.map((name) => h('option', { key: name, value: name }, name)),
-                    ])
-                  })(),
-                ]),
-                h('label', { key: 'model', style: label }, [
+                h('label', { key: 'route-model', style: label }, [
                   h('span', { key: 'l' }, t('model')),
                   (() => {
-                    const current = selected.model ?? ''
-                    const options = [...new Set(modelOptions.includes(current) || current === '' ? modelOptions : [current, ...modelOptions])]
+                    const current = `${selected.provider ?? ''}::${selected.model ?? ''}`
+                    const pairs = [...catalogPairs]
+                    const currentPair = current === '::' ? null : { encoded: current, provider: selected.provider ?? '', id: selected.model ?? '' }
+                    if (currentPair !== null && !pairs.some((pair) => pair.provider === currentPair.provider && pair.id === currentPair.id)) {
+                      pairs.unshift({ provider: currentPair.provider, id: currentPair.id, name: '' })
+                    }
+                    const options = [
+                      h('option', { key: 'inherit', value: '' }, t('effortDefault')),
+                      ...pairs.map((pair) => h('option', {
+                        key: `${pair.provider}::${pair.id}`,
+                        value: `${pair.provider}::${pair.id}`,
+                      }, `${pair.provider}/${pair.id}${pair.name ? ` — ${pair.name}` : ''}`)),
+                    ]
                     return h('select', {
                       key: 'i',
                       style: input,
-                      value: current,
-                      onChange: (event) => onEdit({ model: event.target.value }),
-                    }, [
-                      h('option', { key: 'inherit', value: '' }, t('effortDefault')),
-                      ...options.map((name) => h('option', { key: name, value: name }, name)),
-                    ])
+                      value: currentPair === null ? '' : current,
+                      onChange: (event) => {
+                        if (event.target.value === '') onEdit({ provider: '', model: '' })
+                        else {
+                          const [provider, model] = event.target.value.split('::')
+                          onEdit({ provider, model })
+                        }
+                      },
+                    }, options)
                   })(),
                 ]),
                 h('label', { key: 'effort', style: label }, [
                   h('span', { key: 'l' }, t('effort')),
                   (() => {
-                    const levels = ['', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+                    const levels = ['', ...effortLevels]
                     const current = selected.reasoningEffort ?? ''
                     const options = levels.includes(current) ? levels : [current, ...levels.slice(1)]
                     return h('select', {
