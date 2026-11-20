@@ -214,6 +214,7 @@ window.__ModuleLoader__.load({
       noInstalledSkills: '该角色的技能目录当前没有技能。',
       skillLoadFailed: '（内容加载失败）',
       skillViewGuide: '设置页不提供新增/修改技能的入口。要新增技能，请直接让 agent 处理——例如对 Team Lead 说：「给 pm 角色新增一个 xxx 技能，写到 ~/.dsh/agent-team-roles/skills/pm/xxx/SKILL.md」；文件放好后点「刷新」即可在这里查看。',
+      effortDefault: '默认（跟随会话）',
       ruleHint: 'permanent 会立即进入提示词；candidate 需要重复或在这里确认；session 只在当前会话生效，不会出现在这里。',
       history: '历史记忆',
       noHistory: '该角色还没有历史记忆。',
@@ -434,6 +435,7 @@ window.__ModuleLoader__.load({
       noInstalledSkills: 'No skills installed for this role yet.',
       skillLoadFailed: '(failed to load content)',
       skillViewGuide: 'This page intentionally has no add/edit button for skills. To add one, just ask an agent — e.g. tell the Team Lead: "add an xxx skill for the pm role, write it to ~/.dsh/agent-team-roles/skills/pm/xxx/SKILL.md"; click Refresh afterwards to view it here.',
+      effortDefault: 'Default (follow the session)',
       ruleHint: 'permanent reaches the prompt immediately; candidate waits for a repeat or confirmation here; session rules only live in the current Session and do not appear here.',
       history: 'Memory history',
       noHistory: 'No memory history for this role yet.',
@@ -2407,6 +2409,19 @@ window.__ModuleLoader__.load({
         : rules
             .filter((rule) => rule.roleId === selectedRole)
             .sort((left, right) => (right.updatedAt ?? right.createdAt ?? 0) - (left.updatedAt ?? left.createdAt ?? 0))
+      // Dropdown candidates for the route combo inputs: providers seen in the
+      // catalog plus the common ones; models seen across configured roles.
+      const providerCandidates = [...new Set([
+        'deepseek-account', 'zai', 'openai', 'anthropic', 'google', 'openrouter',
+        ...roles.map((role) => role.provider).filter(Boolean),
+      ])]
+      const modelCandidates = [...new Set(roles.map((role) => role.model).filter(Boolean))]
+      const routeDatalists = [
+        h('datalist', { key: 'atr-provider-options', id: 'atr-provider-options' },
+          providerCandidates.map((name) => h('option', { key: name, value: name }))),
+        h('datalist', { key: 'atr-model-options', id: 'atr-model-options' },
+          modelCandidates.map((name) => h('option', { key: name, value: name }))),
+      ]
       const [installedSkills, setInstalledSkills] = React.useState([])
       const [skillView, setSkillView] = React.useState(null)
       React.useEffect(() => {
@@ -2542,6 +2557,7 @@ window.__ModuleLoader__.load({
                   h('input', {
                     key: 'i',
                     style: input,
+                    list: 'atr-provider-options',
                     value: selected.provider ?? '',
                     onChange: (event) => onEdit({ provider: event.target.value }),
                   }),
@@ -2551,18 +2567,27 @@ window.__ModuleLoader__.load({
                   h('input', {
                     key: 'i',
                     style: input,
+                    list: 'atr-model-options',
                     value: selected.model ?? '',
                     onChange: (event) => onEdit({ model: event.target.value }),
                   }),
                 ]),
                 h('label', { key: 'effort', style: label }, [
                   h('span', { key: 'l' }, t('effort')),
-                  h('input', {
-                    key: 'i',
-                    style: input,
-                    value: selected.reasoningEffort ?? '',
-                    onChange: (event) => onEdit({ reasoningEffort: event.target.value }),
-                  }),
+                  (() => {
+                    const levels = ['', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+                    const current = selected.reasoningEffort ?? ''
+                    const options = levels.includes(current) ? levels : [current, ...levels.slice(1)]
+                    return h('select', {
+                      key: 'i',
+                      style: input,
+                      value: current,
+                      onChange: (event) => onEdit({ reasoningEffort: event.target.value }),
+                    }, options.map((level) => h('option', {
+                      key: level,
+                      value: level,
+                    }, level === '' ? t('effortDefault') : level)))
+                  })(),
                 ]),
               ]),
               h('div', { key: 'tools', style: { ...panel, gap: 10 } }, [
@@ -2703,6 +2728,7 @@ window.__ModuleLoader__.load({
                     ]))),
               ]),
             ]),
+          ...routeDatalists,
       ])
     }
 
