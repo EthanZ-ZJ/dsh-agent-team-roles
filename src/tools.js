@@ -194,13 +194,24 @@ const ROLE_VIEW = {
     toolMode: { type: 'string', required: true },
     tools: { type: 'array', required: true, items: { type: 'string' } },
     skills: { type: 'array', required: true, items: { type: 'string' } },
+    installedSkills: { type: 'array', required: true, items: { type: 'string' } },
+    skillMode: { type: 'string', required: true },
     codexSandbox: { type: 'string', required: true },
     color: { type: 'string', required: true },
   },
 }
 
+/** Skill folder names installed on disk for one role; [] when none. */
+function installedRoleSkills(roleId) {
+  return fs
+    .readdir(path.join(stateDir(), 'skills', roleId), { withFileTypes: true })
+    .then((entries) => entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name))
+    .catch(() => [])
+}
+
 /** Project one role for a model-facing result. */
-function roleView(role) {
+async function roleView(role) {
+  const installed = await installedRoleSkills(role.id)
   return {
     id: role.id,
     name: role.name,
@@ -212,6 +223,8 @@ function roleView(role) {
     toolMode: role.toolMode,
     tools: [...role.tools],
     skills: [...role.skills],
+    installedSkills: installed,
+    skillMode: role.skills.length === 0 ? 'all-installed' : 'whitelist',
     codexSandbox: role.codexSandbox ?? '',
     color: role.color,
   }
@@ -580,8 +593,10 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
       additionalProperties: false,
       properties: { roles: { type: 'array', required: true, items: ROLE_VIEW } },
     }),
-    execute() {
-      return { roles: rolesApi().list().map(roleView) }
+    async execute() {
+      const roles = rolesApi().list()
+      const views = await Promise.all(roles.map(roleView))
+      return { roles: views }
     },
   })
 
@@ -598,7 +613,7 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
     }),
     async execute(args) {
       const role = await rolesApi().create(args)
-      return { role: roleView(role) }
+      return { role: await roleView(role) }
     },
   })
 
@@ -616,7 +631,7 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
     async execute(args) {
       const { id, ...patch } = args
       const role = await rolesApi().update(id, patch)
-      return { role: roleView(role) }
+      return { role: await roleView(role) }
     },
   })
 

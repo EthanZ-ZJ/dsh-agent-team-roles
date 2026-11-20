@@ -117,7 +117,10 @@
         "team_task_update",
         "skill"
       ],
-      "color": "#f7a86a"
+      "color": "#f7a86a",
+      "skills": [
+        "product-sense"
+      ]
     },
     {
       "id": "se",

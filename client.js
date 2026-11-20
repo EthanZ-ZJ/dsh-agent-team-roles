@@ -1,4 +1,4 @@
-﻿window.__ModuleLoader__.load({
+window.__ModuleLoader__.load({
   id: 'dsh-agent-team-roles',
   factory(require) {
     const React = require('react')
@@ -209,7 +209,7 @@
       saveFailed: '保存失败：',
       loadFailed: '读取配置失败：',
       settingsUnavailable: '当前环境没有暴露 settings Remote，无法编辑。',
-      roleSkillHint: '私有技能放在 ~/.dsh/agent-team-roles/skills/<角色ID>/ 下，每个技能是 <名称>/SKILL.md 或 <名称>.md。',
+      roleSkillHint: '私有技能放在 ~/.dsh/agent-team-roles/skills/<角色ID>/ 下，每个技能是 <名称>/SKILL.md 或 <名称>.md。留空 = 暴露该目录下全部技能；填写名称 = 白名单模式，仅列出的技能可用。已安装但未列出的技能可用 list_team_roles 查看（installedSkills 字段）。',
       ruleHint: 'permanent 会立即进入提示词；candidate 需要重复或在这里确认；session 只在当前会话生效，不会出现在这里。',
       history: '历史记忆',
       noHistory: '该角色还没有历史记忆。',
@@ -425,7 +425,7 @@
       saveFailed: 'Save failed: ',
       loadFailed: 'Cannot read configuration: ',
       settingsUnavailable: 'This deployment does not expose the settings Remote.',
-      roleSkillHint: 'Private skills live in ~/.dsh/agent-team-roles/skills/<role id>/ as <name>/SKILL.md or <name>.md.',
+      roleSkillHint: 'Private skills live in ~/.dsh/agent-team-roles/skills/<role id>/ as <name>/SKILL.md or <name>.md. Empty = expose every installed skill; filled = whitelist mode with only the listed skills. Use list_team_roles (installedSkills field) to see installed-but-unlisted skills.',
       ruleHint: 'permanent reaches the prompt immediately; candidate waits for a repeat or confirmation here; session rules only live in the current Session and do not appear here.',
       history: 'Memory history',
       noHistory: 'No memory history for this role yet.',

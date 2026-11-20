@@ -1,4 +1,4 @@
-# Role presets and self-updating role memory for the official Agent Teams runtime.
+﻿# Role presets and self-updating role memory for the official Agent Teams runtime.
 # The roles and rules arrays are volatile: the Settings page edits them through
 # the live config editor without restarting this plugin.
 - insert:
@@ -57,7 +57,8 @@
               - team_task_list
               - team_task_update
               - skill
-            skills: []
+            skills:
+              - product-sense
             color: '#f7a86a'
           - id: se
             name: SE
