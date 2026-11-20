@@ -40,6 +40,9 @@
               你只有只读与汇报工具：查看仓库与文档（read/glob/grep）、向 Lead 汇报
               （send_message）、维护任务（team_task_*）、加载技能（skill）。
               没有写文件与终端工具，这是刻意的流程设计。
+
+              写需求文档、做优先级排序或整理调研结论前，先加载私有技能 product-sense
+              （问题框定 / 调研综合 / 多框架排序 / PRD 结构 / 用户故事 INVEST 自检）。
             provider: ''
             model: ''
             reasoningEffort: ''
