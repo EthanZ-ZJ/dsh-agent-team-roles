@@ -217,7 +217,8 @@ window.__ModuleLoader__.load({
       effortDefault: '默认（跟随会话）',
       membersModel: '成员模型',
       membersTitle: '成员模型（实时）',
-      membersHint: '每 1.5 秒自动刷新；「备用·自动」表示额度失败后由插件自动切换。',
+      membersHint: '打开时刷新一次，可点「刷新」再取最新状态；「备用·自动」表示额度失败后由插件自动切换。',
+      membersRefresh: '刷新',
       membersLead: 'Lead',
       membersEmpty: '本群还没有成员。',
       membersNoTeam: '当前会话尚未加入团队。',
@@ -455,7 +456,8 @@ window.__ModuleLoader__.load({
       effortDefault: 'Default (follow the session)',
       membersModel: 'Member models',
       membersTitle: 'Member models (live)',
-      membersHint: 'Refreshes every 1.5s; "fallback·auto" means the plugin switched after a quota failure.',
+      membersHint: 'Fetches once when opened; click Refresh for the latest state. "fallback·auto" means the plugin switched after a quota failure.',
+      membersRefresh: 'Refresh',
       membersLead: 'Lead',
       membersEmpty: 'No members in this Team yet.',
       membersNoTeam: 'This session is not in a Team yet.',
@@ -3066,12 +3068,20 @@ window.__ModuleLoader__.load({
               h('strong', { key: 't', style: { fontSize: 14 } }, t('pullTitle')),
               h('span', { key: 'h', style: { ...small, fontSize: 11 } }, t('pullHint')),
             ]),
-            h('button', {
-              key: 'close',
-              type: 'button',
-              style: { ...button, padding: '2px 8px' },
-              onClick: () => setOpen(false),
-            }, '×'),
+            h('div', { key: 'actions', style: row }, [
+              h('button', {
+                key: 'refresh',
+                type: 'button',
+                style: { ...button, padding: '2px 8px' },
+                onClick: () => setReloadKey((current) => current + 1),
+              }, t('membersRefresh')),
+              h('button', {
+                key: 'close',
+                type: 'button',
+                style: { ...button, padding: '2px 8px' },
+                onClick: () => setOpen(false),
+              }, '×'),
+            ]),
           ]),
           h('input', {
             key: 'task',
@@ -3159,6 +3169,8 @@ window.__ModuleLoader__.load({
               const value = state.byId?.[sessionId]?.projectionValues?.agentPreset
               return typeof value === 'string' ? value : undefined
             })
+        // One fetch per open (and per manual refresh); no polling.
+        const [reloadKey, setReloadKey] = React.useState(0)
         React.useEffect(() => {
           if (!open || sessionId === undefined) return undefined
           let cancelled = false
@@ -3178,12 +3190,10 @@ window.__ModuleLoader__.load({
             }
           }
           void load()
-          const timer = setInterval(load, 1500)
           return () => {
             cancelled = true
-            clearInterval(timer)
           }
-        }, [open, sessionId, t])
+        }, [open, sessionId, t, reloadKey])
         if (useSessions !== undefined && preset !== 'team-lead') return null
 
         const labelOf = (member) => {
