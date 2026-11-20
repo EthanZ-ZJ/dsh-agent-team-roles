@@ -2891,10 +2891,10 @@ window.__ModuleLoader__.load({
             } catch {
               // The Team projection also refreshes from its own event push.
             }
-            setTimeout(() => {
-              setOpen(false)
-              setTask('')
-            }, 650)
+            // The panel stays open after a successful pull so several members
+            // can be pulled in a row; it closes via ×, the backdrop, or a
+            // preset change. The consumed task is cleared for the next pull.
+            setTask('')
           } catch (caught) {
             setError(`${t('pullFailed')}${caught.message}`)
           } finally {
