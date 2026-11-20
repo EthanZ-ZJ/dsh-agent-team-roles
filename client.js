@@ -210,6 +210,10 @@ window.__ModuleLoader__.load({
       loadFailed: '读取配置失败：',
       settingsUnavailable: '当前环境没有暴露 settings Remote，无法编辑。',
       roleSkillHint: '私有技能放在 ~/.dsh/agent-team-roles/skills/<角色ID>/ 下，每个技能是 <名称>/SKILL.md 或 <名称>.md。留空 = 暴露该目录下全部技能；填写名称 = 白名单模式，仅列出的技能可用。已安装但未列出的技能可用 list_team_roles 查看（installedSkills 字段）。',
+      installedSkills: '已安装的技能（点击查看内容）',
+      noInstalledSkills: '该角色的技能目录当前没有技能。',
+      skillLoadFailed: '（内容加载失败）',
+      skillViewGuide: '设置页不提供新增/修改技能的入口。要新增技能，请直接让 agent 处理——例如对 Team Lead 说：「给 pm 角色新增一个 xxx 技能，写到 ~/.dsh/agent-team-roles/skills/pm/xxx/SKILL.md」；文件放好后点「刷新」即可在这里查看。',
       ruleHint: 'permanent 会立即进入提示词；candidate 需要重复或在这里确认；session 只在当前会话生效，不会出现在这里。',
       history: '历史记忆',
       noHistory: '该角色还没有历史记忆。',
@@ -426,6 +430,10 @@ window.__ModuleLoader__.load({
       loadFailed: 'Cannot read configuration: ',
       settingsUnavailable: 'This deployment does not expose the settings Remote.',
       roleSkillHint: 'Private skills live in ~/.dsh/agent-team-roles/skills/<role id>/ as <name>/SKILL.md or <name>.md. Empty = expose every installed skill; filled = whitelist mode with only the listed skills. Use list_team_roles (installedSkills field) to see installed-but-unlisted skills.',
+      installedSkills: 'Installed skills (click to view)',
+      noInstalledSkills: 'No skills installed for this role yet.',
+      skillLoadFailed: '(failed to load content)',
+      skillViewGuide: 'This page intentionally has no add/edit button for skills. To add one, just ask an agent — e.g. tell the Team Lead: "add an xxx skill for the pm role, write it to ~/.dsh/agent-team-roles/skills/pm/xxx/SKILL.md"; click Refresh afterwards to view it here.',
       ruleHint: 'permanent reaches the prompt immediately; candidate waits for a repeat or confirmation here; session rules only live in the current Session and do not appear here.',
       history: 'Memory history',
       noHistory: 'No memory history for this role yet.',
@@ -2399,6 +2407,54 @@ window.__ModuleLoader__.load({
         : rules
             .filter((rule) => rule.roleId === selectedRole)
             .sort((left, right) => (right.updatedAt ?? right.createdAt ?? 0) - (left.updatedAt ?? left.createdAt ?? 0))
+      const [installedSkills, setInstalledSkills] = React.useState([])
+      const [skillView, setSkillView] = React.useState(null)
+      React.useEffect(() => {
+        let cancelled = false
+        setInstalledSkills([])
+        setSkillView(null)
+        if (selectedRole === undefined || selectedRole === '') return undefined
+        fetch(`/agent-team-roles/role-skills/${selectedRole}`)
+          .then((response) => (response.ok ? response.json() : { skills: [] }))
+          .then((data) => {
+            if (!cancelled) setInstalledSkills(Array.isArray(data.skills) ? data.skills : [])
+          })
+          .catch(() => {
+            if (!cancelled) setInstalledSkills([])
+          })
+        return () => {
+          cancelled = true
+        }
+      }, [selectedRole, onRefresh])
+      const viewSkill = (name) => {
+        if (skillView !== null && skillView.name === name) {
+          setSkillView(null)
+          return
+        }
+        fetch(`/agent-team-roles/role-skills/${selectedRole}/${name}`)
+          .then((response) => (response.ok ? response.json() : Promise.reject(new Error('not found'))))
+          .then((data) => setSkillView({ name: data.name ?? name, content: data.content ?? '' }))
+          .catch(() => setSkillView({ name, content: t('skillLoadFailed') }))
+      }
+      const skillViewer = skillView === null
+        ? null
+        : h('pre', {
+            key: 'skill-content',
+            style: {
+              margin: 0,
+              padding: 10,
+              border: '1px solid var(--dsw-alias-border-l1)',
+              borderRadius: 6,
+              background: 'var(--dsw-alias-bg-layer-2)',
+              color: 'var(--dsw-alias-label-primary)',
+              fontSize: 12,
+              lineHeight: 1.55,
+              maxHeight: 320,
+              overflow: 'auto',
+              whiteSpace: 'pre-wrap',
+              fontFamily: 'monospace',
+            },
+          }, skillView.content)
       return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } }, [
         h('div', {
           key: 'picker',
@@ -2556,6 +2612,22 @@ window.__ModuleLoader__.load({
                   onChange: (event) => onEdit({ skills: listOf(event.target.value) }),
                 }),
                 h('span', { key: 'hint', style: { ...small, fontSize: 11 } }, t('roleSkillHint')),
+              ]),
+              h('div', { key: 'installed-skills', style: { ...label, gap: 6 } }, [
+                h('span', { key: 'l', style: { ...small, fontWeight: 600, color: 'var(--dsw-alias-label-primary)' } }, t('installedSkills')),
+                installedSkills.length === 0
+                  ? h('span', { key: 'none', style: small }, t('noInstalledSkills'))
+                  : h('div', {
+                      key: 'chips',
+                      style: { display: 'flex', flexWrap: 'wrap', gap: 6 },
+                    }, installedSkills.map((name) => h('button', {
+                      key: name,
+                      type: 'button',
+                      style: tabStyle(skillView !== null && skillView.name === name),
+                      onClick: () => viewSkill(name),
+                    }, name))),
+                skillViewer,
+                h('span', { key: 'guide', style: { ...small, fontSize: 11 } }, t('skillViewGuide')),
               ]),
               h('label', { key: 'color', style: { ...label, maxWidth: 180 } }, [
                 h('span', { key: 'l' }, t('color')),

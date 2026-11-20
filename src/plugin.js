@@ -33,6 +33,7 @@ import {
 import { GateLedger } from './ledger.js'
 import { installGateParser } from './gate-parse.js'
 import { CodexThreadStore } from './codex-store.js'
+import { skillRoute } from './skill-routes.js'
 import { copyTemplateSkills, discoverTemplates, mergeTemplateGates, seedTemplates, templatesRoot, upsertRoles } from './templates.js'
 import { MemberSnapshots, RoleStore, RuleStore, stateDir } from './store.js'
 import { spawnRoleMember } from './spawn.js'
@@ -653,6 +654,13 @@ export function apply(ctx, config) {
       () => scope.settings.configure({ auto: false }, ctx.fiber),
       'agent-team-roles:settings-policy',
     )
+  })
+
+  // Read-only HTTP route letting the Settings page (same origin) list installed
+  // role skills and view their content. Skills are authored by agents, never
+  // through this endpoint — it is strictly GET.
+  ctx.inject(['webServer'], (scope) => {
+    scope.effect(() => scope.webServer.register(skillRoute()), 'agent-team-roles:skill-routes')
   })
 }
 
