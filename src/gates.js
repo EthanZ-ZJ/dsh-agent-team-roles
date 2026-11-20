@@ -41,6 +41,7 @@ export const GateSchema = z.object({
     invalidateOn: z.object({
       role: z.string().default('').description('Role whose tool use triggers invalidation.'),
       tool: z.array(z.string()).default([]).description('Tool names that trigger invalidation (1-8).'),
+      pathPattern: z.string().default('').description('Optional RegExp source; invalidation fires only when the touched file path matches. Absent = any path.'),
     }).default({}).description('When a matching tool call succeeds, all recorded events for the team are voided.'),
     commandSuccess: z.object({
       role: z.string().default('').description('Role whose successful command counts as the key.'),
@@ -74,6 +75,7 @@ export function normalizeGate(input) {
   const invalidateOn = require.invalidateOn !== null && typeof require.invalidateOn === 'object'
     ? require.invalidateOn
     : {}
+  const invalidatePath = text(invalidateOn.pathPattern)
   const id = text(gate.id).toLowerCase()
   const commandPattern = text(deny.commandPattern)
   return {
@@ -93,6 +95,7 @@ export function normalizeGate(input) {
             invalidateOn: {
               ...(text(invalidateOn.role) === '' ? {} : { role: text(invalidateOn.role).toLowerCase() }),
               tool: toolList(invalidateOn.tool),
+              ...(invalidatePath === '' ? {} : { pathPattern: invalidatePath }),
             },
           }),
       ...(text(commandSuccess.role) === ''
@@ -164,6 +167,18 @@ export function validateGate(gate) {
   if (gate.require.invalidateOn !== undefined && gate.require.invalidateOn.tool.length === 0) {
     return `gate "${gate.id}" invalidateOn.tool must list at least one tool`
   }
+  if (gate.require.invalidateOn?.pathPattern !== undefined) {
+    const pathPattern = gate.require.invalidateOn.pathPattern
+    if (pathPattern.length > MAX_GATE_PATTERN) {
+      return `gate "${gate.id}" invalidateOn.pathPattern exceeds ${MAX_GATE_PATTERN} characters`
+    }
+    try {
+      // eslint-disable-next-line no-new
+      new RegExp(pathPattern)
+    } catch {
+      return `gate "${gate.id}" invalidateOn.pathPattern is not a valid regex: ${pathPattern}`
+    }
+  }
   return undefined
 }
 
@@ -229,6 +244,20 @@ export function auditGateList(rawGates, warn) {
     valid.push(gate)
   }
   return { valid, invalid }
+}
+
+/** Extract the touched file path from tool arguments, tolerating JSON strings. */
+export function pathFromArgs(args) {
+  let parsed = args
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed)
+    } catch {
+      return undefined
+    }
+  }
+  const candidate = parsed?.file_path ?? parsed?.path
+  return typeof candidate === 'string' && candidate !== '' ? candidate : undefined
 }
 
 /** Extract the shell command string from tool arguments, tolerating JSON strings. */

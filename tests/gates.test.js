@@ -5,6 +5,7 @@ import {
   evaluateGates,
   normalizeGate,
   normalizeGates,
+  pathFromArgs,
   validateGate,
 } from '../src/gates.js'
 import { GateLedger } from '../src/ledger.js'
@@ -151,4 +152,35 @@ test('invalid gate entries are skipped rather than throwing', () => {
     gates: [{ id: 'broken', deny: {}, require: {} }, gate()],
     role: 'dev', tool: 'pwsh', args: { command: 'git commit' }, ledger, teamId: 'team-1',
   }).kind, 'deny')
+})
+
+test('invalidateOn.pathPattern survives normalization and validates bounds', () => {
+  const pattern = '\\.(js|ts|py)$'
+  const normalized = normalizeGate({
+    ...gate(),
+    require: { event: 'review-approved', byRoles: ['reviewer'], freshFor: 60, invalidateOn: { role: 'dev', tool: ['write'], pathPattern: pattern } },
+  })
+  assert.equal(normalized.require.invalidateOn.pathPattern, pattern)
+  assert.equal(validateGate(normalized), undefined)
+  assert.equal(normalizeGate({ ...gate(), require: { event: 'x', byRoles: ['r'], invalidateOn: { tool: ['write'] } } }).require.invalidateOn.pathPattern, undefined)
+})
+
+test('invalidateOn.pathPattern rejects invalid regex and overlong sources', () => {
+  assert.match(
+    validateGate(normalizeGate({ ...gate(), require: { event: 'x', byRoles: ['r'], invalidateOn: { tool: ['write'], pathPattern: '([bad' } } })),
+    /pathPattern is not a valid regex/,
+  )
+  assert.match(
+    validateGate(normalizeGate({ ...gate(), require: { event: 'x', byRoles: ['r'], invalidateOn: { tool: ['write'], pathPattern: 'x'.repeat(201) } } })),
+    /pathPattern exceeds 200/,
+  )
+})
+
+test('pathFromArgs extracts file_path, tolerating JSON strings and missing fields', () => {
+  assert.equal(pathFromArgs({ file_path: 'src/a.ts' }), 'src/a.ts')
+  assert.equal(pathFromArgs({ path: 'docs/b.md' }), 'docs/b.md')
+  assert.equal(pathFromArgs(JSON.stringify({ file_path: 'c.js' })), 'c.js')
+  assert.equal(pathFromArgs({ command: 'git push' }), undefined)
+  assert.equal(pathFromArgs(undefined), undefined)
+  assert.equal(pathFromArgs('not json'), undefined)
 })

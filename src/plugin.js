@@ -26,6 +26,7 @@ import {
   commandFromArgs,
   commandSuccessEvent,
   evaluateGates,
+  pathFromArgs,
   gateRequirement,
   normalizeGates,
   validateGate,
@@ -317,8 +318,14 @@ export function apply(ctx, config) {
         if (invalidateOn !== undefined
           && (invalidateOn.role === undefined || invalidateOn.role === caller.roleId)
           && invalidateOn.tool.includes(exec.name)) {
-          // A watched tool was used: every prior key in this team is stale.
-          gateLedger.invalidate(teamId)
+          // Optional path scoping: a watched tool call voids the team's keys
+          // only when the touched path matches. Absent pattern = any path.
+          let voids = true
+          if (invalidateOn.pathPattern !== undefined) {
+            const touched = pathFromArgs(exec.arguments)
+            voids = touched !== undefined && new RegExp(invalidateOn.pathPattern).test(touched)
+          }
+          if (voids) gateLedger.invalidate(teamId)
         }
         const commandSuccess = gate.require.commandSuccess
         if (commandSuccess === undefined

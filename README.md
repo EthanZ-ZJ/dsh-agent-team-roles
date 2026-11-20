@@ -1,4 +1,4 @@
-﻿# dsh-agent-team-roles
+# dsh-agent-team-roles
 
 面向 DeepSeek Harness 官方 Agent Teams 运行时的**通用团队引擎 + 领域模板包**。
 
@@ -184,7 +184,7 @@ denyCommands 是**无条件**拒绝；gates 是**有状态的条件拒绝**：�
 - `deny.role` / `deny.tool`：拦谁、拦哪个工具（1–8 个）。带 `commandPattern` 时只拦匹配的 shell 命令；不带时整工具拦截（write/edit 类）。
 - `require.event` + `byRoles`：钥匙事件名与可产生钥匙的角色（1–8 个）。
 - `freshFor`：秒；缺省表示永久有效，直到被作废。
-- `invalidateOn`：当匹配角色使用匹配工具成功后，清空该团队已记录的事件（改码即让旧批准失效）。
+- `invalidateOn`：当匹配角色使用匹配工具成功后，清空该团队已记录的事件（改码即让旧批准失效）。可选 `pathPattern`（RegExp 源）把作废限定在匹配的文件路径上——例如只对代码扩展名生效，改文档/README 不作废检视批准。缺省 = 任何路径都作废。
 - 或者用 `require.commandSuccess = { role, tool, pattern }`：以“某角色成功执行了匹配命令”为钥匙，与 `event` 二选一。
 
 ### 两个事件源

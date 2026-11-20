@@ -154,7 +154,14 @@ test('checks-green-before-push requires only a fresh successful TSE contract che
   )
 
   assert.equal(gate.require.freshFor, 14400)
-  assert.deepEqual(gate.require.invalidateOn, { role: 'dev', tool: ['write', 'edit'] })
+  const invalidateOn = gate.require.invalidateOn
+  assert.equal(invalidateOn.role, 'dev')
+  assert.deepEqual(invalidateOn.tool, ['write', 'edit'])
+  // Path scoping: only code-file edits void the key; docs stay harmless.
+  assert.ok(invalidateOn.pathPattern, 'invalidateOn.pathPattern is required for the shipped gate')
+  const pathPattern = new RegExp(invalidateOn.pathPattern)
+  assert.ok(pathPattern.test('src/main.ts'), 'code edits must invalidate')
+  assert.ok(!pathPattern.test('docs/notes.md'), 'doc edits must not invalidate')
 })
 
 test('readTemplate rejects an in-memory broken commandPattern without touching the real file', async (t) => {
