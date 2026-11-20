@@ -34,6 +34,8 @@ export function leadCatalog(roles, playbook = '') {
     '',
     'This Agent Team spawns teammates from configured role presets. Call `spawn_team_member` with a `role` id; it applies that role\'s prompt, model route, tool policy, and skills. `spawn_teammate` is disabled in this Team — do not call it.',
     '',
+    'To move an EXISTING teammate between its role\'s primary and fallback model route (for example after a model quota failure), call `switch_member_model` with its member name and `route: "fallback"` or `"primary"`. The member keeps its conversation context; never spawn a replacement to change models.',
+    '',
     'Configured roles:',
   ]
   for (const role of roles) {

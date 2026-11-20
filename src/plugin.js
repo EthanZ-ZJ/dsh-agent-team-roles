@@ -478,7 +478,14 @@ export function apply(ctx, config) {
 
     try {
       if (membership.role === 'lead') {
-        installLead({ scoped, register, tools, ctx, snapshots, roles: rolesReader, agent, playbook: leadPlaybook })
+        const applied = installLead({ scoped, register, tools, ctx, snapshots, roles: rolesReader, agent, playbook: leadPlaybook })
+        // A Lead whose session preset is not resolved yet (early `agent/created`)
+        // installs nothing; do not mark it installed, so the pre-step backstop
+        // retries once the session context is complete.
+        if (applied === false) {
+          dispose()
+          return
+        }
       } else {
         installMember({
           agent,
@@ -815,7 +822,7 @@ export function isTeamLeadPreset(agent, ctx) {
 function installLead({ scoped, register, tools, ctx, snapshots, roles, agent, playbook }) {
   // Manual pulls and the team description are Team-Lead-preset features; other
   // presets run plain sessions and must not carry the roster catalog.
-  if (!isTeamLeadPreset(agent, ctx)) return
+  if (!isTeamLeadPreset(agent, ctx)) return false
   register(scoped.systemPrompt.section({
     name: 'agent-team-roles:lead-catalog',
     order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY') + 10,
@@ -852,6 +859,7 @@ function installLead({ scoped, register, tools, ctx, snapshots, roles, agent, pl
     if (exec.name !== 'spawn_teammate') return undefined
     return 'The official spawn_teammate tool is disabled in this Team. Use spawn_team_member with a configured role instead.'
   }))
+  return true
 }
 
 /** Whether every claimed message is a handshake member's READY settlement notice. */
