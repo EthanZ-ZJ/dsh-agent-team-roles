@@ -536,6 +536,17 @@ export function apply(ctx, config) {
   })
 
   ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, messages }, next) => {
+    // Backstop install: a session created while the plugin is already active may
+    // resolve its preset and Team membership only after `agent/created`, so the
+    // first step re-checks and installs the scoped contributions then.
+    if (!installed.has(agent)) {
+      try {
+        await snapshots.ready
+        installAgent(agent)
+      } catch (error) {
+        ctx.logger?.warn(`[agent-team-roles] cannot install on agent ${agent.id} at pre-step: ${error.message}`)
+      }
+    }
     const handshake = Array.isArray(messages) && isHandshakeOnly(messages)
     if (!handshake) return next()
     const decision = await next()
