@@ -184,6 +184,11 @@ export function apply(ctx, config) {
   // switch_member_model uses it to re-select a member's model without touching
   // its session, so primary/fallback share the same conversation context.
   const memberAgents = new Map()
+  // Model-route overrides keyed by "<root>:<member>". A member Agent is
+  // disposed after its turn, so switching a dormant member cannot touch a live
+  // Agent; the override is applied by installMember on the next activation,
+  // which keeps the same session (and therefore the same context).
+  const memberRouteOverrides = new Map()
   const tools = createTools({
     ctx,
     config,
@@ -193,6 +198,7 @@ export function apply(ctx, config) {
     ledger: gateLedger,
     codexThreads,
     memberAgents,
+    memberRouteOverrides,
   })
 
   // The Settings page writes a natural-language request into the volatile
@@ -434,6 +440,7 @@ export function apply(ctx, config) {
           roles: rolesReader,
           ctx,
           memberAgents,
+          memberRouteOverrides,
         })
       }
     } catch (error) {
@@ -808,7 +815,7 @@ export function roleForMember(snapshot, catalog, name) {
 }
 
 /** Install one member's role prompt, model route, tool policy, and skills. */
-function installMember({ agent, membership, scoped, register, tools, snapshots, ruleStore, roles, ctx, memberAgents }) {
+function installMember({ agent, membership, scoped, register, tools, snapshots, ruleStore, roles, ctx, memberAgents, memberRouteOverrides }) {
   const snapshot = snapshots.get(membership.root.id, membership.name)
   // D7: Codex members are relay Agents for an external process. They keep only
   // codex_exec + collaboration tools, get the relay persona, and never register
@@ -830,12 +837,18 @@ function installMember({ agent, membership, scoped, register, tools, snapshots, 
     register(() => memberAgents.delete(handleKey))
   }
 
-  if (frozen.provider !== '' && frozen.model !== '') {
+  // A Lead-requested route override (for example switching to the fallback
+  // model after a quota failure) wins over the frozen role route. Members are
+  // disposed between turns, so applying it here — on the next activation — is
+  // what lets primary and fallback share one conversation context.
+  const override = memberRouteOverrides?.get(handleKey)
+  const route = override !== undefined ? override : frozen
+  if (route.provider !== '' && route.model !== '') {
     try {
       agent.model?.select({
-        provider: frozen.provider,
-        model: frozen.model,
-        ...(frozen.reasoningEffort === '' ? {} : { reasoningEffort: frozen.reasoningEffort }),
+        provider: route.provider,
+        model: route.model,
+        ...(route.reasoningEffort === '' ? {} : { reasoningEffort: route.reasoningEffort }),
       })
     } catch (error) {
       ctxWarn(agent, `cannot select the role route for "${membership.name}": ${error.message}`)

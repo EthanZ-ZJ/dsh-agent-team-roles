@@ -234,12 +234,40 @@ test('switch_member_model re-selects the fallback route in place and sends a con
   })
   const tool = tools.lead.find((candidate) => candidate.name === 'switch_member_model')
   const result = await tool.execute({ member: 'dev', route: 'fallback' }, { agent: { id: 'root-1' } })
-  assert.deepEqual(result, { member: 'dev', route: 'fallback', provider: 'p2', model: 'm2', messageSent: true })
+  assert.deepEqual(result, { member: 'dev', route: 'fallback', provider: 'p2', model: 'm2', messageSent: true, applied: 'live' })
   assert.equal(selected.length, 1)
   assert.equal(selected[0].provider, 'p2')
   assert.equal(selected[0].model, 'm2')
   assert.equal(sent.length, 1)
   assert.equal(sent[0].target, 'dev')
+})
+
+test('switch_member_model works on a dormant member through the route override', async () => {
+  const sent = []
+  const overrides = new Map()
+  const tools = createTools({
+    ctx: {
+      agentTeams: {
+        tryMembership: () => ({ role: 'lead', root: { id: 'root-1' }, name: 'lead' }),
+        listMembers: () => [{ role: 'teammate', name: 'dev', status: 'inactive' }],
+        sendMessage: async (caller, payload) => { sent.push(payload) },
+      },
+    },
+    config: {},
+    snapshots: { get: () => ({ roleId: 'dev' }) },
+    rules: { list: () => [], add: async () => { throw new Error('not used') }, forget: async () => false },
+    roles: {
+      read: () => [{ ...GENERAL_ROLE, id: 'dev', name: 'DEV', provider: 'p1', model: 'm1', fallbackProvider: 'p2', fallbackModel: 'm2' }],
+    },
+    memberAgents: new Map(),
+    memberRouteOverrides: overrides,
+  })
+  const tool = tools.lead.find((candidate) => candidate.name === 'switch_member_model')
+  const result = await tool.execute({ member: 'dev', route: 'fallback' }, { agent: { id: 'root-1' } })
+  assert.equal(result.applied, 'pending-activation')
+  assert.equal(result.provider, 'p2')
+  assert.deepEqual(overrides.get('root-1:dev'), { provider: 'p2', model: 'm2' })
+  assert.equal(sent.length, 1)
 })
 
 test('switch_member_model refuses a role without a configured fallback', async () => {

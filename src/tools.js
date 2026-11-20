@@ -250,7 +250,7 @@ export function roleIdForAgent(ctx, snapshots, roles, agent) {
  * @param options - plugin context, live Config readers, stores, and catalog.
  * @returns the Lead and member tool definitions.
  */
-export function createTools({ ctx, config, snapshots, rules, roles, ledger, codexThreads, memberAgents = new Map() }) {
+export function createTools({ ctx, config, snapshots, rules, roles, ledger, codexThreads, memberAgents = new Map(), memberRouteOverrides = new Map() }) {
   /** Read the live role catalog. */
   const catalog = () => mergeRoles(roles.read())
 
@@ -806,6 +806,7 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
         provider: { type: 'string', required: true },
         model: { type: 'string', required: true },
         messageSent: { type: 'boolean', required: true },
+        applied: { type: 'string', required: true },
       },
     }),
     async execute(args, exec) {
@@ -831,18 +832,27 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
           ? `role "${role.id}" has no fallback model configured; set fallbackProvider and fallbackModel first`
           : `role "${role.id}" has no explicit primary model (it inherits the Session route); configure provider and model first`)
       }
-      const agent = memberAgents.get(`${membership.root.id}:${target.name}`)
-      if (agent === undefined) {
-        throw new Error(`no runtime handle for "${target.name}"; it was not created by this plugin instance`)
+      const handleKey = `${membership.root.id}:${target.name}`
+      const routeValue = {
+        provider: route.provider,
+        model: route.model,
+        ...(role.reasoningEffort === '' ? {} : { reasoningEffort: role.reasoningEffort }),
       }
-      try {
-        agent.model?.select({
-          provider: route.provider,
-          model: route.model,
-          ...(role.reasoningEffort === '' ? {} : { reasoningEffort: role.reasoningEffort }),
-        })
-      } catch (error) {
-        throw new Error(`cannot switch the model of "${target.name}": ${error.message}`)
+      // Persist the override first: a member Agent is disposed between turns, so
+      // a dormant member has no live handle and the override is what installMember
+      // applies when the continue message wakes it.
+      const overrides = memberRouteOverrides
+      if (overrides !== undefined) overrides.set(handleKey, routeValue)
+      const agent = memberAgents.get(handleKey)
+      let applied = 'pending-activation'
+      if (agent !== undefined) {
+        try {
+          agent.model?.select(routeValue)
+          applied = 'live'
+        } catch (error) {
+          if (overrides !== undefined) overrides.delete(handleKey)
+          throw new Error(`cannot switch the model of "${target.name}": ${error.message}`)
+        }
       }
       const text = typeof args.message === 'string' && args.message.trim() !== ''
         ? args.message.trim()
@@ -854,10 +864,18 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
           signal: new AbortController().signal,
         })
       } catch (error) {
-        throw new Error(`switched "${target.name}" to ${route.provider}/${route.model}, but the continue message failed (${error.message}). ` +
+        if (overrides !== undefined) overrides.delete(handleKey)
+        throw new Error(`could not wake "${target.name}" to continue (${error.message}); the route change was reverted. ` +
           'If that member is in a terminal failed state, fix the role route with update_team_role and pull a fresh member instead.')
       }
-      return { member: target.name, route: route.label, provider: route.provider, model: route.model, messageSent: true }
+      return {
+        member: target.name,
+        route: route.label,
+        provider: route.provider,
+        model: route.model,
+        messageSent: true,
+        applied,
+      }
     },
   })
 
