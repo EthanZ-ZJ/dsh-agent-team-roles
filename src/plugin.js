@@ -34,6 +34,7 @@ import {
   validateGate,
 } from './gates.js'
 import { GateLedger } from './ledger.js'
+import { shouldAutoSwitch } from './auto-fallback.js'
 import { installGateParser } from './gate-parse.js'
 import { CodexThreadStore } from './codex-store.js'
 import { modelCatalogRoute } from './model-catalog.js'
@@ -92,8 +93,7 @@ const RoleSchema = z.object({
   fallbackProvider: z.string().default('')
     .description('Fallback LLM provider when the primary route is unavailable (for example quota exhausted); empty means no fallback.'),
   fallbackModel: z.string().default('')
-    .description('Fallback model id; must be configured together with fallbackProvider.'),
-  toolMode: z.string().default('all').description('Tool policy: all, or a custom allow-list.'),
+    .description('Fallback model id; must be configured together with fallbackProvider.'),  toolMode: z.string().default('all').description('Tool policy: all, or a custom allow-list.'),
   tools: z.array(z.string()).default([]).description('Allowed tool names when toolMode is custom.'),
   denyCommands: z.array(z.string()).default([])
     .description('Optional RegExp sources denying matching shell commands for this role (at most 20 patterns of 200 characters).'),
@@ -129,6 +129,8 @@ export const Config = z.object({
     .description('Stateful workflow gates: conditionally deny a role tool call until a fresh event exists.'),
   gatesDisabled: z.array(z.string()).default([]).volatile()
     .description('Gate ids manually disabled from /team-gates.'),
+  autoFallback: z.boolean().default(true).volatile()
+    .description('Automatically switch a member to its role fallback route when its model request fails terminally (for example quota exhausted).'),
   gateParseRequest: z.object({
     nonce: z.string().default('').description('Client-minted request id; dedupes host work.'),
     text: z.string().default('').description('User description, at most 4000 characters; cleared after the parse.'),
@@ -385,6 +387,55 @@ export function apply(ctx, config) {
     }
     return downstream
   }), 'agent-team-roles:gates-post-execute')
+
+  // Automatic fallback on a terminal model-request failure (quota exhausted, a
+  // broken primary provider): switch the member's route to the role fallback and
+  // let the same turn retry. Transient failures stay with the harness retry
+  // policy. Switching back to the primary route remains a manual Lead decision.
+  const autoFallbackAttempts = new Set()
+  ctx.effect(() => ctx.on('agent/request-error', async (payload, next) => {
+    try {
+      if (!(readConfig(config, 'autoFallback') ?? true)) return next()
+      const agent = payload?.agent
+      if (agent === undefined) return next()
+      const membership = ctx.agentTeams.tryMembership(agent)
+      if (membership === undefined || membership.role !== 'teammate') return next()
+      const catalog = mergeRoles(rolesReader.read())
+      const snapshot = snapshots.get(membership.root.id, membership.name)
+      const role = snapshot?.frozen ?? roleForTarget(catalog, membership.name)
+      if (role === undefined) return next()
+      if (role.fallbackProvider === '' || role.fallbackModel === '') return next()
+      const key = `${membership.root.id}:${membership.name}`
+      const attemptKey = `${key}:${payload.turn}`
+      if (autoFallbackAttempts.has(attemptKey)) return next()
+      const target = {
+        provider: role.fallbackProvider,
+        model: role.fallbackModel,
+        ...(role.reasoningEffort === '' ? {} : { reasoningEffort: role.reasoningEffort }),
+      }
+      const current = memberRouteOverrides?.get(key)
+      const alreadyFallback = current !== undefined
+        && current.provider === target.provider
+        && current.model === target.model
+      if (!shouldAutoSwitch(payload.failure, { alreadyFallback })) return next()
+      // Bound the memo; turns are monotonic so older keys are useless.
+      if (autoFallbackAttempts.size > 500) autoFallbackAttempts.clear()
+      autoFallbackAttempts.add(attemptKey)
+      memberRouteOverrides?.set(key, target)
+      try {
+        agent.model?.select(target)
+      } catch (error) {
+        ctx.logger?.warn(`[agent-team-roles] cannot select the fallback route for "${membership.name}": ${error.message}`)
+        return next()
+      }
+      const reason = payload.failure?.message ?? String(payload.failure)
+      ctx.logger?.warn(`[agent-team-roles] "${membership.name}" failed on ${payload.provider}; switched to ${target.provider}/${target.model} and retried (${reason})`)
+      return { kind: 'retry' }
+    } catch (error) {
+      ctx.logger?.warn(`[agent-team-roles] auto fallback failed open: ${error.message}`)
+      return next()
+    }
+  }), 'agent-team-roles:auto-fallback')
 
   // A trusted in-process API for other plugins. Agent-facing writes go through
   // the tools above, where the Lead/member boundary is enforced by scope.
