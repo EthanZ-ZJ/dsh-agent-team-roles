@@ -126,6 +126,26 @@ export function gateRequirement(gate) {
   return undefined
 }
 
+/** Role ids whose members can produce this gate's key. */
+export function gateKeyRoles(gate) {
+  if (gate.require.commandSuccess !== undefined) return [gate.require.commandSuccess.role]
+  if (gate.require.event !== undefined) return gate.require.byRoles
+  return []
+}
+
+/**
+ * Whether the gate can apply to a team: at least one key-producing role has a
+ * live member in the roster. A gate whose key roles are all absent is
+ * unsatisfiable by design — it is skipped entirely (deny included) instead of
+ * deadlocking the workflow. An empty/unresolvable key keeps the gate active.
+ */
+export function gateApplicable(gate, liveRoles) {
+  const keyRoles = gateKeyRoles(gate)
+  if (keyRoles.length === 0) return true
+  if (!(liveRoles instanceof Set)) return true
+  return keyRoles.some((role) => liveRoles.has(role))
+}
+
 /** Report the first validation failure of one gate, or undefined when valid. */
 export function validateGate(gate) {
   if (!GATE_ID.test(gate.id)) return `gate id "${gate.id}" must be lowercase kebab-case (letters, digits, hyphens; at most 64 characters)`

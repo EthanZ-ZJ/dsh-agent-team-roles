@@ -26,9 +26,11 @@ import {
   commandFromArgs,
   commandSuccessEvent,
   evaluateGates,
-  pathFromArgs,
+  gateApplicable,
+  gateKeyRoles,
   gateRequirement,
   normalizeGates,
+  pathFromArgs,
   validateGate,
 } from './gates.js'
 import { GateLedger } from './ledger.js'
@@ -253,6 +255,19 @@ export function apply(ctx, config) {
     return { membership, roleId: role.id }
   }
 
+  /** Role ids with a live member in the caller's team right now. */
+  const rosterRoles = (agent) => {
+    const catalog = mergeRoles(rolesReader.read())
+    const live = new Set()
+    for (const member of ctx.agentTeams.listMembers(agent)) {
+      if (member.role !== 'teammate') continue
+      const snapshot = snapshots.get(agent.id, member.name)
+      const roleId = snapshot !== undefined ? snapshot.roleId : roleForTarget(catalog, member.name)?.id
+      if (roleId !== undefined) live.add(roleId)
+    }
+    return live
+  }
+
   // Read-side audit: a configured gate the evaluator would silently skip is a
   // real defect, so warn once per gate id per process. This never blocks a call.
   const warnedGateIds = new Set()
@@ -284,8 +299,20 @@ export function apply(ctx, config) {
     try {
       const caller = gateCaller(exec.agent)
       if (caller === undefined) return next()
+      // Applicability: a gate whose key-producing roles have no live member in
+      // this team cannot apply — it is unsatisfiable by design, not "unmet".
+      // Roster failure fails open like every other evaluator error.
+      let liveRoles
+      try {
+        liveRoles = rosterRoles(exec.agent)
+      } catch (error) {
+        ctx.logger?.warn(`[agent-team-roles] gate roster check failed open: ${error.message}`)
+        return next()
+      }
+      const applicable = gates.filter((gate) => gateApplicable(gate, liveRoles))
+      if (applicable.length === 0) return next()
       const decision = evaluateGates({
-        gates,
+        gates: applicable,
         disabled: readConfig(config, 'gatesDisabled') ?? [],
         role: caller.roleId,
         tool: exec.name,
@@ -600,6 +627,13 @@ export function apply(ctx, config) {
       const gates = normalizeGates(readConfig(config, 'gates') ?? [])
       const disabled = new Set(readConfig(config, 'gatesDisabled') ?? [])
       const teamId = membership.root.id
+      let liveRoles
+      try {
+        liveRoles = rosterRoles(agent)
+      } catch (error) {
+        liveRoles = undefined
+      }
+      const applicable = (gate) => gateApplicable(gate, liveRoles)
       const [action, argument] = rawInput.trim().split(/\s+/, 2)
       if (action === 'enable' || action === 'disable') {
         if (argument === undefined || !gates.some((gate) => gate.id === argument)) {
@@ -623,7 +657,10 @@ export function apply(ctx, config) {
             : `event "${gate.require.event}" from ${gate.require.byRoles.join('/')}` +
               (gate.require.freshFor === undefined ? '' : ` (fresh ${gate.require.freshFor}s)`)
           const description = gate.description === '' ? '' : ` — ${gate.description}`
-          return `${disabled.has(gate.id) ? '[off]' : '[on] '} ${gate.id}: deny ${gate.deny.role} ` +
+          const flag = disabled.has(gate.id)
+            ? '[off]'
+            : applicable(gate) ? '[on] ' : '[n/a]'
+          return `${flag} ${gate.id}: deny ${gate.deny.role} ` +
             `${gate.deny.tool.join('/')}${pattern} ← ${requirement}${description}`
         })
         return { kind: 'success', text: lines.join('\n') }
@@ -632,6 +669,10 @@ export function apply(ctx, config) {
         return { kind: 'error', text: 'usage: /team-gates list | status | enable <id> | disable <id>' }
       }
       const lines = gates.map((gate) => {
+        if (!applicable(gate)) {
+          const keyRoles = gateKeyRoles(gate).join(', ')
+          return `${disabled.has(gate.id) ? '[off]' : '[n/a]'} ${gate.id}: inapplicable (no live member with role ${keyRoles})`
+        }
         const requirement = gateRequirement(gate)
         if (requirement === undefined) return `${gate.id}: invalid requirement`
         const event = requirement.commandSuccess !== undefined

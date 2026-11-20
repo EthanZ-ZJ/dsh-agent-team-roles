@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import {
   MAX_GATES,
   evaluateGates,
+  gateApplicable,
+  gateKeyRoles,
   normalizeGate,
   normalizeGates,
   pathFromArgs,
@@ -183,4 +185,35 @@ test('pathFromArgs extracts file_path, tolerating JSON strings and missing field
   assert.equal(pathFromArgs({ command: 'git push' }), undefined)
   assert.equal(pathFromArgs(undefined), undefined)
   assert.equal(pathFromArgs('not json'), undefined)
+})
+
+test('gateKeyRoles resolves event and commandSuccess producers', () => {
+  assert.deepEqual(gateKeyRoles(normalizeGate(gate())), ['reviewer'])
+  assert.deepEqual(
+    gateKeyRoles(normalizeGate(gate({ require: { commandSuccess: { role: 'tse', tool: ['pwsh'], pattern: 'test' }, byRoles: ['tse'] } }))),
+    ['tse'],
+  )
+  assert.deepEqual(gateKeyRoles(normalizeGate({ ...gate(), require: {} }), ), [])
+})
+
+test('gateApplicable is false only when every key role lacks a live member', () => {
+  const gateNormalized = normalizeGate(gate())
+  assert.equal(gateApplicable(gateNormalized, new Set(['reviewer', 'dev'])), true)
+  assert.equal(gateApplicable(gateNormalized, new Set(['dev'])), false)
+  assert.equal(gateApplicable(gateNormalized, new Set()), false)
+  assert.equal(gateApplicable(gateNormalized, undefined), true, 'unknown roster keeps the gate active')
+})
+
+test('evaluateGates lets a denied call through when the gate is inapplicable', () => {
+  const pluginFlow = (gates, liveRoles) => gates.filter((gate) => gateApplicable(gate, liveRoles))
+  const ledger = fakeLedger()
+  const decision = evaluateGates({
+    gates: pluginFlow([gate()], new Set(['dev'])),
+    role: 'dev',
+    tool: 'pwsh',
+    args: { command: 'git commit -m x' },
+    ledger,
+    teamId: 'team-1',
+  })
+  assert.equal(decision, undefined)
 })
