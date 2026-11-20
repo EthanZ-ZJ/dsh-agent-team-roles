@@ -17,6 +17,9 @@ export const DESCRIPTION_LIMIT = 200
 export const PERSONA_LIMIT = 12000
 
 /** Built-in fallback role. */
+/** Most fallback routes one role may configure. */
+export const FALLBACK_LIMIT = 8
+
 export const GENERAL_ROLE = Object.freeze({
   id: 'general',
   name: 'General',
@@ -27,6 +30,7 @@ export const GENERAL_ROLE = Object.freeze({
   model: '',
   reasoningEffort: '',
   fallbackReasoningEffort: '',
+  fallbacks: [],
   toolMode: 'all',
   tools: [],
   skills: [],
@@ -34,6 +38,41 @@ export const GENERAL_ROLE = Object.freeze({
   codexSandbox: '',
   color: '',
 })
+
+/** Normalize an ordered fallback route list; incomplete and duplicate routes are dropped. */
+export function normalizeFallbacks(input) {
+  const routes = []
+  const seen = new Set()
+  for (const candidate of Array.isArray(input) ? input : []) {
+    if (candidate === null || typeof candidate !== 'object') continue
+    const provider = text(candidate.provider)
+    const model = text(candidate.model)
+    if (provider === '' || model === '') continue
+    const key = `${provider}::${model}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    routes.push({ provider, model, reasoningEffort: text(candidate.reasoningEffort) })
+    if (routes.length >= FALLBACK_LIMIT) break
+  }
+  return routes
+}
+
+/**
+ * The ordered fallback chain of one role.
+ *
+ * `fallbacks` is authoritative when present; the legacy single
+ * fallbackProvider/fallbackModel pair is still honored so existing role
+ * configurations keep working without an edit.
+ */
+export function roleFallbacks(role) {
+  const routes = normalizeFallbacks(role?.fallbacks)
+  if (routes.length > 0) return routes
+  const provider = text(role?.fallbackProvider)
+  const model = text(role?.fallbackModel)
+  return provider === '' || model === ''
+    ? []
+    : [{ provider, model, reasoningEffort: text(role?.fallbackReasoningEffort) }]
+}
 
 /** Read a Config field that may be volatile. */
 export function readConfig(config, key) {
@@ -63,6 +102,7 @@ export function normalizeRole(input) {
     fallbackProvider: text(role.fallbackProvider),
     fallbackModel: text(role.fallbackModel),
     fallbackReasoningEffort: text(role.fallbackReasoningEffort),
+    fallbacks: normalizeFallbacks(role.fallbacks),
     toolMode,
     tools: toolMode === 'custom' && Array.isArray(role.tools)
       ? [...new Set(role.tools.map(text).filter(Boolean))]
@@ -143,6 +183,9 @@ export function validateRole(role) {
   }
   if ((role.fallbackProvider ?? '') === '' ? (role.fallbackModel ?? '') !== '' : (role.fallbackModel ?? '') === '') {
     return `role "${role.id}" must configure both fallbackProvider and fallbackModel, or neither`
+  }
+  if (Array.isArray(role.fallbacks) && role.fallbacks.length > FALLBACK_LIMIT) {
+    return `role "${role.id}" lists more than ${FALLBACK_LIMIT} fallback routes`
   }
   if (role.toolMode === 'custom' && role.tools.length === 0) {
     return `role "${role.id}" uses a custom tool policy but lists no tools`

@@ -175,8 +175,14 @@ window.__ModuleLoader__.load({
       primaryModel: '主模型',
       modelEffortDefault: '模型默认',
       fallbackModel: '备用模型',
-      fallbackNone: '不配备用',
-      fallbackHint: '主模型额度耗尽或不可用时，可一键把成员切到备用模型继续（上下文保留）。',
+      fallbackNone: '选择模型',
+      fallbacks: '备用模型链',
+      addFallback: '添加备用模型',
+      removeFallback: '移除',
+      moveUp: '上移',
+      moveDown: '下移',
+      fallbackEmpty: '还没有备用模型；主模型不可用时可切到这里。',
+      fallbackHint: '按顺序尝试：主模型失败后先试备用 1，再试备用 2；每轮最多自动切换 2 次，切换后模型面板会标注序号。',
       ruleHint: 'permanent 会立即进入提示词；candidate 需要重复或在这里确认；session 只在当前会话生效，不会出现在这里。',
       history: '历史记忆',
       noHistory: '该角色还没有历史记忆。',
@@ -358,8 +364,14 @@ window.__ModuleLoader__.load({
       primaryModel: 'Primary model',
       modelEffortDefault: 'Model default',
       fallbackModel: 'Fallback model',
-      fallbackNone: 'No fallback',
-      fallbackHint: 'Used when the primary route is unavailable (for example quota exhausted); switching keeps the member context.',
+      fallbackNone: 'Choose a model',
+      fallbacks: 'Fallback chain',
+      addFallback: 'Add fallback',
+      removeFallback: 'Remove',
+      moveUp: 'Move up',
+      moveDown: 'Move down',
+      fallbackEmpty: 'No fallback routes yet; a failing primary route cannot fall back.',
+      fallbackHint: 'Tried in order: fallback 1, then fallback 2. The plugin switches at most twice per turn and the member panel shows the position.',
       ruleHint: 'permanent reaches the prompt immediately; candidate waits for a repeat or confirmation here; session rules only live in the current Session and do not appear here.',
       history: 'Memory history',
       noHistory: 'No memory history for this role yet.',
@@ -1658,39 +1670,101 @@ window.__ModuleLoader__.load({
                   onChange: (event) => onEdit({ persona: event.target.value }),
                 }),
               ]),
-              h('div', { key: 'route', style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: 12 } }, [false, true].map(fallback => {
-                const pk = fallback ? 'fallbackProvider' : 'provider'
-                const mk = fallback ? 'fallbackModel' : 'model'
-                const ek = fallback ? 'fallbackReasoningEffort' : 'reasoningEffort'
-                const provider = selected[pk] ?? '', model = selected[mk] ?? ''
+              h('div', { key: 'route', style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: 12 } }, [(() => {
+                const provider = selected.provider ?? '', model = selected.model ?? ''
                 const current = provider && model ? provider + '::' + model : ''
                 const route = catalogPairs.find(pair => pair.provider === provider && pair.id === model)
                 const pairs = current && !route ? [{ provider, id: model }, ...catalogPairs] : catalogPairs
-                const effort = selected[ek] ?? ''
-                const defaultLabel = t(!fallback && !current ? 'effortDefault' : 'modelEffortDefault')
+                const effort = selected.reasoningEffort ?? ''
                 const levels = Array.isArray(route?.efforts) ? route.efforts : effortLevels.map(id => ({ id, name: id }))
-                const options = [{ id: '', name: route?.defaultEffort ? defaultLabel + ' (' + route.defaultEffort + ')' : defaultLabel }, ...levels]
+                const options = [{ id: '', name: route?.defaultEffort ? t('effortDefault') + ' (' + route.defaultEffort + ')' : t('effortDefault') }, ...levels]
                 if (effort && !levels.some(level => level.id === effort)) options.push({ id: effort, name: effort })
-                return h('div', { key: mk, style: { ...panel, ...card, gap: 8 } }, [
+                return h('div', { key: 'primary', style: { ...panel, ...card, gap: 8 } }, [
                   h('label', { key: 'model', style: label }, [
-                    h('span', { key: 'label' }, t(fallback ? 'fallbackModel' : 'primaryModel')),
+                    h('span', { key: 'label' }, t('primaryModel')),
                     h('select', { key: 'select', style: input, value: current, onChange: event => {
                       const [nextProvider = '', nextModel = ''] = event.target.value.split('::')
-                      onEdit({ [pk]: nextProvider, [mk]: nextModel, [ek]: '' })
+                      onEdit({ provider: nextProvider, model: nextModel, reasoningEffort: '' })
                     } }, [
-                      h('option', { key: 'empty', value: '' }, t(fallback ? 'fallbackNone' : 'effortDefault')),
+                      h('option', { key: 'empty', value: '' }, t('effortDefault')),
                       ...pairs.map(pair => h('option', { key: pair.provider + '::' + pair.id, value: pair.provider + '::' + pair.id }, pair.provider + '/' + pair.id + (pair.name ? ' — ' + pair.name : ''))),
                     ]),
                   ]),
                   h('label', { key: 'effort', style: label }, [
                     h('span', { key: 'label' }, t('effort')),
-                    h('select', { key: 'select', style: input, value: effort, disabled: (fallback && !current) || options.length === 1,
-                      onChange: event => onEdit({ [ek]: event.target.value }),
+                    h('select', { key: 'select', style: input, value: effort, disabled: options.length === 1,
+                      onChange: event => onEdit({ reasoningEffort: event.target.value }),
                     }, options.map(option => h('option', { key: option.id, value: option.id }, option.name))),
                   ]),
-                  fallback && h('span', { key: 'hint', style: small }, t('fallbackHint')),
                 ])
-              })),
+              })(), (() => {
+                const legacy = selected.fallbacks === undefined || selected.fallbacks.length === 0
+                  ? (selected.fallbackProvider && selected.fallbackModel
+                    ? [{ provider: selected.fallbackProvider, model: selected.fallbackModel, reasoningEffort: selected.fallbackReasoningEffort ?? '' }]
+                    : [])
+                  : selected.fallbacks
+                const write = (next) => onEdit({
+                  fallbacks: next,
+                  fallbackProvider: '',
+                  fallbackModel: '',
+                  fallbackReasoningEffort: '',
+                })
+                const routeOptions = (entry) => {
+                  const current = entry.provider && entry.model ? entry.provider + '::' + entry.model : ''
+                  const found = catalogPairs.find(pair => pair.provider === entry.provider && pair.id === entry.model)
+                  const pairs = current && !found ? [{ provider: entry.provider, id: entry.model }, ...catalogPairs] : catalogPairs
+                  return [{ value: '', label: t('fallbackNone') }, ...pairs.map(pair => ({ value: pair.provider + '::' + pair.id, label: pair.provider + '/' + pair.id + (pair.name ? ' — ' + pair.name : '') }))]
+                }
+                return h('div', { key: 'fallbacks', style: { ...panel, ...card, gap: 8 } }, [
+                  h('div', { key: 'head', style: { ...row, justifyContent: 'space-between' } }, [
+                    h('span', { key: 'title', style: { ...small, fontWeight: 600, color: 'var(--dsw-alias-label-primary)' } }, t('fallbacks')),
+                    h('button', {
+                      key: 'add', type: 'button', style: button, disabled: legacy.length >= 8,
+                      onClick: () => write([...legacy, { provider: '', model: '', reasoningEffort: '' }]),
+                    }, '＋ ' + t('addFallback')),
+                  ]),
+                  legacy.length === 0
+                    ? h('span', { key: 'empty', style: small }, t('fallbackEmpty'))
+                    : legacy.map((entry, index) => {
+                        const route = catalogPairs.find(pair => pair.provider === entry.provider && pair.id === entry.model)
+                        const levels = Array.isArray(route?.efforts) ? route.efforts : effortLevels.map(id => ({ id, name: id }))
+                        const options = [{ id: '', name: t('modelEffortDefault') }, ...levels]
+                        if (entry.reasoningEffort && !levels.some(level => level.id === entry.reasoningEffort)) options.push({ id: entry.reasoningEffort, name: entry.reasoningEffort })
+                        const update = (patch) => write(legacy.map((item, at) => (at === index ? { ...item, ...patch } : item)))
+                        const move = (delta) => {
+                          const next = [...legacy]
+                          const [moved] = next.splice(index, 1)
+                          next.splice(index + delta, 0, moved)
+                          write(next)
+                        }
+                        return h('div', { key: index, style: { display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr) auto', gap: 6, alignItems: 'end' } }, [
+                          h('label', { key: 'model', style: label }, [
+                            h('span', { key: 'label' }, t('fallbackModel') + ' #' + (index + 1)),
+                            h('select', {
+                              key: 'select', style: input, value: entry.provider && entry.model ? entry.provider + '::' + entry.model : '',
+                              onChange: event => {
+                                const [nextProvider = '', nextModel = ''] = event.target.value.split('::')
+                                update({ provider: nextProvider, model: nextModel, reasoningEffort: '' })
+                              },
+                            }, routeOptions(entry).map(option => h('option', { key: option.value, value: option.value }, option.label))),
+                          ]),
+                          h('label', { key: 'effort', style: label }, [
+                            h('span', { key: 'label' }, t('effort')),
+                            h('select', {
+                              key: 'select', style: input, value: entry.reasoningEffort ?? '', disabled: !entry.provider || !entry.model,
+                              onChange: event => update({ reasoningEffort: event.target.value }),
+                            }, options.map(option => h('option', { key: option.id, value: option.id }, option.name))),
+                          ]),
+                          h('div', { key: 'actions', style: row }, [
+                            h('button', { key: 'up', type: 'button', style: button, disabled: index === 0, title: t('moveUp'), 'aria-label': t('moveUp'), onClick: () => move(-1) }, '↑'),
+                            h('button', { key: 'down', type: 'button', style: button, disabled: index === legacy.length - 1, title: t('moveDown'), 'aria-label': t('moveDown'), onClick: () => move(1) }, '↓'),
+                            h('button', { key: 'remove', type: 'button', style: button, title: t('removeFallback'), 'aria-label': t('removeFallback'), onClick: () => write(legacy.filter((item, at) => at !== index)) }, '×'),
+                          ]),
+                        ])
+                      }),
+                  h('span', { key: 'hint', style: small }, t('fallbackHint')),
+                ])
+              })()]),
               h('div', { key: 'tools', style: { ...panel, gap: 10 } }, [
                 h('label', { key: 'mode', style: label }, [
                   h('span', { key: 'l' }, t('toolMode')),
@@ -2139,7 +2213,7 @@ window.__ModuleLoader__.load({
                       background: 'var(--dsw-alias-bg-layer-2)',
                       whiteSpace: 'nowrap',
                     },
-                  }, sourceLabel(member.source)),
+                  }, sourceLabel(member.source) + (member.fallbackIndex === undefined ? '' : ' #' + (member.fallbackIndex + 1))),
                   member.pending === true
                     ? h('span', {
                         key: 'pending',

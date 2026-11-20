@@ -17,7 +17,7 @@
 import z from '@deepseek-ai/schemastery'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { findRole, mergeRoles, readConfig, roleForTarget } from './config.js'
+import { findRole, mergeRoles, readConfig, roleFallbacks, roleForTarget } from './config.js'
 import { activeMembers, leadCatalog, memberPersona } from './prompts.js'
 import { evaluateDeny } from './policy.js'
 import {
@@ -99,6 +99,11 @@ const RoleSchema = z.object({
     .description('Fallback model id; must be configured together with fallbackProvider.'),
   fallbackReasoningEffort: z.string().default('')
     .description('Reasoning effort for the fallback model; empty uses the model default.'),
+  fallbacks: z.array(z.object({
+    provider: z.string().default(''),
+    model: z.string().default(''),
+    reasoningEffort: z.string().default(''),
+  })).default([]).description('Ordered fallback routes tried in order; empty keeps the legacy single fallback fields.'),
   toolMode: z.string().default('all').description('Tool policy: all, or a custom allow-list.'),
   tools: z.array(z.string()).default([]).description('Allowed tool names when toolMode is custom.'),
   denyCommands: z.array(z.string()).default([])
@@ -404,7 +409,14 @@ export function apply(ctx, config) {
   // broken primary provider): switch the member's route to the role fallback and
   // let the same turn retry. Transient failures stay with the harness retry
   // policy. Switching back to the primary route remains a manual Lead decision.
+  // Ordered fallback chain: each terminal, route-level failure advances one
+  // step. At most MAX_AUTO_SWITCHES_PER_TURN switches happen per turn so a
+  // dead chain cannot burn every model's quota in one turn; transient failures
+  // stay with the harness retry policy. Returning to the primary route remains
+  // a manual Lead decision.
+  const MAX_AUTO_SWITCHES_PER_TURN = 2
   const autoFallbackAttempts = new Set()
+  const autoFallbackSwitches = new Map()
   ctx.effect(() => ctx.on('agent/request-error', async (payload, next) => {
     try {
       if (!(readConfig(config, 'autoFallback') ?? true)) return next()
@@ -416,33 +428,40 @@ export function apply(ctx, config) {
       const snapshot = snapshots.get(membership.root.id, membership.name)
       const role = snapshot?.frozen ?? roleForTarget(catalog, membership.name)
       if (role === undefined) return next()
-      if (!role.fallbackProvider || !role.fallbackModel) return next()
+      const chain = roleFallbacks(role)
+      if (chain.length === 0) return next()
       const key = `${membership.root.id}:${membership.name}`
-      const attemptKey = `${key}:${payload.turn}`
+      const turnKey = `${key}:${payload.turn}`
+      if ((autoFallbackSwitches.get(turnKey) ?? 0) >= MAX_AUTO_SWITCHES_PER_TURN) return next()
+      const current = memberRouteOverrides?.get(key) ?? role
+      const currentIndex = chain.findIndex((route) =>
+        route.provider === current.provider && route.model === current.model)
+      const target = chain[currentIndex + 1]
+      if (target === undefined) return next()
+      const attemptKey = `${turnKey}:${target.provider}/${target.model}`
       if (autoFallbackAttempts.has(attemptKey)) return next()
-      const target = modelSelection({
-        provider: role.fallbackProvider,
-        model: role.fallbackModel,
-        reasoningEffort: role.fallbackReasoningEffort,
-      })
-      const current = memberRouteOverrides?.get(key)
-      const alreadyFallback = current !== undefined
-        && current.provider === target.provider
-        && current.model === target.model
-        && (current.reasoningEffort ?? '') === (target.reasoningEffort ?? '')
-      if (!shouldAutoSwitch(payload.failure, { alreadyFallback })) return next()
-      // Bound the memo; turns are monotonic so older keys are useless.
+      if (!shouldAutoSwitch(payload.failure, { alreadyFallback: false })) return next()
+      // Bound both memos; turns are monotonic so older keys are useless.
       if (autoFallbackAttempts.size > 500) autoFallbackAttempts.clear()
+      if (autoFallbackSwitches.size > 500) autoFallbackSwitches.clear()
       autoFallbackAttempts.add(attemptKey)
-      memberRouteOverrides?.set(key, { ...target, route: 'fallback', via: 'auto', at: Date.now() })
+      autoFallbackSwitches.set(turnKey, (autoFallbackSwitches.get(turnKey) ?? 0) + 1)
+      const selection = modelSelection(target)
+      memberRouteOverrides?.set(key, {
+        ...selection,
+        route: 'fallback',
+        fallbackIndex: currentIndex + 1,
+        via: 'auto',
+        at: Date.now(),
+      })
       try {
-        agent.model?.select(target)
+        agent.model?.select(selection)
       } catch (error) {
-        ctx.logger?.warn(`[agent-team-roles] cannot select the fallback route for "${membership.name}": ${error.message}`)
+        ctx.logger?.warn(`[agent-team-roles] cannot select fallback #${currentIndex + 1} for "${membership.name}": ${error.message}`)
         return next()
       }
       const reason = payload.failure?.message ?? String(payload.failure)
-      ctx.logger?.warn(`[agent-team-roles] "${membership.name}" failed on ${payload.provider}; switched to ${target.provider}/${target.model} and retried (${reason})`)
+      ctx.logger?.warn(`[agent-team-roles] "${membership.name}" failed on ${payload.provider}; switched to fallback #${currentIndex + 1} ${target.provider}/${target.model} and retried (${reason})`)
       return { kind: 'retry' }
     } catch (error) {
       ctx.logger?.warn(`[agent-team-roles] auto fallback failed open: ${error.message}`)

@@ -9,6 +9,8 @@
  * Pure: every dependency arrives through arguments so the view can be tested.
  */
 
+import { roleFallbacks } from './config.js'
+
 /** Build a model selection without an effort override when the model default is wanted. */
 export function modelSelection({ provider, model, reasoningEffort }) {
   return { provider, model, ...(reasoningEffort ? { reasoningEffort } : {}) }
@@ -33,11 +35,8 @@ export function describeMember({ name, status, role, live, override, hasAgent = 
     model: role?.model ?? '',
     reasoningEffort: role?.reasoningEffort ?? '',
   }
-  const fallback = {
-    provider: role?.fallbackProvider ?? '',
-    model: role?.fallbackModel ?? '',
-    reasoningEffort: role?.fallbackReasoningEffort ?? '',
-  }
+  const chain = roleFallbacks(role)
+  const fallback = chain[0] ?? { provider: '', model: '', reasoningEffort: '' }
   const overrideSource = override?.route === 'primary'
     ? 'primary'
     : override?.via === 'auto' ? 'fallback-auto' : 'fallback-manual'
@@ -52,6 +51,7 @@ export function describeMember({ name, status, role, live, override, hasAgent = 
       }
   let route
   let source
+  let fallbackIndex = -1
   let pending = false
   if (live !== undefined && live !== null) {
     route = {
@@ -60,13 +60,14 @@ export function describeMember({ name, status, role, live, override, hasAgent = 
       reasoningEffort: live.reasoningEffort ?? '',
     }
     const matchesPrimary = route.provider !== '' && sameRoute(route, primary)
-    const matchesFallback = route.provider !== '' && sameRoute(route, fallback)
+    const chainIndex = route.provider === '' ? -1 : chain.findIndex((entry) => sameRoute(route, entry))
+    const matchesFallback = chainIndex >= 0
     if (fromOverride && sameRoute(route, fromOverride) && route.reasoningEffort === fromOverride.reasoningEffort) {
       source = fromOverride.source
-    } else if (matchesFallback && (!matchesPrimary || (
-      route.reasoningEffort === fallback.reasoningEffort && route.reasoningEffort !== primary.reasoningEffort
-    ))) {
+      fallbackIndex = fromOverride.fallbackIndex ?? (chainIndex >= 0 ? chainIndex : 0)
+    } else if (matchesFallback && !(matchesPrimary && chainIndex === -1)) {
       source = 'fallback-manual'
+      fallbackIndex = chainIndex
     } else source = matchesPrimary ? 'primary' : 'session'
   } else if (fromOverride !== undefined) {
     route = fromOverride
@@ -86,6 +87,7 @@ export function describeMember({ name, status, role, live, override, hasAgent = 
     model: route.model ?? '',
     reasoningEffort: route.reasoningEffort ?? '',
     source,
+    ...(source.startsWith('fallback') && fallbackIndex >= 0 ? { fallbackIndex } : {}),
     pending,
     ...(fromOverride?.at ? { changedAt: fromOverride.at } : {}),
   }

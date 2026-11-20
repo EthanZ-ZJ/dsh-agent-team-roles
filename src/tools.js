@@ -7,7 +7,7 @@
  * learned rule applies to the next call without restarting the plugin.
  */
 
-import { findRole, mergeRoles, roleForTarget } from './config.js'
+import { findRole, mergeRoles, roleFallbacks, roleForTarget } from './config.js'
 import { modelSelection } from './member-models.js'
 import { ruleView } from './rules.js'
 import { spawnRoleMember } from './spawn.js'
@@ -195,6 +195,19 @@ const ROLE_VIEW = {
     fallbackProvider: { type: 'string', required: true },
     fallbackModel: { type: 'string', required: true },
     fallbackReasoningEffort: { type: 'string', required: true },
+    fallbacks: {
+      type: 'array',
+      required: true,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          provider: { type: 'string', required: true },
+          model: { type: 'string', required: true },
+          reasoningEffort: { type: 'string', required: true },
+        },
+      },
+    },
     toolMode: { type: 'string', required: true },
     tools: { type: 'array', required: true, items: { type: 'string' } },
     skills: { type: 'array', required: true, items: { type: 'string' } },
@@ -227,6 +240,7 @@ async function roleView(role) {
     fallbackProvider: role.fallbackProvider ?? '',
     fallbackModel: role.fallbackModel ?? '',
     fallbackReasoningEffort: role.fallbackReasoningEffort ?? '',
+    fallbacks: roleFallbacks(role),
     toolMode: role.toolMode,
     tools: [...role.tools],
     skills: [...role.skills],
@@ -564,7 +578,20 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
     reasoningEffort: { type: 'string', description: 'Reasoning effort; empty keeps the adapter default.' },
     fallbackProvider: { type: 'string', description: 'Fallback LLM provider used when the primary route is unavailable; empty means no fallback.' },
     fallbackModel: { type: 'string', description: 'Fallback model id; must be configured together with fallbackProvider.' },
-    fallbackReasoningEffort: { type: 'string', description: 'Reasoning effort for the fallback model; empty uses that model’s default.' },
+    fallbackReasoningEffort: { type: 'string', description: 'Reasoning effort for the legacy single fallback model; empty uses that model’s default.' },
+    fallbacks: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          provider: { type: 'string', required: true },
+          model: { type: 'string', required: true },
+          reasoningEffort: { type: 'string' },
+        },
+      },
+      description: 'Ordered fallback routes tried in order (at most 8); empty falls back to the legacy fallbackProvider/fallbackModel pair.',
+    },
     toolMode: {
       type: 'string',
       enum: ['all', 'custom'],
@@ -794,7 +821,11 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
         type: 'string',
         required: true,
         enum: ['fallback', 'primary'],
-        description: 'fallback = the role\'s fallback route; primary = the role\'s main route.',
+        description: 'fallback = a route from the ordered fallback chain; primary = the role\'s main route.',
+      },
+      index: {
+        type: 'integer',
+        description: 'Zero-based position in the fallback chain when route is fallback; defaults to 0 (the first fallback).',
       },
       message: {
         type: 'string',
@@ -828,13 +859,18 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
       const snapshot = snapshots.get(caller.id, target.name)
       const role = snapshot === undefined ? roleForTarget(catalog, target.name) : findRole(catalog, snapshot.roleId)
       if (role === undefined) throw new Error(`cannot resolve the configured role of "${target.name}"`)
+      const chain = roleFallbacks(role)
+      const index = Number.isInteger(args.index) ? args.index : 0
+      if (args.route === 'fallback' && (index < 0 || index >= chain.length)) {
+        throw new Error(chain.length === 0
+          ? `role "${role.id}" has no fallback model configured; configure fallback routes first`
+          : `role "${role.id}" has ${chain.length} fallback route(s); index ${index} is out of range`)
+      }
       const route = args.route === 'fallback'
-        ? { label: 'fallback', provider: role.fallbackProvider ?? '', model: role.fallbackModel ?? '', reasoningEffort: role.fallbackReasoningEffort }
+        ? { label: 'fallback', fallbackIndex: index, ...chain[index] }
         : { label: 'primary', provider: role.provider, model: role.model, reasoningEffort: role.reasoningEffort }
       if (route.provider === '' || route.model === '') {
-        throw new Error(args.route === 'fallback'
-          ? `role "${role.id}" has no fallback model configured; set fallbackProvider and fallbackModel first`
-          : `role "${role.id}" has no explicit primary model (it inherits the Session route); configure provider and model first`)
+        throw new Error(`role "${role.id}" has no explicit primary model (it inherits the Session route); configure provider and model first`)
       }
       const handleKey = `${membership.root.id}:${target.name}`
       const routeValue = modelSelection(route)
@@ -842,7 +878,15 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
       // a dormant member has no live handle and the override is what installMember
       // applies when the continue message wakes it.
       const overrides = memberRouteOverrides
-      if (overrides !== undefined) overrides.set(handleKey, { ...routeValue, route: route.label, via: 'lead', at: Date.now() })
+      if (overrides !== undefined) {
+        overrides.set(handleKey, {
+          ...routeValue,
+          route: route.label,
+          ...(route.fallbackIndex === undefined ? {} : { fallbackIndex: route.fallbackIndex }),
+          via: 'lead',
+          at: Date.now(),
+        })
+      }
       const agent = memberAgents.get(handleKey)
       let applied = 'pending-activation'
       if (agent !== undefined) {
@@ -854,9 +898,10 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
           throw new Error(`cannot switch the model of "${target.name}": ${error.message}`)
         }
       }
+      const routeName = route.fallbackIndex === undefined ? route.label : `${route.label} #${route.fallbackIndex + 1}`
       const text = typeof args.message === 'string' && args.message.trim() !== ''
         ? args.message.trim()
-        : `Your model route is now ${route.provider}/${route.model}. Continue the task you were working on from where you stopped; do not restart it.`
+        : `Your model route is now ${routeName} (${route.provider}/${route.model}). Continue the task you were working on from where you stopped; do not restart it.`
       try {
         await ctx.agentTeams.sendMessage(caller, {
           target: target.name,
@@ -875,6 +920,7 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
         model: route.model,
         messageSent: true,
         applied,
+        ...(route.fallbackIndex === undefined ? {} : { fallbackIndex: route.fallbackIndex }),
       }
     },
   })

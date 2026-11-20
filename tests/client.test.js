@@ -615,17 +615,29 @@ test('after a save the host-returned gates become the local baseline (v5 R4)', a
   assert.doesNotMatch(textOf(await mounted.harness.render(mounted.page)), /saveFailed/)
 })
 
-test('primary and fallback efforts are edited independently', async () => {
+test('fallback chain rows edit their own model and effort', async () => {
   const harness = createReactHarness()
-  const dev = { id: 'dev', name: 'DEV', provider: 'p', model: 'main', reasoningEffort: 'high', fallbackProvider: 'p', fallbackModel: 'backup', fallbackReasoningEffort: 'low' }
+  const dev = {
+    id: 'dev', name: 'DEV', provider: 'p', model: 'main', reasoningEffort: 'high',
+    fallbacks: [
+      { provider: 'p', model: 'backup', reasoningEffort: 'low' },
+      { provider: 'p', model: 'spare', reasoningEffort: '' },
+    ],
+  }
   const mounted = await mountSection(harness, { describe: () => namespaceView(baseValue({ roles: [dev] }), 1) })
   const rolePanel = findComponent(mounted.tree, 'RolesPanel')
   const tree = await harness.render(rolePanel.type, rolePanel.props)
   const effort = findOne(tree, node => node.type === 'select' && node.props.value === 'low')
   effort.props.onChange({ target: { value: 'medium' } })
   const updated = findComponent(await harness.render(mounted.page), 'RolesPanel').props.selected
-  assert.equal(updated.reasoningEffort, 'high')
-  assert.equal(updated.fallbackReasoningEffort, 'medium')
+  assert.equal(updated.reasoningEffort, 'high', 'the primary effort is untouched')
+  assert.deepEqual(updated.fallbacks.map(route => route.reasoningEffort), ['medium', ''])
+  assert.equal(updated.fallbackProvider, '', 'editing the chain retires the legacy single fallback')
+
+  const removed = findOne(await harness.render(rolePanel.type, { ...rolePanel.props, selected: updated }), node => node.type === 'button' && node.props['aria-label'] === 'removeFallback')
+  removed.props.onClick()
+  const after = findComponent(await harness.render(mounted.page), 'RolesPanel').props.selected
+  assert.deepEqual(after.fallbacks.map(route => route.model), ['spare'])
 })
 
 test('skill preview reveals the selected skill through the host route only on click', async (t) => {

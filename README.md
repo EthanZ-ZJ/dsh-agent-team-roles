@@ -323,9 +323,10 @@ MIT。
 
 ## 模型主备与额度耗尽
 
-每个角色可分别配置主模型与备用模型的推理强度。主模型保留原有 `reasoningEffort`；备用模型使用 `fallbackReasoningEffort`，留空则使用备用模型自己的默认强度。额度耗尽或主路由失效时的正确处置：
+每个角色可配置一个主模型和最多 8 个**备用模型**（按顺序组成备用链）。主模型与每个备用模型都可单独设置推理强度；旧的单个 `fallbackProvider`/`fallbackModel`/`fallbackReasoningEffort` 仍被兼容，等同“备用 1”。额度耗尽或主路由失效时的正确处置：
 
-1. 对 Lead 说：“把 dev 切到备用模型继续”（或 Lead 自行判断）；Lead 调用 `switch_member_model(member:"dev", route:"fallback")`。
+1. 对 Lead 说：“把 dev 切到备用模型继续”（或 Lead 自行判断）；Lead 调用 `switch_member_model(member:"dev", route:"fallback", index:0)` 指定链上的第几个备用。
+2. 自动切换同样按链推进：每轮最多切换 2 次，避免一次故障耗尽所有备用模型的额度；暂时性错误（超时、限流）仍交给宿主重试。
 2. 工具在**原成员**上重新选择模型（会话与上下文保持不变），并自动发送一条“继续”消息——不新建成员、不丢上下文。
 3. 额度恢复后：`switch_member_model(member:"dev", route:"primary")` 切回主模型，上下文照旧。
 
