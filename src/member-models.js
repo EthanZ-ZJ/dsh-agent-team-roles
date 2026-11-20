@@ -9,6 +9,11 @@
  * Pure: every dependency arrives through arguments so the view can be tested.
  */
 
+/** Build a model selection without an effort override when the model default is wanted. */
+export function modelSelection({ provider, model, reasoningEffort }) {
+  return { provider, model, ...(reasoningEffort ? { reasoningEffort } : {}) }
+}
+
 /** Whether two route descriptors name the same provider/model pair. */
 function sameRoute(left, right) {
   return left.provider === right.provider && left.model === right.model
@@ -19,7 +24,7 @@ function sameRoute(left, right) {
  *
  * @param input - { name, status, role, live?, override?, hasAgent }
  *   live: agent.model.current() result when the Agent is alive.
- *   override: { provider, model, reasoningEffort?, via, at } when a switch is pending.
+ *   override: { provider, model, reasoningEffort?, route, via, at } from a route switch.
  * @returns a serializable member view with a stable `source` label.
  */
 export function describeMember({ name, status, role, live, override, hasAgent = false }) {
@@ -31,15 +36,18 @@ export function describeMember({ name, status, role, live, override, hasAgent = 
   const fallback = {
     provider: role?.fallbackProvider ?? '',
     model: role?.fallbackModel ?? '',
-    reasoningEffort: primary.reasoningEffort,
+    reasoningEffort: role?.fallbackReasoningEffort ?? '',
   }
+  const overrideSource = override?.route === 'primary'
+    ? 'primary'
+    : override?.via === 'auto' ? 'fallback-auto' : 'fallback-manual'
   const fromOverride = override === undefined
     ? undefined
     : {
         provider: override.provider ?? '',
         model: override.model ?? '',
         reasoningEffort: override.reasoningEffort ?? '',
-        via: override.via === 'auto' ? 'fallback-auto' : 'fallback-manual',
+        source: overrideSource,
         at: typeof override.at === 'number' ? override.at : 0,
       }
   let route
@@ -51,12 +59,18 @@ export function describeMember({ name, status, role, live, override, hasAgent = 
       model: live.model ?? '',
       reasoningEffort: live.reasoningEffort ?? '',
     }
-    if (sameRoute(route, primary) && route.provider !== '') source = 'primary'
-    else if (sameRoute(route, fallback) && route.provider !== '') source = fromOverride?.via ?? 'fallback-manual'
-    else source = 'session'
+    const matchesPrimary = route.provider !== '' && sameRoute(route, primary)
+    const matchesFallback = route.provider !== '' && sameRoute(route, fallback)
+    if (fromOverride && sameRoute(route, fromOverride) && route.reasoningEffort === fromOverride.reasoningEffort) {
+      source = fromOverride.source
+    } else if (matchesFallback && (!matchesPrimary || (
+      route.reasoningEffort === fallback.reasoningEffort && route.reasoningEffort !== primary.reasoningEffort
+    ))) {
+      source = 'fallback-manual'
+    } else source = matchesPrimary ? 'primary' : 'session'
   } else if (fromOverride !== undefined) {
     route = fromOverride
-    source = fromOverride.via
+    source = fromOverride.source
     pending = true
   } else {
     route = primary

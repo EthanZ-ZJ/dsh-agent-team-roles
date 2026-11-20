@@ -26,6 +26,7 @@ export const GENERAL_ROLE = Object.freeze({
   provider: '',
   model: '',
   reasoningEffort: '',
+  fallbackReasoningEffort: '',
   toolMode: 'all',
   tools: [],
   skills: [],
@@ -61,6 +62,7 @@ export function normalizeRole(input) {
     reasoningEffort: text(role.reasoningEffort),
     fallbackProvider: text(role.fallbackProvider),
     fallbackModel: text(role.fallbackModel),
+    fallbackReasoningEffort: text(role.fallbackReasoningEffort),
     toolMode,
     tools: toolMode === 'custom' && Array.isArray(role.tools)
       ? [...new Set(role.tools.map(text).filter(Boolean))]

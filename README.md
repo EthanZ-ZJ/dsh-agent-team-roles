@@ -209,9 +209,6 @@ Team Lead（且 Team Lead 预设会话）可用：
 |---|---|---|
 | denyCommands | 无条件：命令匹配即拒 | 角色字段 |
 | gates | 有状态：缺少合格事件才拒 | Config.gates（设置页保存或模板 apply 写入） |
-| 解析请求 | 一次性的自然语言描述 | Config.gateParseRequest（volatile，解析完成即清空） |
-| 解析结果 | 解析草稿，供设置页回填 | Config.gateParseResult（volatile，展示期 10 分钟） |
-| 解析审计 | 精确模型输入/输出 | `$DSH_HOME/agent-team-roles/gate-parse-audit.jsonl`（>1 MiB 轮转） |
 
 ### 已知限制
 
@@ -223,27 +220,7 @@ Team Lead（且 Team Lead 预设会话）可用：
 - **自动豁免（roster 感知）**：钥匙产出角色在当前团队 roster 中没有任何存活成员时，该 gate 视为"不适用"而整体放行（含 deny）——没拉 CR 的会话不会被检视闸门卡死；拉入 CR 后立即恢复强制。`/team-gates status` 会显示 `inapplicable`。
 - **作废粒度**：事件不携带工具信息，`invalidateOn` 命中即清空整个团队的事件桶。
 - **空配置零行为**：`gates` 为空时 pre/post-execute 监听器立即返回，不引入可感知开销。
-- **解析事件兜底**：宿主以 `settings/document-updated` 事件为主路径；事件丢失时客户端在 thinking 期间每 2 秒重读一次配置作为兜底，超时 90 秒后提示重试；超时/取消会清空请求与结果并停轮询。宿主日志与审计行以 `started via event|poll`（审计字段 `source`）标注实际路径。
-- **解析结果保留窗口**：`gateParseResult` 不会自动清理，会留在 profile 配置中直到下一次请求、已采用后的保存或用户点「忽略」；设置页只展示 `completedAt` 在 10 分钟内的结果，过期需重新解析。
-- **旧 Host 降级**：若运行中的宿主版本没有 `gateParseRequest`/`gateParseResult` 字段，设置页会禁用「用自然语言新增」（`gateAiUnavailable`），手动新增/编辑/保存路径不受影响。
 - **读侧自检**：配置里存在评估器会静默跳过的 gate（非法字段、重复 id）时，宿主在 pre/post-execute 读取侧每 id 每进程 warn 一次，但不阻断调用（fail-open）。
-
-### 用自然语言创建闸门（设置页）
-
-设置 → Agent 团队角色 → 引擎 → 工序闸门 →「用自然语言新增」：输入一句描述，例如
-「dev 提交前必须由 cr 检视批准，dev 再改代码就失效」，点「解析」。
-
-1. 客户端把描述写入本插件 Config 的 `gateParseRequest`（volatile），宿主收到 `settings/document-updated` 后用**部署默认模型**（`agentDefaultModel`）做一次辅助请求；没有默认模型时返回 `no-route`，可继续用手动表单。
-2. 宿主把结构化结果写回 `gateParseResult` 并**原子清空请求字段**；结果只回填到设置页的本地列表，点顶部「保存」才写入 `gates`。
-3. 解析结果最多 5 条、展示期 10 分钟；点「采用 / 全部采用」进入本地草稿，可再编辑；「忽略」只丢弃该条预览。
-
-**数据与隐私**：
-
-- 用户原文会短暂写入 profile 配置的 `gateParseRequest.text`，解析完成后立即清空；`gateParseResult` 不含原文。
-- 宿主把这次辅助请求的**精确输入/输出**追加到 `$DSH_HOME/agent-team-roles/gate-parse-audit.jsonl`（本地文件，超过 1 MiB 轮转到 `gate-parse-audit.1.jsonl`），与 session 日志同一信任边界；如不需要该审计记录，可在解析后自行删除。
-- 解析请求/结果都是惰性数据：不执行命令、不改角色、不写入 `gates`；角色引用必须是当前角色目录中的 id，且不允许 `lead`。
-
-契约与边界（错误码、字段、TTL、提示词）见 [`docs/gates-nl-ui-contract.md`](docs/gates-nl-ui-contract.md)。
 
 ## 面向 Agent 的工具
 
@@ -346,7 +323,7 @@ MIT。
 
 ## 模型主备与额度耗尽
 
-每个角色可配置一个**备用模型**（`fallbackProvider` / `fallbackModel`，设置页“备用模型”下拉；成对配置）。额度耗尽或主路由失效时的正确处置：
+每个角色可分别配置主模型与备用模型的推理强度。主模型保留原有 `reasoningEffort`；备用模型使用 `fallbackReasoningEffort`，留空则使用备用模型自己的默认强度。额度耗尽或主路由失效时的正确处置：
 
 1. 对 Lead 说：“把 dev 切到备用模型继续”（或 Lead 自行判断）；Lead 调用 `switch_member_model(member:"dev", route:"fallback")`。
 2. 工具在**原成员**上重新选择模型（会话与上下文保持不变），并自动发送一条“继续”消息——不新建成员、不丢上下文。

@@ -144,12 +144,19 @@ test('role tools delegate to the agentTeamRoles service', async () => {
     roles: { read: () => [GENERAL_ROLE] },
   })
   const list = tools.lead.find((tool) => tool.name === 'list_team_roles')
-  assert.equal((await list.execute({}, {})).roles[0].id, 'general')
+  const listed = (await list.execute({}, {})).roles[0]
+  assert.equal(listed.id, 'general')
+  assert.equal(listed.fallbackReasoningEffort, '')
 
   const create = tools.lead.find((tool) => tool.name === 'create_team_role')
-  const created = await create.execute({ id: 'reviewer', name: 'Reviewer' }, {})
+  const created = await create.execute({ id: 'reviewer', name: 'Reviewer', reasoningEffort: 'high', fallbackReasoningEffort: 'low' }, {})
   assert.equal(created.role.id, 'reviewer')
   assert.equal(created.role.name, 'Reviewer')
+  assert.equal(created.role.reasoningEffort, 'high')
+  assert.equal(created.role.fallbackReasoningEffort, 'low')
+  const update = tools.lead.find((tool) => tool.name === 'update_team_role')
+  assert.equal(update.parameters.properties.fallbackReasoningEffort.type, 'string')
+  assert.equal((await update.execute({ id: 'reviewer', fallbackReasoningEffort: 'medium' }, {})).role.fallbackReasoningEffort, 'medium')
 })
 
 test('the role service must be available for role tools', async () => {
@@ -228,7 +235,7 @@ test('switch_member_model re-selects the fallback route in place and sends a con
     snapshots: { get: () => ({ roleId: 'dev' }) },
     rules: { list: () => [], add: async () => { throw new Error('not used') }, forget: async () => false },
     roles: {
-      read: () => [{ ...GENERAL_ROLE, id: 'dev', name: 'DEV', provider: 'p1', model: 'm1', fallbackProvider: 'p2', fallbackModel: 'm2' }],
+      read: () => [{ ...GENERAL_ROLE, id: 'dev', name: 'DEV', provider: 'p1', model: 'm1', reasoningEffort: 'high', fallbackProvider: 'p2', fallbackModel: 'm2', fallbackReasoningEffort: 'low' }],
     },
     memberAgents: new Map([['root-1:dev', { model: { select: (route) => selected.push(route) } }]]),
   })
@@ -236,10 +243,11 @@ test('switch_member_model re-selects the fallback route in place and sends a con
   const result = await tool.execute({ member: 'dev', route: 'fallback' }, { agent: { id: 'root-1' } })
   assert.deepEqual(result, { member: 'dev', route: 'fallback', provider: 'p2', model: 'm2', messageSent: true, applied: 'live' })
   assert.equal(selected.length, 1)
-  assert.equal(selected[0].provider, 'p2')
-  assert.equal(selected[0].model, 'm2')
+  assert.deepEqual(selected[0], { provider: 'p2', model: 'm2', reasoningEffort: 'low' })
   assert.equal(sent.length, 1)
   assert.equal(sent[0].target, 'dev')
+  await tool.execute({ member: 'dev', route: 'primary' }, { agent: { id: 'root-1' } })
+  assert.deepEqual(selected[1], { provider: 'p1', model: 'm1', reasoningEffort: 'high' })
 })
 
 test('switch_member_model works on a dormant member through the route override', async () => {
@@ -257,7 +265,7 @@ test('switch_member_model works on a dormant member through the route override',
     snapshots: { get: () => ({ roleId: 'dev' }) },
     rules: { list: () => [], add: async () => { throw new Error('not used') }, forget: async () => false },
     roles: {
-      read: () => [{ ...GENERAL_ROLE, id: 'dev', name: 'DEV', provider: 'p1', model: 'm1', fallbackProvider: 'p2', fallbackModel: 'm2' }],
+      read: () => [{ ...GENERAL_ROLE, id: 'dev', name: 'DEV', provider: 'p1', model: 'm1', reasoningEffort: 'high', fallbackProvider: 'p2', fallbackModel: 'm2', fallbackReasoningEffort: '' }],
     },
     memberAgents: new Map(),
     memberRouteOverrides: overrides,
@@ -268,7 +276,7 @@ test('switch_member_model works on a dormant member through the route override',
   assert.equal(result.provider, 'p2')
   assert.deepEqual(
     { ...overrides.get('root-1:dev'), at: 0 },
-    { provider: 'p2', model: 'm2', via: 'lead', at: 0 },
+    { provider: 'p2', model: 'm2', route: 'fallback', via: 'lead', at: 0 },
   )
   assert.equal(sent.length, 1)
 })

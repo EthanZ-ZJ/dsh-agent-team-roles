@@ -8,6 +8,7 @@
  */
 
 import { findRole, mergeRoles, roleForTarget } from './config.js'
+import { modelSelection } from './member-models.js'
 import { ruleView } from './rules.js'
 import { spawnRoleMember } from './spawn.js'
 import {
@@ -193,6 +194,7 @@ const ROLE_VIEW = {
     reasoningEffort: { type: 'string', required: true },
     fallbackProvider: { type: 'string', required: true },
     fallbackModel: { type: 'string', required: true },
+    fallbackReasoningEffort: { type: 'string', required: true },
     toolMode: { type: 'string', required: true },
     tools: { type: 'array', required: true, items: { type: 'string' } },
     skills: { type: 'array', required: true, items: { type: 'string' } },
@@ -224,6 +226,7 @@ async function roleView(role) {
     reasoningEffort: role.reasoningEffort,
     fallbackProvider: role.fallbackProvider ?? '',
     fallbackModel: role.fallbackModel ?? '',
+    fallbackReasoningEffort: role.fallbackReasoningEffort ?? '',
     toolMode: role.toolMode,
     tools: [...role.tools],
     skills: [...role.skills],
@@ -561,6 +564,7 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
     reasoningEffort: { type: 'string', description: 'Reasoning effort; empty keeps the adapter default.' },
     fallbackProvider: { type: 'string', description: 'Fallback LLM provider used when the primary route is unavailable; empty means no fallback.' },
     fallbackModel: { type: 'string', description: 'Fallback model id; must be configured together with fallbackProvider.' },
+    fallbackReasoningEffort: { type: 'string', description: 'Reasoning effort for the fallback model; empty uses that model’s default.' },
     toolMode: {
       type: 'string',
       enum: ['all', 'custom'],
@@ -825,24 +829,20 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
       const role = snapshot === undefined ? roleForTarget(catalog, target.name) : findRole(catalog, snapshot.roleId)
       if (role === undefined) throw new Error(`cannot resolve the configured role of "${target.name}"`)
       const route = args.route === 'fallback'
-        ? { label: 'fallback', provider: role.fallbackProvider ?? '', model: role.fallbackModel ?? '' }
-        : { label: 'primary', provider: role.provider, model: role.model }
+        ? { label: 'fallback', provider: role.fallbackProvider ?? '', model: role.fallbackModel ?? '', reasoningEffort: role.fallbackReasoningEffort }
+        : { label: 'primary', provider: role.provider, model: role.model, reasoningEffort: role.reasoningEffort }
       if (route.provider === '' || route.model === '') {
         throw new Error(args.route === 'fallback'
           ? `role "${role.id}" has no fallback model configured; set fallbackProvider and fallbackModel first`
           : `role "${role.id}" has no explicit primary model (it inherits the Session route); configure provider and model first`)
       }
       const handleKey = `${membership.root.id}:${target.name}`
-      const routeValue = {
-        provider: route.provider,
-        model: route.model,
-        ...(role.reasoningEffort === '' ? {} : { reasoningEffort: role.reasoningEffort }),
-      }
+      const routeValue = modelSelection(route)
       // Persist the override first: a member Agent is disposed between turns, so
       // a dormant member has no live handle and the override is what installMember
       // applies when the continue message wakes it.
       const overrides = memberRouteOverrides
-      if (overrides !== undefined) overrides.set(handleKey, { ...routeValue, via: 'lead', at: Date.now() })
+      if (overrides !== undefined) overrides.set(handleKey, { ...routeValue, route: route.label, via: 'lead', at: Date.now() })
       const agent = memberAgents.get(handleKey)
       let applied = 'pending-activation'
       if (agent !== undefined) {

@@ -17,6 +17,13 @@ test('normalizeRole fills defaults and trims fields', () => {
   assert.deepEqual(role.tools, [])
 })
 
+test('fallback effort is trimmed independently and defaults to empty for legacy roles', () => {
+  const role = normalizeRole({ id: 'dev', reasoningEffort: ' high ', fallbackReasoningEffort: ' low ' })
+  assert.equal(role.reasoningEffort, 'high')
+  assert.equal(role.fallbackReasoningEffort, 'low')
+  assert.equal(normalizeRole({ id: 'dev', reasoningEffort: 'high' }).fallbackReasoningEffort, '')
+})
+
 test('mergeRoles always exposes the general fallback', () => {
   const roles = mergeRoles([{ id: 'reviewer', name: 'Reviewer' }])
   assert.deepEqual(roles.map((role) => role.id), ['general', 'reviewer'])

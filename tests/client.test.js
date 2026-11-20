@@ -3,17 +3,15 @@
  *
  * `client.js` is a browser bundle, but its factory is a plain function: this
  * file loads it with a tiny React-hook runtime and a fake settings Remote. That
- * makes the client behaviours the contract calls out for TSE (cr #11/#17, R1)
+ * makes settings and manual gate behavior
  * unit-testable without a DOM or the running GUI.
  */
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { normalizeGate, validateGate } from '../src/gates.js'
 
 const clientSrc = fs.readFileSync(new URL('../client.js', import.meta.url), 'utf8')
-const contractSrc = fs.readFileSync(new URL('../docs/gates-nl-ui-contract.md', import.meta.url), 'utf8')
 
 const NS = 'agent-team-roles'
 
@@ -73,36 +71,6 @@ function extractFunction(name) {
     }
   }
   return undefined
-}
-
-/** Read one top-level object literal and evaluate it. */
-function extractObjectLiteral(marker) {
-  const markerAt = clientSrc.indexOf(marker)
-  assert.ok(markerAt >= 0, `client.js must contain ${marker}`)
-  const braceAt = clientSrc.indexOf('{', markerAt)
-  let depth = 0
-  let quote = null
-  for (let index = braceAt; index < clientSrc.length; index += 1) {
-    const char = clientSrc[index]
-    if (quote !== null) {
-      if (char === '\\') {
-        index += 1
-        continue
-      }
-      if (char === quote) quote = null
-      continue
-    }
-    if (char === "'" || char === '"' || char === '`') {
-      quote = char
-      continue
-    }
-    if (char === '{') depth += 1
-    else if (char === '}') {
-      depth -= 1
-      if (depth === 0) return new Function(`return ${clientSrc.slice(braceAt, index + 1)}`)()
-    }
-  }
-  assert.fail(`unterminated object literal after ${marker}`)
 }
 
 /** Extract the factory body and instantiate it with a React stub. */
@@ -300,7 +268,7 @@ function namespaceView(value, revision = 3, writable = true) {
   }
 }
 
-function createClientContext({ describe, mutate }) {
+function createClientContext({ describe, mutate, session }) {
   const registrations = []
   const state = { describeCalls: 0, mutateCalls: [], eventHandlers: [] }
   const ctx = {
@@ -320,6 +288,7 @@ function createClientContext({ describe, mutate }) {
       return () => {}
     },
     remote: {
+      session,
       settings: {
         describe: async () => {
           state.describeCalls += 1
@@ -351,7 +320,7 @@ async function mountSection(harness, remoteOptions) {
   return { ...environment, tree, page, harness }
 }
 
-/** View objects shared by the old-Host and R1 scenarios. */
+/** View objects shared by settings scenarios. */
 function baseValue(overrides = {}) {
   return {
     roles: [{ id: 'general', name: 'General', description: '' }],
@@ -375,56 +344,60 @@ async function openEngineTab(mounted) {
 }
 
 // ---------------------------------------------------------------------------
-// cr #17: old Host without the parse fields
-// ---------------------------------------------------------------------------
-
-test('old Host without gateParse fields: settings page mounts, manual create/save still works (cr #17)', async () => {
-  const harness = createReactHarness()
-  const mounted = await mountSection(harness, {
-    describe: () => namespaceView(baseValue({ gates: [VALID_GATE], gatesDisabled: [] }), 5),
-    mutate: () => namespaceView(baseValue({ gates: [VALID_GATE], gatesDisabled: [] }), 6),
-  })
-  const { engine, panel } = await openEngineTab(mounted)
-
-  // GatesPanel renders both entries; EnginePanel only hosts it, so render it.
-  const gatesPanel = findComponent(panel, 'GatesPanel')
-  const gatesTree = await mounted.harness.render(gatesPanel.type, gatesPanel.props)
-
-  // The manual entry and the natural-language entry both render; neither reads
-  // a parse field that a legacy Host would not send.
-  assert.ok(findAll(gatesTree, (element) => element.type === 'button' && textOf(element) === 'gateAdd').length >= 1)
-  const entryKey = [...contractSrc.matchAll(/^\|\s*`(gateAi[A-Za-z0-9]+)`\s*\|[^|]*\|([^|]*)\|/gm)]
-    .find((match) => match[2].includes('用自然语言新增'))?.[1]
-  assert.ok(entryKey, 'the contract §10 must define the natural-language entry key')
-  assert.equal(
-    findAll(gatesTree, (element) => element.type === 'button' && textOf(element) === entryKey).length,
-    1,
-    `the natural-language entry (${entryKey}) must render on the manual path`,
-  )
-
-  // The stored gate is still displayed through the manual path.
-  const card = findOne(
-    gatesTree,
-    (element) => element.props?.gate?.id === 'manual-gate',
-    'the legacy gate must be rendered by the manual gate list',
-  )
-  assert.ok(card)
-
-  // Saving from the manual path must not require the parse fields.
-  const saveButton = findButton(panel, 'save')
-  await saveButton.props.onClick()
-  const afterSaveTree = await mounted.harness.render(mounted.page)
-  assert.equal(mounted.state.mutateCalls.length, 1)
-  const ops = mounted.state.mutateCalls[0][1]
-  assert.ok(ops.some((op) => op.path[0] === 'gates'), 'the manual save still writes gates')
-  assert.ok(!ops.some((op) => op.path[0] === 'gateParseRequest'), 'no parse request is written by a manual save')
-  assert.ok(!ops.some((op) => op.path[0] === 'gateParseResult'), 'no parse result is cleared by a manual save')
-  assert.ok(engine)
-})
-
-// ---------------------------------------------------------------------------
 // cr #11: revision refresh and conflict-code recognition
 // ---------------------------------------------------------------------------
+
+test('manually adding and editing a gate stays local until engine save', async () => {
+  let hostValue = baseValue({ gates: [VALID_GATE] })
+  const harness = createReactHarness()
+  const mounted = await mountSection(harness, {
+    describe: () => namespaceView(hostValue, 5),
+    mutate: () => {
+      const ops = mounted.state.mutateCalls.at(-1)[1]
+      hostValue = { ...hostValue, gates: ops.find((op) => op.path[0] === 'gates').value }
+      return namespaceView(hostValue, 6)
+    },
+  })
+  await openEngineTab(mounted)
+
+  const renderGates = async () => {
+    const { panel } = await renderEngine(mounted)
+    const gates = findComponent(panel, 'GatesPanel')
+    return harness.render(gates.type, gates.props)
+  }
+  const renderForm = async () => {
+    const form = findComponent(await renderGates(), 'GateForm')
+    return harness.render(form.type, form.props)
+  }
+  const setField = async (key, value) => {
+    const label = findOne(await renderForm(), (element) => element.type === 'label' && element.props?.key === key)
+    findOne(label, (element) => element.type === 'input').props.onChange({ target: { value } })
+  }
+
+  const list = await renderGates()
+  assert.deepEqual(findAll(list, (element) => element.type === 'button').map(textOf), ['gateAdd'])
+  findButton(list, 'gateAdd').props.onClick()
+  await setField('id', VALID_GATE_2.id)
+  await setField('denyRole', VALID_GATE_2.deny.role)
+  await setField('denyTools', VALID_GATE_2.deny.tool.join(', '))
+  await setField('event', VALID_GATE_2.require.event)
+  await setField('byRoles', VALID_GATE_2.require.byRoles.join(', '))
+  findButton(await renderForm(), 'gateFormSave').props.onClick()
+
+  const card = findOne(await renderGates(), (element) => element.props?.gate?.id === VALID_GATE_2.id)
+  const cardTree = await harness.render(card.type, card.props)
+  findButton(cardTree, 'gateEdit').props.onClick()
+  await setField('desc', VALID_GATE_2.description)
+  findButton(await renderForm(), 'gateFormSave').props.onClick()
+  assert.equal(mounted.state.mutateCalls.length, 0)
+
+  const { panel } = await renderEngine(mounted)
+  await findButton(await mounted.harness.render(mounted.page), 'save').props.onClick()
+  assert.equal(mounted.state.mutateCalls.length, 1)
+  const ops = mounted.state.mutateCalls[0][1]
+  assert.deepEqual(ops.map((op) => op.path[0]), ['leadPlaybook', 'activeTemplate', 'freshProvider', 'forkProvider', 'gates', 'gatesDisabled'])
+  assert.deepEqual(hostValue.gates, [VALID_GATE, VALID_GATE_2])
+})
 
 test('writeNamespaceFields surfaces the settings error code (cr #11)', async () => {
   const source = extractFunction('writeNamespaceFields')
@@ -449,10 +422,10 @@ test('writeNamespaceFields surfaces the settings error code (cr #11)', async () 
 
 test('every namespace mutation refreshes the revision (cr #11)', () => {
   const writes = [...clientSrc.matchAll(/await\s+writeNamespace(?:Fields)?\(/g)].map((match) => match.index)
-  assert.ok(writes.length >= 4, `expected several mutate call sites, found ${writes.length}`)
+  assert.ok(writes.length >= 3, `expected several mutate call sites, found ${writes.length}`)
   for (const at of writes) {
     const window = clientSrc.slice(at, at + 900)
-    assert.match(window, /setRevision|refreshParseAndRevision/, 'a mutate must be followed by a revision refresh')
+    assert.match(window, /setRevision|refreshRevision/, 'a mutate must be followed by a revision refresh')
   }
 })
 
@@ -490,7 +463,7 @@ test('R1: a conflicting save keeps the local draft and refreshes the revision', 
 
   failWithConflict = true
   const describeBefore = mounted.state.describeCalls
-  await findButton(panelAfterEdit, 'save').props.onClick()
+  await findButton(await mounted.harness.render(mounted.page), 'save').props.onClick()
   const afterFailure = await harness.render(mounted.page)
   const engineAfterFailure = findComponent(afterFailure, 'EnginePanel')
   const panelAfterFailure = await harness.render(engineAfterFailure.type, engineAfterFailure.props)
@@ -500,7 +473,7 @@ test('R1: a conflicting save keeps the local draft and refreshes the revision', 
   )
   assert.equal(keptField.props.value, 'local-draft', 'R1: the failed save must not overwrite the local draft')
   assert.ok(mounted.state.describeCalls > describeBefore, 'the failure path re-reads the revision')
-  assert.match(textOf(afterFailure), /saveFailed|gateParseErrConflict|gateErrConflict/, 'a retryable error is shown')
+  assert.match(textOf(afterFailure), /saveFailed/, 'a retryable error is shown')
   assert.ok(engine)
 })
 
@@ -523,7 +496,7 @@ test('saveEngine filters gatesDisabled down to existing gate ids (R4)', async ()
     mutate: () => namespaceView(baseValue({ gates: [VALID_GATE], gatesDisabled: ['manual-gate'] }), 4),
   })
   const { panel } = await openEngineTab(mounted)
-  await findButton(panel, 'save').props.onClick()
+  await findButton(await mounted.harness.render(mounted.page), 'save').props.onClick()
   assert.equal(mounted.state.mutateCalls.length, 1)
   const ops = mounted.state.mutateCalls[0][1]
   const disabled = ops.find((op) => op.path[0] === 'gatesDisabled')
@@ -546,7 +519,7 @@ test('an untouched gates list tolerates a legacy invalid gate with a warning (R4
   )
   playbook.props.onChange({ target: { value: 'only-playbook' } })
   const { panel: editedPanel } = await renderEngine(mounted)
-  await findButton(editedPanel, 'save').props.onClick()
+  await findButton(await mounted.harness.render(mounted.page), 'save').props.onClick()
 
   assert.equal(mounted.state.mutateCalls.length, 1, 'tier 1: an untouched gates list must not block the save')
   const ops = mounted.state.mutateCalls[0][1]
@@ -555,7 +528,7 @@ test('an untouched gates list tolerates a legacy invalid gate with a warning (R4
   const after = await mounted.harness.render(mounted.page)
   const text = textOf(after)
   assert.doesNotMatch(text, /saveFailed/, 'the save succeeds')
-  assert.match(text, /gateParseErrLegacyGate|legacy-broken/, 'the legacy gate is surfaced as a warning')
+  assert.match(text, /gateErrLegacyGate|legacy-broken/, 'the legacy gate is surfaced as a warning')
 })
 
 test('editing the gates list rejects a legacy invalid gate before mutating (R4 tier 2)', async () => {
@@ -571,13 +544,13 @@ test('editing the gates list rejects a legacy invalid gate before mutating (R4 t
   const gatesPanel = findComponent(panel, 'GatesPanel')
   gatesPanel.props.onChange({ gates: [LEGACY_INVALID_GATE, VALID_GATE_2] })
   const { panel: editedPanel } = await renderEngine(mounted)
-  await findButton(editedPanel, 'save').props.onClick()
+  await findButton(await mounted.harness.render(mounted.page), 'save').props.onClick()
 
   assert.equal(mounted.state.mutateCalls.length, 0, 'tier 2: a touched gates list must be fully validated')
   const after = await mounted.harness.render(mounted.page)
   const text = textOf(after)
-  assert.match(text, /gateParseErrLegacyGate/, 'the offending legacy gate is named')
-  assert.match(text, /gateErrDenyRole|gateParseValidate/, 'the error explains why the gate is invalid')
+  assert.match(text, /gateErrLegacyGate/, 'the offending legacy gate is named')
+  assert.match(text, /gateErrDenyRole/, 'the error explains why the gate is invalid')
 })
 
 test('a duplicate gate id in the save set is rejected (R4 id-set check)', async () => {
@@ -592,330 +565,10 @@ test('a duplicate gate id in the save set is rejected (R4 id-set check)', async 
   const gatesPanel = findComponent(panel, 'GatesPanel')
   gatesPanel.props.onChange({ gates: [VALID_GATE, { ...VALID_GATE }] })
   const { panel: editedPanel } = await renderEngine(mounted)
-  await findButton(editedPanel, 'save').props.onClick()
+  await findButton(await mounted.harness.render(mounted.page), 'save').props.onClick()
   assert.equal(mounted.state.mutateCalls.length, 0, 'duplicate ids must not reach mutate')
   const text = textOf(await mounted.harness.render(mounted.page))
-  assert.match(text, /gateParseValidateDuplicate|gateParseErrLegacyGate|manual-gate/)
-})
-
-// ---------------------------------------------------------------------------
-// D8: the 90s client timeout clears the handshake fields
-// ---------------------------------------------------------------------------
-
-function withFakeTimers() {
-  const real = {
-    setTimeout: globalThis.setTimeout,
-    setInterval: globalThis.setInterval,
-    clearTimeout: globalThis.clearTimeout,
-    clearInterval: globalThis.clearInterval,
-  }
-  const timeouts = []
-  const intervals = []
-  globalThis.setTimeout = (callback, ms, ...args) => {
-    const handle = { callback, ms, args, cleared: false }
-    timeouts.push(handle)
-    return handle
-  }
-  globalThis.setInterval = (callback, ms, ...args) => {
-    const handle = { callback, ms, args, cleared: false }
-    intervals.push(handle)
-    return handle
-  }
-  globalThis.clearTimeout = (handle) => {
-    if (handle !== null && typeof handle === 'object') handle.cleared = true
-  }
-  globalThis.clearInterval = (handle) => {
-    if (handle !== null && typeof handle === 'object') handle.cleared = true
-  }
-  return {
-    timeouts,
-    intervals,
-    restore() {
-      globalThis.setTimeout = real.setTimeout
-      globalThis.setInterval = real.setInterval
-      globalThis.clearTimeout = real.clearTimeout
-      globalThis.clearInterval = real.clearInterval
-    },
-  }
-}
-
-test('the 90s client timeout clears the pending request and result (D8)', async () => {
-  const fake = withFakeTimers()
-  try {
-    const pendingRequest = { nonce: 'pending-9', text: 'pending requirement', at: Date.now() }
-    const emptyResult = { nonce: '', status: '', gates: [], note: '', warnings: [], code: '', detail: '', completedAt: 0 }
-    let mutateCalls = 0
-    const harness = createReactHarness()
-    const mounted = await mountSection(harness, {
-      describe: () => namespaceView(baseValue({
-        gateParseRequest: pendingRequest,
-        gateParseResult: emptyResult,
-      }), 2),
-      mutate: () => {
-        mutateCalls += 1
-        return namespaceView(baseValue({
-          gateParseRequest: { nonce: '', text: '', at: 0 },
-          gateParseResult: emptyResult,
-        }), 3)
-      },
-    })
-    assert.ok(mounted)
-
-    const timeout = fake.timeouts.find((handle) => handle.ms === 90_000)
-    assert.ok(timeout, 'a 90s timer must be armed while a parse is pending')
-    await timeout.callback()
-    await harness.render(mounted.page)
-    await Promise.resolve()
-
-    assert.equal(mutateCalls, 1, 'the timeout performs one cleanup mutate')
-    const ops = mounted.state.mutateCalls[0][1]
-    const requestOp = ops.find((op) => op.path[0] === 'gateParseRequest')
-    const resultOp = ops.find((op) => op.path[0] === 'gateParseResult')
-    assert.ok(requestOp, 'the timed-out request is cleared')
-    assert.equal(requestOp.value.nonce, '')
-    assert.ok(resultOp, 'the stale result slot is cleared too')
-    assert.equal(resultOp.value.status, '')
-  } finally {
-    fake.restore()
-  }
-})
-
-test('the 90s timeout leaves a readable error state, not a silent idle (v5)', async () => {
-  const fake = withFakeTimers()
-  try {
-    const pendingRequest = { nonce: 'pending-err', text: 'pending requirement', at: Date.now() }
-    const emptyResult = { nonce: '', status: '', gates: [], note: '', warnings: [], code: '', detail: '', completedAt: 0 }
-    const harness = createReactHarness()
-    const mounted = await mountSection(harness, {
-      describe: () => namespaceView(baseValue({
-        gateParseRequest: pendingRequest,
-        gateParseResult: emptyResult,
-      }), 2),
-      mutate: () => namespaceView(baseValue({
-        gateParseRequest: { nonce: '', text: '', at: 0 },
-        gateParseResult: emptyResult,
-      }), 3),
-    })
-    const timeout = fake.timeouts.find((handle) => handle.ms === 90_000)
-    assert.ok(timeout, 'a 90s timer must be armed while a parse is pending')
-    await timeout.callback()
-    const pageTree = await harness.render(mounted.page)
-    await Promise.resolve()
-
-    const { panel } = await renderEngine(mounted)
-    const gatesPanel = findComponent(panel, 'GatesPanel')
-    const gatesTree = await harness.render(gatesPanel.type, gatesPanel.props)
-    const text = `${textOf(pageTree)}\n${textOf(gatesTree)}`
-    assert.match(text, /gateAiThinkingTimeout|gateParseErrTimeout/, 'the user must see a readable timeout error')
-    assert.match(text, /gateAdd|gateParseManual/, 'a manual fallback must remain available')
-  } finally {
-    fake.restore()
-  }
-})
-
-const EMPTY_RESULT = {
-  nonce: '',
-  status: '',
-  gates: [],
-  note: '',
-  warnings: [],
-  code: '',
-  detail: '',
-  completedAt: 0,
-}
-
-async function gatesPanelWith({ resultGates = [], gates = [], overrides = {} } = {}) {
-  const harness = createReactHarness()
-  const mounted = await mountSection(harness, {
-    describe: () => namespaceView(baseValue(), 2),
-    mutate: () => namespaceView(baseValue(), 3),
-  })
-  const { panel } = await openEngineTab(mounted)
-  const gatesPanel = findComponent(panel, 'GatesPanel')
-  const result = {
-    ...EMPTY_RESULT,
-    nonce: 'r1',
-    status: 'ok',
-    gates: resultGates,
-    completedAt: Date.now(),
-  }
-  const pendingNonce = overrides.pendingNonce ?? 'r1'
-  const props = {
-    t: (key) => key,
-    gates,
-    disabled: [],
-    onChange: () => {},
-    parse: {
-      request: { nonce: pendingNonce, text: 'requirement', at: Date.now() },
-      result,
-    },
-    parseError: '',
-    parseTimeoutNonce: '',
-    pendingNonce,
-    writable: true,
-    parseFieldsPresent: true,
-    onStartParse: async () => {},
-    onCancelParse: async () => {},
-    onClearParseResult: async () => {},
-    onConsumeParse: () => {},
-    ...overrides,
-  }
-  const tree = await harness.render(gatesPanel.type, props)
-  return { harness, mounted, gatesPanel, tree, props }
-}
-
-const ALL_SHELL_GATE = {
-  id: 'all-shell',
-  deny: { role: 'general', tool: ['bash', 'pwsh'] },
-  require: { event: 'done', byRoles: ['checker'] },
-  description: '',
-}
-
-const REGEX_SHELL_GATE = {
-  id: 'regex-shell',
-  deny: { role: 'general', tool: ['bash', 'pwsh'], commandPattern: '^npm test$' },
-  require: { event: 'done', byRoles: ['checker'] },
-  description: '',
-}
-
-test('a whole-shell gate warns but a regex-constrained shell gate does not (v5)', async () => {
-  const wholeShell = await gatesPanelWith({ resultGates: [ALL_SHELL_GATE] })
-  assert.match(textOf(wholeShell.tree), /gateParseWarnAllShell/, 'no commandPattern + both shells must warn')
-
-  const regexShell = await gatesPanelWith({ resultGates: [REGEX_SHELL_GATE] })
-  assert.doesNotMatch(textOf(regexShell.tree), /gateParseWarnAllShell/, 'a commandPattern gate must not warn')
-})
-
-test('a self-produced key is warned for event and commandSuccess keys (v5)', async () => {
-  const eventSelfKey = await gatesPanelWith({
-    resultGates: [{
-      id: 'self-event',
-      deny: { role: 'general', tool: ['bash'] },
-      require: { event: 'done', byRoles: ['general'] },
-      description: '',
-    }],
-  })
-  assert.match(textOf(eventSelfKey.tree), /gateParseWarnSelfKey/)
-
-  const commandSelfKey = await gatesPanelWith({
-    resultGates: [{
-      id: 'self-command',
-      deny: { role: 'general', tool: ['bash'] },
-      require: { commandSuccess: { role: 'general', tool: ['pwsh'], pattern: '^npm test$' } },
-      description: '',
-    }],
-  })
-  assert.match(textOf(commandSelfKey.tree), /gateParseWarnSelfKey/)
-})
-
-test('a dangerous gate cannot be adopted before the ack is checked (v5)', async () => {
-  const adopted = []
-  const { harness, gatesPanel, tree, props } = await gatesPanelWith({
-    resultGates: [ALL_SHELL_GATE],
-    overrides: {
-      onChange: (patch) => {
-        if (Array.isArray(patch.gates)) adopted.push(patch.gates)
-      },
-    },
-  })
-  const adopt = findOne(
-    tree,
-    (element) => element.type === 'button' && textOf(element) === 'gateParseAdopt',
-    'the per-draft adopt button must render',
-  )
-  if (adopt.props.disabled !== true) await adopt.props.onClick()
-  assert.deepEqual(adopted, [], 'an unacknowledged dangerous gate must not enter engine.gates')
-
-  // After checking the ack, the same adopt action must succeed.
-  const ack = findOne(
-    tree,
-    (element) => element.type === 'input' && element.props?.type === 'checkbox',
-    'a dangerous draft needs the ack checkbox',
-  )
-  ack.props.onChange({ target: { checked: true } })
-  const ackedTree = await harness.render(gatesPanel.type, props)
-  const adoptAcked = findOne(
-    ackedTree,
-    (element) => element.type === 'button' && textOf(element) === 'gateParseAdopt',
-    'the adopt button must render after acknowledgement',
-  )
-  await adoptAcked.props.onClick()
-  assert.ok(adopted.length >= 1, 'an acknowledged dangerous gate can be adopted')
-})
-
-test('adopt-all also refuses an unacknowledged dangerous batch (v5)', async () => {
-  const adopted = []
-  const { tree } = await gatesPanelWith({
-    resultGates: [ALL_SHELL_GATE],
-    overrides: {
-      onChange: (patch) => {
-        if (Array.isArray(patch.gates)) adopted.push(patch.gates)
-      },
-    },
-  })
-  const adoptAll = findOne(
-    tree,
-    (element) => element.type === 'button' && textOf(element) === 'gateParseAdoptAll',
-    'the adopt-all button must render',
-  )
-  if (adoptAll.props.disabled !== true) await adoptAll.props.onClick()
-  assert.deepEqual(adopted, [], 'an unacknowledged dangerous batch must not be adopted')
-})
-
-test('ignoring one draft keeps the stored result (v5)', async () => {
-  let cleared = 0
-  let gateChanges = 0
-  const { tree } = await gatesPanelWith({
-    resultGates: [{
-      id: 'ignore-me',
-      deny: { role: 'general', tool: ['bash'] },
-      require: { event: 'done', byRoles: ['checker'] },
-      description: '',
-    }],
-    overrides: {
-      onClearParseResult: async () => { cleared += 1 },
-      onChange: (patch) => { if (Array.isArray(patch.gates)) gateChanges += 1 },
-    },
-  })
-  const ignore = findOne(
-    tree,
-    (element) => element.type === 'button' && textOf(element) === 'gateParseIgnore',
-    'the ignore button must render',
-  )
-  await ignore.props.onClick()
-  assert.equal(cleared, 0, 'ignoring a draft must not clear gateParseResult')
-  assert.equal(gateChanges, 0, 'ignoring a draft must not change gates')
-})
-
-test('discarding the whole result requires a confirmation and clears the field (v5)', async () => {
-  let cleared = 0
-  const { harness, gatesPanel, tree, props } = await gatesPanelWith({
-    resultGates: [{
-      id: 'discard-me',
-      deny: { role: 'general', tool: ['bash'] },
-      require: { event: 'done', byRoles: ['checker'] },
-      description: '',
-    }],
-    overrides: {
-      onClearParseResult: async () => { cleared += 1 },
-    },
-  })
-  const discard = findOne(
-    tree,
-    (element) => element.type === 'button' && textOf(element) === 'gateParseDiscardResult',
-    'the discard-result button must render',
-  )
-  await discard.props.onClick()
-  assert.equal(cleared, 0, 'discard needs a second confirmation before clearing')
-
-  const confirmTree = await harness.render(gatesPanel.type, props)
-  const confirm = findOne(
-    confirmTree,
-    (element) => element.type === 'button' && textOf(element) === 'gateParseDiscardResult',
-    'the confirm button must render after the first click',
-  )
-  await confirm.props.onClick()
-  assert.equal(cleared, 1, 'the confirmed discard clears the stored result exactly once')
+  assert.match(text, /gateErrDuplicate|gateErrLegacyGate|manual-gate/)
 })
 
 // ---------------------------------------------------------------------------
@@ -933,7 +586,7 @@ test('after a save the host-returned gates become the local baseline (v5 R4)', a
     },
   })
   const { panel } = await openEngineTab(mounted)
-  await findButton(panel, 'save').props.onClick() // gates unchanged: tier-1 save succeeds
+  await findButton(await mounted.harness.render(mounted.page), 'save').props.onClick() // gates unchanged: tier-1 save succeeds
 
   const { panel: afterSave } = await renderEngine(mounted)
   const gatesPanel = findComponent(afterSave, 'GatesPanel')
@@ -950,7 +603,7 @@ test('after a save the host-returned gates become the local baseline (v5 R4)', a
   )
   playbook.props.onChange({ target: { value: 'after-baseline' } })
   const { panel: edited } = await renderEngine(mounted)
-  await findButton(edited, 'save').props.onClick()
+  await findButton(await mounted.harness.render(mounted.page), 'save').props.onClick()
 
   assert.equal(mounted.state.mutateCalls.length, 2)
   const secondOps = mounted.state.mutateCalls[1][1]
@@ -962,166 +615,40 @@ test('after a save the host-returned gates become the local baseline (v5 R4)', a
   assert.doesNotMatch(textOf(await mounted.harness.render(mounted.page)), /saveFailed/)
 })
 
-// ---------------------------------------------------------------------------
-// v5: abandon must not write when the remote nonce already moved on
-// ---------------------------------------------------------------------------
-
-test('a 90s abandon with a mismatched remote nonce clears only local state (v5)', async () => {
-  const fake = withFakeTimers()
-  try {
-    const empty = { nonce: '', text: '', at: 0 }
-    const localRequest = { nonce: 'local-1', text: 'local requirement', at: Date.now() }
-    const remoteRequest = { nonce: 'remote-2', text: 'remote change', at: Date.now() }
-    let remoteMoved = false
-    const harness = createReactHarness()
-    const mounted = await mountSection(harness, {
-      describe: () => namespaceView(baseValue({
-        gateParseRequest: remoteMoved ? remoteRequest : localRequest,
-        gateParseResult: EMPTY_RESULT,
-      }), remoteMoved ? 6 : 2),
-      mutate: () => namespaceView(baseValue({ gateParseRequest: empty, gateParseResult: EMPTY_RESULT }), 7),
-    })
-
-    remoteMoved = true
-    const timeout = fake.timeouts.find((handle) => handle.ms === 90_000)
-    assert.ok(timeout, 'the 90s timer must be armed for the pending request')
-    await timeout.callback()
-    await harness.render(mounted.page)
-    await Promise.resolve()
-    await Promise.resolve()
-
-    assert.equal(mounted.state.mutateCalls.length, 0, 'a remote nonce mismatch must not trigger a cleanup write')
-    const text = textOf(await harness.render(mounted.page))
-    assert.doesNotMatch(text, /gateAiThinking/, 'the local thinking state is abandoned')
-  } finally {
-    fake.restore()
-  }
+test('primary and fallback efforts are edited independently', async () => {
+  const harness = createReactHarness()
+  const dev = { id: 'dev', name: 'DEV', provider: 'p', model: 'main', reasoningEffort: 'high', fallbackProvider: 'p', fallbackModel: 'backup', fallbackReasoningEffort: 'low' }
+  const mounted = await mountSection(harness, { describe: () => namespaceView(baseValue({ roles: [dev] }), 1) })
+  const rolePanel = findComponent(mounted.tree, 'RolesPanel')
+  const tree = await harness.render(rolePanel.type, rolePanel.props)
+  const effort = findOne(tree, node => node.type === 'select' && node.props.value === 'low')
+  effort.props.onChange({ target: { value: 'medium' } })
+  const updated = findComponent(await harness.render(mounted.page), 'RolesPanel').props.selected
+  assert.equal(updated.reasoningEffort, 'high')
+  assert.equal(updated.fallbackReasoningEffort, 'medium')
 })
 
-
-
-
-
-
-
-// ---------------------------------------------------------------------------
-// Schema-shaped adoption regression (commit 98f2877): the Host's Config schema
-// fills empty `commandSuccess` / `invalidateOn` objects into stored gates.
-// Adoption must canonicalize them before local validation.
-// ---------------------------------------------------------------------------
-
-const HOST_SHAPED_EVENT_GATE = {
-  id: 'tse-regression-before-dev-commit',
-  deny: { role: 'general', tool: ['bash', 'pwsh'], commandPattern: '\\bgit\\s+commit\\b' },
-  require: {
-    event: 'regression-test-passed',
-    byRoles: ['general'],
-    freshFor: 14400,
-    commandSuccess: { role: '', tool: [], pattern: '' },
-    invalidateOn: { role: 'general', tool: ['write', 'edit'] },
-  },
-  description: 'schema-default shape',
-}
-
-const HOST_SHAPED_COMMAND_GATE = {
-  id: 'tse-schema-command-shape',
-  deny: { role: 'general', tool: ['bash', 'pwsh'], commandPattern: '\\bgit\\s+commit\\b' },
-  require: {
-    event: '',
-    byRoles: [],
-    freshFor: 14400,
-    commandSuccess: { role: 'general', tool: ['pwsh'], pattern: '\\bpnpm\\s+test\\b' },
-    invalidateOn: { role: '', tool: [] },
-  },
-  description: 'schema command shape',
-}
-
-function collectGates(overrides = {}) {
-  const adopted = []
-  return {
-    adopted,
-    overrides: {
-      onChange: (patch) => {
-        if (Array.isArray(patch.gates)) adopted.push(...patch.gates)
-      },
-      ...overrides,
-    },
-  }
-}
-
-test('a schema-defaulted event gate adopts canonically and stays host-valid (98f2877)', async () => {
-  const collected = collectGates()
-  const { harness, gatesPanel, tree, props } = await gatesPanelWith({
-    resultGates: [HOST_SHAPED_EVENT_GATE],
-    overrides: collected.overrides,
+test('skill preview reveals the selected file through the native remote only on click', async (t) => {
+  const filePath = 'C:\\Team Skills\\dev\\clean-code-guard\\SKILL.md'
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    const data = url.endsWith('/dev/clean-code-guard') ? { content: '# Clean Code', filePath }
+      : url.endsWith('/dev') ? { skills: ['clean-code-guard'] } : { routes: [] }
+    return { ok: true, json: async () => data }
   })
-  const adopt = findOne(
-    tree,
-    (element) => element.type === 'button' && textOf(element) === 'gateParseAdopt',
-    'the adopt button must render',
-  )
-  assert.notEqual(adopt.props.disabled, true, 'an empty schema commandSuccess must not block adoption')
-  await adopt.props.onClick()
-
-  assert.equal(collected.adopted.length, 1)
-  const gate = collected.adopted[0]
-  assert.equal(gate.id, HOST_SHAPED_EVENT_GATE.id)
-  assert.equal('commandSuccess' in gate.require, false, 'the empty schema commandSuccess is stripped')
-  assert.equal(gate.require.event, 'regression-test-passed')
-  assert.equal(validateGate(normalizeGate(gate)), undefined, 'the adopted gate must survive a Host validate round-trip')
-
-  const after = await harness.render(gatesPanel.type, props)
-  assert.doesNotMatch(textOf(after), /gateErrInvalid|gateParseErrLegacyGate/, 'no invalid-gate error is shown')
-})
-
-test('adopt-all also accepts a schema-defaulted event gate (98f2877)', async () => {
-  const collected = collectGates()
-  const { tree } = await gatesPanelWith({
-    resultGates: [HOST_SHAPED_EVENT_GATE],
-    overrides: collected.overrides,
+  const calls = []
+  const harness = createReactHarness()
+  const dev = { id: 'dev', name: 'DEV' }
+  const mounted = await mountSection(harness, {
+    describe: () => namespaceView(baseValue({ roles: [dev] }), 1),
+    session: { async openWorkspacePath(request) { calls.push(request); return { ok: true } } },
   })
-  const adoptAll = findOne(
-    tree,
-    (element) => element.type === 'button' && textOf(element) === 'gateParseAdoptAll',
-    'the adopt-all button must render',
-  )
-  assert.notEqual(adoptAll.props.disabled, true, 'an empty schema commandSuccess must not block adopt-all')
-  await adoptAll.props.onClick()
-
-  assert.equal(collected.adopted.length, 1)
-  assert.equal('commandSuccess' in collected.adopted[0].require, false)
-  assert.equal(validateGate(normalizeGate(collected.adopted[0])), undefined)
-})
-
-test('a schema-defaulted commandSuccess gate adopts canonically (98f2877)', async () => {
-  const collected = collectGates()
-  const { tree } = await gatesPanelWith({
-    resultGates: [HOST_SHAPED_COMMAND_GATE],
-    overrides: collected.overrides,
-  })
-  const adopt = findOne(
-    tree,
-    (element) => element.type === 'button' && textOf(element) === 'gateParseAdopt',
-    'the adopt button must render',
-  )
-  await adopt.props.onClick()
-
-  assert.equal(collected.adopted.length, 1)
-  const gate = collected.adopted[0]
-  assert.equal('event' in gate.require, false, 'the empty event default is stripped')
-  assert.equal(gate.require.commandSuccess.role, 'general')
-  assert.equal(gate.require.commandSuccess.tool.includes('pwsh'), true)
-  assert.equal(validateGate(normalizeGate(gate)), undefined)
-})
-
-test('the read-only preview card uses the candidate chip, not gateOn (98f2877)', async () => {
-  const { harness, tree } = await gatesPanelWith({ resultGates: [HOST_SHAPED_EVENT_GATE] })
-  const card = findOne(
-    tree,
-    (element) => element.type?.name === 'GateCard',
-    'the read-only preview card must render',
-  )
-  const cardTree = await harness.render(card.type, card.props)
-  assert.match(textOf(cardTree), /candidate/)
-  assert.doesNotMatch(textOf(cardTree), /gateOn/)
+  const roles = findComponent(mounted.tree, 'RolesPanel')
+  const renderRoles = () => harness.render(roles.type, roles.props)
+  findButton(await renderRoles(), 'clean-code-guard').props.onClick()
+  const preview = findComponent(await renderRoles(), 'SkillReveal')
+  const button = findButton(await harness.render(preview.type, preview.props), 'skillReveal')
+  assert.deepEqual(calls, [])
+  assert.equal(button.props.disabled, false)
+  await button.props.onClick()
+  assert.deepEqual(calls, [{ path: filePath, action: 'reveal' }])
 })

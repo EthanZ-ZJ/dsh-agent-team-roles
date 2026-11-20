@@ -1,6 +1,54 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { isHandshakeOnly, isHandshakeSettlement, isTeamLeadPreset, roleForMember } from '../src/plugin.js'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { apply, Config, isHandshakeOnly, isHandshakeSettlement, isTeamLeadPreset, roleForMember } from '../src/plugin.js'
+
+test('role config schema preserves fallback effort and defaults it independently', () => {
+  const { roles } = Config({ roles: [
+    { id: 'dev', reasoningEffort: 'high', fallbackReasoningEffort: 'low' },
+    { id: 'legacy', reasoningEffort: 'high' },
+  ] })
+  assert.deepEqual(roles.get().map((role) => [role.reasoningEffort, role.fallbackReasoningEffort]), [
+    ['high', 'low'], ['high', ''],
+  ])
+})
+
+test('automatic fallback retries with its own effort and omits it for legacy roles', async () => {
+  const home = process.env.DSH_HOME
+  process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'team-roles-auto-fallback-'))
+  let requestError
+  let member = 'dev'
+  try {
+    apply({
+      get: () => undefined,
+      fiber: {},
+      agents: { list: () => [] },
+      agentTeams: { tryMembership: () => ({ role: 'teammate', root: { id: 'root' }, name: member }) },
+      on(event, listener) { if (event === 'agent/request-error') requestError = listener },
+      effect(register, name) { if (name === 'agent-team-roles:auto-fallback') register() },
+      provide() {},
+      inject() {},
+    }, { roles: [
+      { id: 'dev', reasoningEffort: 'high', fallbackProvider: 'p', fallbackModel: 'm', fallbackReasoningEffort: 'low' },
+      { id: 'legacy', reasoningEffort: 'high', fallbackProvider: 'p', fallbackModel: 'm' },
+    ] })
+  } finally {
+    if (home === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = home
+  }
+  const selected = []
+  const payload = { agent: { model: { select: (value) => selected.push(value) } }, turn: 1, failure: { status: 402, message: 'quota exhausted' } }
+  const next = () => assert.fail('expected an automatic retry')
+  assert.deepEqual(await requestError(payload, next), { kind: 'retry' })
+  member = 'legacy'
+  assert.deepEqual(await requestError(payload, next), { kind: 'retry' })
+  assert.deepEqual(selected, [
+    { provider: 'p', model: 'm', reasoningEffort: 'low' },
+    { provider: 'p', model: 'm' },
+  ])
+})
 
 function notice(closing = 'READY') {
   return {

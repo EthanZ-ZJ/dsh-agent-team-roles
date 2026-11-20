@@ -47,6 +47,19 @@ test('a live selection matching the fallback route reports the override via', ()
   assert.equal(manual.source, 'fallback-manual')
 })
 
+test('effort distinguishes primary and fallback on the same model', () => {
+  const sameModel = { ...role, fallbackProvider: 'p1', fallbackModel: 'm1', fallbackReasoningEffort: 'low' }
+  const input = { name: 'dev', role: sameModel }
+  const fallback = { provider: 'p1', model: 'm1', reasoningEffort: 'low' }
+  const live = describeMember({ ...input, live: fallback, override: { ...fallback, route: 'fallback', via: 'auto' } })
+  assert.equal(live.source, 'fallback-auto')
+  assert.equal(live.reasoningEffort, 'low')
+  const pending = describeMember({ ...input, override: { provider: 'p1', model: 'm1', reasoningEffort: 'high', route: 'primary' } })
+  assert.equal(pending.source, 'primary')
+  assert.equal(pending.reasoningEffort, 'high')
+  assert.equal(pending.pending, true)
+})
+
 test('a dormant member uses the pending override and marks it pending', () => {
   const view = describeMember({
     name: 'dev',

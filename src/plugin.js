@@ -38,8 +38,7 @@ import {
 import { GateLedger } from './ledger.js'
 import { shouldAutoSwitch } from './auto-fallback.js'
 import { buildGateView, gatesRoute } from './gate-view.js'
-import { buildRootView, memberModelsRoute } from './member-models.js'
-import { installGateParser } from './gate-parse.js'
+import { buildRootView, memberModelsRoute, modelSelection } from './member-models.js'
 import { CodexThreadStore } from './codex-store.js'
 import { modelCatalogRoute } from './model-catalog.js'
 import { skillRoute } from './skill-routes.js'
@@ -97,7 +96,10 @@ const RoleSchema = z.object({
   fallbackProvider: z.string().default('')
     .description('Fallback LLM provider when the primary route is unavailable (for example quota exhausted); empty means no fallback.'),
   fallbackModel: z.string().default('')
-    .description('Fallback model id; must be configured together with fallbackProvider.'),  toolMode: z.string().default('all').description('Tool policy: all, or a custom allow-list.'),
+    .description('Fallback model id; must be configured together with fallbackProvider.'),
+  fallbackReasoningEffort: z.string().default('')
+    .description('Reasoning effort for the fallback model; empty uses the model default.'),
+  toolMode: z.string().default('all').description('Tool policy: all, or a custom allow-list.'),
   tools: z.array(z.string()).default([]).description('Allowed tool names when toolMode is custom.'),
   denyCommands: z.array(z.string()).default([])
     .description('Optional RegExp sources denying matching shell commands for this role (at most 20 patterns of 200 characters).'),
@@ -135,12 +137,13 @@ export const Config = z.object({
     .description('Gate ids manually disabled from /team-gates.'),
   autoFallback: z.boolean().default(true).volatile()
     .description('Automatically switch a member to its role fallback route when its model request fails terminally (for example quota exhausted).'),
+  // Deprecated persisted fields. Accepted for compatibility; never read or written by this plugin.
   gateParseRequest: z.object({
     nonce: z.string().default('').description('Client-minted request id; dedupes host work.'),
     text: z.string().default('').description('User description, at most 4000 characters; cleared after the parse.'),
     at: z.number().default(0).description('Epoch milliseconds; requests older than 120 seconds are ignored.'),
   }).default({}).volatile()
-    .description('Pending natural-language gate parse request.'),
+    .description('Deprecated and ignored: legacy gate parse request.'),
   gateParseResult: z.object({
     nonce: z.string().default('').description('Request id this result answers.'),
     status: z.string().default('').description('ok | needs-input | error.'),
@@ -151,7 +154,7 @@ export const Config = z.object({
     detail: z.string().default('').description('English diagnostic detail; at most 500 characters; secondary UI line.'),
     completedAt: z.number().default(0).description('Epoch milliseconds; 0 = no result.'),
   }).default({}).volatile()
-    .description('Latest natural-language gate parse result.'),
+    .description('Deprecated and ignored: legacy gate parse result.'),
   codexBackend: z.boolean().default(false).volatile()
     .description('Enable the Codex CLI backend for external-agent teammates (shadow members).'),
   codexBinary: z.string().default('').volatile()
@@ -212,12 +215,6 @@ export function apply(ctx, config) {
     memberAgents,
     memberRouteOverrides,
   })
-
-  // The Settings page writes a natural-language request into the volatile
-  // Config; this host-side parser answers into the matching result field. It
-  // never edits the gate list itself, and every failure stays contained here.
-  const gateParser = installGateParser({ ctx, config })
-  ctx.effect(() => () => gateParser.dispose(), 'agent-team-roles:gate-parse')
 
   // Team templates: built-ins are seeded into the state dir once (missing dirs
   // only), and discovered templates are cached for the synchronous Lead-prompt
@@ -419,24 +416,25 @@ export function apply(ctx, config) {
       const snapshot = snapshots.get(membership.root.id, membership.name)
       const role = snapshot?.frozen ?? roleForTarget(catalog, membership.name)
       if (role === undefined) return next()
-      if (role.fallbackProvider === '' || role.fallbackModel === '') return next()
+      if (!role.fallbackProvider || !role.fallbackModel) return next()
       const key = `${membership.root.id}:${membership.name}`
       const attemptKey = `${key}:${payload.turn}`
       if (autoFallbackAttempts.has(attemptKey)) return next()
-      const target = {
+      const target = modelSelection({
         provider: role.fallbackProvider,
         model: role.fallbackModel,
-        ...(role.reasoningEffort === '' ? {} : { reasoningEffort: role.reasoningEffort }),
-      }
+        reasoningEffort: role.fallbackReasoningEffort,
+      })
       const current = memberRouteOverrides?.get(key)
       const alreadyFallback = current !== undefined
         && current.provider === target.provider
         && current.model === target.model
+        && (current.reasoningEffort ?? '') === (target.reasoningEffort ?? '')
       if (!shouldAutoSwitch(payload.failure, { alreadyFallback })) return next()
       // Bound the memo; turns are monotonic so older keys are useless.
       if (autoFallbackAttempts.size > 500) autoFallbackAttempts.clear()
       autoFallbackAttempts.add(attemptKey)
-      memberRouteOverrides?.set(key, { ...target, via: 'auto', at: Date.now() })
+      memberRouteOverrides?.set(key, { ...target, route: 'fallback', via: 'auto', at: Date.now() })
       try {
         agent.model?.select(target)
       } catch (error) {
@@ -659,13 +657,6 @@ export function apply(ctx, config) {
           text: 'Team templates are available only in a session using the Team Lead preset.',
         }
       }
-      const sessionSummary = () => {
-        const overridden = [...(sessionGateOverrides.get(teamId) ?? new Map()).entries()]
-        if (overridden.length === 0) return 'session overrides: none (global defaults apply)'
-        return 'session overrides: ' + overridden
-          .map(([id, off]) => `${id}=${off ? 'off' : 'on'}`)
-          .join(', ')
-      }
       const [action, argument] = rawInput.trim().split(/\s+/, 2)
       const templates = await loadTemplates(true)
       if (action === 'list' || action === undefined || action === '') {
@@ -741,6 +732,13 @@ export function apply(ctx, config) {
       const gates = normalizeGates(readConfig(config, 'gates') ?? [])
       const globalDisabled = new Set(readConfig(config, 'gatesDisabled') ?? [])
       const teamId = membership.root.id
+      const sessionSummary = () => {
+        const overridden = [...(sessionGateOverrides.get(teamId) ?? new Map()).entries()]
+        if (overridden.length === 0) return 'session overrides: none (global defaults apply)'
+        return 'session overrides: ' + overridden
+          .map(([id, off]) => `${id}=${off ? 'off' : 'on'}`)
+          .join(', ')
+      }
       const sessionMap = () => {
         let map = sessionGateOverrides.get(teamId)
         if (map === undefined) {
@@ -1039,11 +1037,7 @@ function installMember({ agent, membership, scoped, register, tools, snapshots, 
   const route = override !== undefined ? override : frozen
   if (route.provider !== '' && route.model !== '') {
     try {
-      agent.model?.select({
-        provider: route.provider,
-        model: route.model,
-        ...(route.reasoningEffort === '' ? {} : { reasoningEffort: route.reasoningEffort }),
-      })
+      agent.model?.select(modelSelection(route))
     } catch (error) {
       ctxWarn(agent, `cannot select the role route for "${membership.name}": ${error.message}`)
     }
