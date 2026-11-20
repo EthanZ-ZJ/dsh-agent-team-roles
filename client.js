@@ -2597,18 +2597,29 @@ window.__ModuleLoader__.load({
                 h('label', { key: 'effort', style: label }, [
                   h('span', { key: 'l' }, t('effort')),
                   (() => {
-                    const levels = ['', ...effortLevels]
+                    // Effort options come from the selected model's advertised
+                    // reasoning metadata — the same levels the chat dialog offers.
+                    const routeEntry = catalogPairs.find((pair) => pair.provider === (selected.provider ?? '') && pair.id === (selected.model ?? ''))
+                    const advertised = Array.isArray(routeEntry?.efforts) ? routeEntry.efforts : null
                     const current = selected.reasoningEffort ?? ''
-                    const options = levels.includes(current) ? levels : [current, ...levels.slice(1)]
+                    const options = advertised !== null
+                      ? [
+                          { value: '', label: routeEntry?.defaultEffort ? `${t('effortDefault')}（${routeEntry.defaultEffort}）` : t('effortDefault') },
+                          ...advertised.map((effort) => ({ value: effort.id, label: effort.name })),
+                        ]
+                      : ['', ...effortLevels].map((level) => ({ value: level, label: level === '' ? t('effortDefault') : level }))
+                    if (current !== '' && !options.some((option) => option.value === current)) {
+                      options.unshift({ value: current, label: current })
+                    }
                     return h('select', {
                       key: 'i',
                       style: input,
                       value: current,
                       onChange: (event) => onEdit({ reasoningEffort: event.target.value }),
-                    }, options.map((level) => h('option', {
-                      key: level,
-                      value: level,
-                    }, level === '' ? t('effortDefault') : level)))
+                    }, options.map((option) => h('option', {
+                      key: option.value,
+                      value: option.value,
+                    }, option.label)))
                   })(),
                 ]),
               ]),

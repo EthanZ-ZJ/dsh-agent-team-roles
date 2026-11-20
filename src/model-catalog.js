@@ -22,6 +22,9 @@ export const EFFORT_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'
 /** Per-provider listModels timeout in milliseconds. */
 const PROVIDER_TIMEOUT_MS = 8000
 
+/** Per-model resolveModelInfo timeout in milliseconds. */
+const MODEL_INFO_TIMEOUT_MS = 8000
+
 /** Catalog cache lifetime in milliseconds. */
 const CATALOG_TTL_MS = 60_000
 
@@ -35,8 +38,38 @@ function withTimeout(promise, ms, label) {
 }
 
 /**
- * Build the catalog from an llm service ({listProviders, listModels}).
- * A provider whose listModels rejects is omitted, never fatal.
+ * Read one model's advertised reasoning efforts via resolveModelInfo.
+ * Returns undefined when the adapter exposes none or the lookup fails.
+ */
+async function modelReasoning(llm, provider, modelId) {
+  if (typeof llm.resolveModelInfo !== 'function') return undefined
+  try {
+    const info = await withTimeout(llm.resolveModelInfo(provider, modelId), MODEL_INFO_TIMEOUT_MS, `resolveModelInfo(${provider}, ${modelId})`)
+    const reasoning = info?.reasoning
+    if (reasoning === undefined || !Array.isArray(reasoning.efforts) || reasoning.efforts.length === 0) return undefined
+    const efforts = reasoning.efforts
+      .filter((effort) => effort !== null && typeof effort === 'object' && typeof effort.id === 'string' && effort.id !== '')
+      .map((effort) => ({
+        id: effort.id,
+        name: typeof effort.name === 'string' && effort.name !== '' ? effort.name : effort.id,
+        ...(typeof effort.description === 'string' && effort.description !== '' ? { description: effort.description } : {}),
+      }))
+    if (efforts.length === 0) return undefined
+    return {
+      efforts,
+      ...(typeof reasoning.defaultEffort === 'string' && reasoning.defaultEffort !== ''
+        ? { defaultEffort: reasoning.defaultEffort }
+        : {}),
+    }
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Build the catalog from an llm service ({listProviders, listModels, resolveModelInfo}).
+ * A provider whose listModels rejects is omitted, never fatal; per-model
+ * reasoning lookup is best-effort and absent when the adapter exposes none.
  */
 export async function buildModelCatalog(llm) {
   const providers = llm.listProviders()
@@ -60,6 +93,12 @@ export async function buildModelCatalog(llm) {
       })
     }
   }
+  const reasoning = await Promise.allSettled(
+    routes.map((route) => modelReasoning(llm, route.provider, route.id)),
+  )
+  reasoning.forEach((result, index) => {
+    if (result.status === 'fulfilled' && result.value !== undefined) Object.assign(routes[index], result.value)
+  })
   routes.sort((left, right) => `${left.provider}/${left.id}`.localeCompare(`${right.provider}/${right.id}`))
   return { routes, efforts: EFFORT_LEVELS }
 }
