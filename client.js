@@ -220,9 +220,7 @@ window.__ModuleLoader__.load({
       membersHint: '打开时刷新一次，可点「刷新」再取最新状态；「备用·自动」表示额度失败后由插件自动切换。',
       membersRefresh: '刷新',
       teamPanel: '团队',
-      teamMenuPull: '拉取成员',
-      teamMenuMembers: '成员模型',
-      teamMenuGates: '闸门',
+      teamTitle: 'This team', teamMembers: 'Members', teamClose: 'Close',
       gatesModel: '闸门',
       gatesTitle: '闸门（本群）',
       gatesHint: '启停只影响当前会话，重启后恢复全局默认。',
@@ -477,9 +475,7 @@ window.__ModuleLoader__.load({
       membersHint: 'Fetches once when opened; click Refresh for the latest state. "fallback·auto" means the plugin switched after a quota failure.',
       membersRefresh: 'Refresh',
       teamPanel: 'Team',
-      teamMenuPull: 'Pull a member',
-      teamMenuMembers: 'Member models',
-      teamMenuGates: 'Gates',
+      teamTitle: 'This team', teamMembers: 'Members', teamClose: 'Close',
       gatesModel: 'Gates',
       gatesTitle: 'Gates (this Team)',
       gatesHint: 'Toggling affects this session only; global defaults return after restart.',
@@ -3005,124 +3001,44 @@ window.__ModuleLoader__.load({
       createPortal = null
     }
 
-    function createPullControl(ctx, t) {
-      return function PullControl({ sessionId, useSessions, embedded = false, onClose }) {
-        const [open, setOpen] = React.useState(embedded === true)
-        const close = () => { setOpen(false); if (onClose !== undefined) onClose() }
-        // Embedded mode: load the roles as soon as the panel mounts.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        React.useEffect(() => { if (embedded) void openPanel() }, [embedded])
+    function createTeamPanel(ctx, t) {
+      function PullPage({ sessionId, onDone }) {
         const [roles, setRoles] = React.useState([])
         const [task, setTask] = React.useState('')
         const [loading, setLoading] = React.useState(false)
         const [busy, setBusy] = React.useState('')
         const [error, setError] = React.useState('')
-        const [notice, setNotice] = React.useState('')
-        const preset = useSessions === undefined
-          ? undefined
-          : useSessions((state) => {
-              const value = state.byId?.[sessionId]?.projectionValues?.agentPreset
-              return typeof value === 'string' ? value : undefined
-            })
-        if (useSessions !== undefined && preset !== 'team-lead') return null
-
-        const openPanel = async () => {
-          setOpen(true)
-          setError('')
-          setNotice('')
+        React.useEffect(() => {
+          let mounted = true
           setLoading(true)
-          try {
-            const view = await readNamespace(ctx)
-            setRoles(Array.isArray(view.value?.roles) ? view.value.roles : [])
-          } catch (caught) {
-            setError(`${t('pullLoadFailed')}${caught.message}`)
-          } finally {
-            setLoading(false)
-          }
-        }
-
+          readNamespace(ctx).then(view => { if (mounted) setRoles(view.value?.roles ?? []) })
+            .catch(err => { if (mounted) setError(t('pullLoadFailed') + err.message) })
+            .finally(() => { if (mounted) setLoading(false) })
+          return () => { mounted = false }
+        }, [])
         const pull = async (role) => {
           if (busy !== '' || sessionId === undefined) return
           setBusy(role.id)
           setError('')
-          setNotice('')
           try {
             const line = `/team-spawn ${role.id}${task.trim() === '' ? '' : ` ${task.trim()}`}`
             const response = await ctx.remote.commands.execute(sessionId, line, [])
             if (!response.ok) throw new Error(response.error.message)
             if (response.value === undefined) throw new Error('team-spawn command is unavailable')
             if (response.value.result.kind === 'error') throw new Error(response.value.result.text)
-            setNotice(`${t('pullSuccess')} ${role.name || role.id}`)
             try {
               await ctx.sessions?.refreshProjections(sessionId)
             } catch {
               // The Team projection also refreshes from its own event push.
             }
-            // The panel stays open after a successful pull so several members
-            // can be pulled in a row; it closes via ×, the backdrop, or a
-            // preset change. The consumed task is cleared for the next pull.
-            setTask('')
+            onDone()
           } catch (caught) {
             setError(`${t('pullFailed')}${caught.message}`)
           } finally {
             setBusy('')
           }
         }
-
-        const trigger = h('button', {
-          key: 'trigger',
-          type: 'button',
-          title: t('pullTitle'),
-          style: { ...button, padding: '4px 8px', fontSize: 12, whiteSpace: 'nowrap' },
-          onClick: openPanel,
-        }, `＋ ${t('pullMembers')}`)
-
-        if (!open) return embedded ? null : trigger
-
-        const panel = h('div', {
-          key: 'panel',
-          role: 'dialog',
-          'aria-label': t('pullTitle'),
-          onClick: (event) => event.stopPropagation(),
-          style: {
-            position: 'fixed',
-            left: '50%',
-            bottom: 96,
-            transform: 'translateX(-50%)',
-            width: 'min(560px, calc(100vw - 32px))',
-            maxHeight: '70vh',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 10,
-            padding: 14,
-            background: 'var(--dsw-alias-bg-overlay)',
-            color: 'var(--dsw-alias-label-primary)',
-            border: '1px solid var(--dsw-alias-border-l2)',
-            borderRadius: 12,
-            boxShadow: '0 18px 50px rgba(0, 0, 0, 0.35)',
-            zIndex: 1001,
-          },
-        }, [
-          h('div', { key: 'head', style: { ...row, justifyContent: 'space-between', gap: 8 } }, [
-            h('div', { key: 'title', style: { display: 'flex', flexDirection: 'column', gap: 3 } }, [
-              h('strong', { key: 't', style: { fontSize: 14 } }, t('pullTitle')),
-              h('span', { key: 'h', style: { ...small, fontSize: 11 } }, t('pullHint')),
-            ]),
-            h('div', { key: 'actions', style: row }, [
-              h('button', {
-                key: 'refresh',
-                type: 'button',
-                style: { ...button, padding: '2px 8px' },
-                onClick: () => setReloadKey((current) => current + 1),
-              }, t('membersRefresh')),
-              h('button', {
-                key: 'close',
-                type: 'button',
-                style: { ...button, padding: '2px 8px' },
-                onClick: close,
-              }, '×'),
-            ]),
-          ]),
+        return h(React.Fragment, null, [
           h('input', {
             key: 'task',
             style: input,
@@ -3131,7 +3047,6 @@ window.__ModuleLoader__.load({
             onChange: (event) => setTask(event.target.value),
           }),
           error !== '' ? h('div', { key: 'error', style: banner('state-error') }, error) : null,
-          notice !== '' ? h('div', { key: 'notice', style: banner('state-success') }, notice) : null,
           h('div', {
             key: 'list',
             style: { display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto', minHeight: 0 },
@@ -3184,36 +3099,12 @@ window.__ModuleLoader__.load({
                   }, busy === role.id ? t('pulling') : t('pullAction')),
                 ]))),
         ])
-
-        const backdrop = h('div', {
-          key: 'backdrop',
-          onClick: () => { if (busy === '') close() },
-          style: { position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0, 0, 0, 0.28)' },
-        }, [panel])
-
-        return h(React.Fragment, null, [
-          trigger,
-          createPortal === null ? backdrop : createPortal(backdrop, document.body),
-        ])
       }
-    }
-
-    function createMembersControl(ctx, t) {
-      return function MembersControl({ sessionId, useSessions, embedded = false, onClose }) {
-        const [open, setOpen] = React.useState(embedded === true)
-        const close = () => { setOpen(false); if (onClose !== undefined) onClose() }
+      function MembersPage({ sessionId, reloadKey }) {
         const [team, setTeam] = React.useState(null)
         const [error, setError] = React.useState('')
-        const preset = useSessions === undefined
-          ? undefined
-          : useSessions((state) => {
-              const value = state.byId?.[sessionId]?.projectionValues?.agentPreset
-              return typeof value === 'string' ? value : undefined
-            })
-        // One fetch per open (and per manual refresh); no polling.
-        const [reloadKey, setReloadKey] = React.useState(0)
         React.useEffect(() => {
-          if (!open || sessionId === undefined) return undefined
+          if (sessionId === undefined) return undefined
           let cancelled = false
           const load = async () => {
             try {
@@ -3234,9 +3125,7 @@ window.__ModuleLoader__.load({
           return () => {
             cancelled = true
           }
-        }, [open, sessionId, t, reloadKey])
-        if (useSessions !== undefined && preset !== 'team-lead') return null
-
+        }, [sessionId, reloadKey])
         const labelOf = (member) => {
           if (member.provider === '' && member.model === '') return t('membersNoModel')
           return `${member.provider}/${member.model}${member.reasoningEffort === '' ? '' : ` · ${member.reasoningEffort}`}`
@@ -3252,68 +3141,19 @@ window.__ModuleLoader__.load({
           : status === 'running' || status === 'active'
             ? 'var(--dsw-alias-state-success-primary)'
             : 'var(--dsw-alias-label-tertiary)'
-
-        const trigger = h('button', {
-          key: 'trigger',
-          type: 'button',
-          title: t('membersTitle'),
-          style: { ...button, padding: '4px 8px', fontSize: 12, whiteSpace: 'nowrap' },
-          onClick: () => {
-            setOpen((current) => !current)
-            setError('')
-          },
-        }, `◎ ${t('membersModel')}`)
-
-        if (!open) return embedded ? null : trigger
-
         const rows = team === null
           ? []
           : [
               { key: 'lead', name: t('membersLead'), roleName: '', status: 'running', provider: team.lead.provider, model: team.lead.model, reasoningEffort: team.lead.reasoningEffort, source: 'session', pending: false },
               ...(team.members ?? []).map((member) => ({ key: member.name, ...member })),
             ]
-        const panel = h('div', {
-          key: 'panel',
-          role: 'dialog',
-          'aria-label': t('membersTitle'),
-          onClick: (event) => event.stopPropagation(),
-          style: {
-            position: 'fixed',
-            left: '50%',
-            bottom: 96,
-            transform: 'translateX(-50%)',
-            width: 'min(520px, calc(100vw - 32px))',
-            maxHeight: '60vh',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-            padding: 14,
-            background: 'var(--dsw-alias-bg-overlay)',
-            color: 'var(--dsw-alias-label-primary)',
-            border: '1px solid var(--dsw-alias-border-l2)',
-            borderRadius: 12,
-            boxShadow: '0 18px 50px rgba(0, 0, 0, 0.35)',
-            zIndex: 1001,
-          },
-        }, [
-          h('div', { key: 'head', style: { ...row, justifyContent: 'space-between', gap: 8 } }, [
-            h('div', { key: 'title', style: { display: 'flex', flexDirection: 'column', gap: 3 } }, [
-              h('strong', { key: 't', style: { fontSize: 14 } }, t('membersTitle')),
-              h('span', { key: 'h', style: { ...small, fontSize: 11 } }, t('membersHint')),
-            ]),
-            h('button', {
-              key: 'close',
-              type: 'button',
-              style: { ...button, padding: '2px 8px' },
-              onClick: close,
-            }, '×'),
-          ]),
+        return h(React.Fragment, null, [
           error === '' ? null : h('div', { key: 'error', style: banner('state-error') }, error),
           h('div', {
             key: 'list',
             style: { display: 'flex', flexDirection: 'column', gap: 4, overflowY: 'auto', minHeight: 0 },
           }, rows.length === 0
-            ? [h('span', { key: 'empty', style: small }, error === '' ? t('membersEmpty') : '')]
+            ? [h('span', { key: 'empty', style: small }, error === '' ? t('loading') : '')]
             : rows.map((member) => h('div', {
                 key: member.key,
                 style: {
@@ -3330,7 +3170,7 @@ window.__ModuleLoader__.load({
                 h('span', { key: 'dot', style: { width: 8, height: 8, borderRadius: 999, background: dotColor(member.status) } }),
                 h('span', { key: 'name', style: { fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
                   member.roleName === '' ? member.name : `${member.name} · ${member.roleName}`),
-                h('span', { key: 'model', style: { fontSize: 12, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, labelOf(member)),
+                h('span', { key: 'model', title: labelOf(member), style: { fontSize: 12, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, labelOf(member)),
                 h('span', { key: 'tags', style: { display: 'flex', gap: 4, alignItems: 'center' } }, [
                   h('span', {
                     key: 'source',
@@ -3352,31 +3192,14 @@ window.__ModuleLoader__.load({
                 ]),
               ]))),
         ])
-        const backdrop = h('div', {
-          key: 'backdrop',
-          onClick: close,
-          style: { position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0, 0, 0, 0.28)' },
-        }, [panel])
-        return h(React.Fragment, null, [trigger, createPortal === null ? backdrop : createPortal(backdrop, document.body)])
       }
-    }
-
-    function createGatesControl(ctx, t) {
-      return function GatesControl({ sessionId, useSessions, embedded = false, onClose }) {
-        const [open, setOpen] = React.useState(embedded === true)
-        const close = () => { setOpen(false); if (onClose !== undefined) onClose() }
+      function GatesPage({ sessionId, refresh }) {
         const [view, setView] = React.useState(null)
         const [error, setError] = React.useState('')
         const [busy, setBusy] = React.useState('')
         const [reloadKey, setReloadKey] = React.useState(0)
-        const preset = useSessions === undefined
-          ? undefined
-          : useSessions((state) => {
-              const value = state.byId?.[sessionId]?.projectionValues?.agentPreset
-              return typeof value === 'string' ? value : undefined
-            })
         React.useEffect(() => {
-          if (!open || sessionId === undefined) return undefined
+          if (sessionId === undefined) return undefined
           let cancelled = false
           fetch(`/agent-team-roles/gates/${encodeURIComponent(sessionId)}`)
             .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
@@ -3391,9 +3214,7 @@ window.__ModuleLoader__.load({
           return () => {
             cancelled = true
           }
-        }, [open, sessionId, t, reloadKey])
-        if (useSessions !== undefined && preset !== 'team-lead') return null
-
+        }, [sessionId, refresh, reloadKey])
         const stateLabel = (gate) => {
           if (!gate.applicable) return t('gateStateNa')
           if (gate.state === 'off-session') return t('gateStateOffSession')
@@ -3410,7 +3231,8 @@ window.__ModuleLoader__.load({
             const line = `/team-gates ${disabledNow(gate) ? 'enable' : 'disable'} ${gate.id}`
             const response = await ctx.remote.commands.execute(sessionId, line, [])
             if (!response.ok) throw new Error(response.error.message)
-            if (response.value !== undefined && response.value.result.kind === 'error') {
+            if (response.value === undefined) throw new Error('team-gates command is unavailable')
+            if (response.value.result.kind === 'error') {
               throw new Error(response.value.result.text)
             }
             setReloadKey((current) => current + 1)
@@ -3420,65 +3242,9 @@ window.__ModuleLoader__.load({
             setBusy('')
           }
         }
-
-        const trigger = h('button', {
-          key: 'trigger',
-          type: 'button',
-          title: t('gatesTitle'),
-          style: { ...button, padding: '4px 8px', fontSize: 12, whiteSpace: 'nowrap' },
-          onClick: () => {
-            setOpen((current) => !current)
-            setError('')
-          },
-        }, `⛨ ${t('gatesModel')}`)
-
-        if (!open) return embedded ? null : trigger
-
         const rows = view === null ? [] : view.gates
-        const panel = h('div', {
-          key: 'panel',
-          role: 'dialog',
-          'aria-label': t('gatesTitle'),
-          onClick: (event) => event.stopPropagation(),
-          style: {
-            position: 'fixed',
-            left: '50%',
-            bottom: 96,
-            transform: 'translateX(-50%)',
-            width: 'min(560px, calc(100vw - 32px))',
-            maxHeight: '62vh',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-            padding: 14,
-            background: 'var(--dsw-alias-bg-overlay)',
-            color: 'var(--dsw-alias-label-primary)',
-            border: '1px solid var(--dsw-alias-border-l2)',
-            borderRadius: 12,
-            boxShadow: '0 18px 50px rgba(0, 0, 0, 0.35)',
-            zIndex: 1001,
-          },
-        }, [
-          h('div', { key: 'head', style: { ...row, justifyContent: 'space-between', gap: 8 } }, [
-            h('div', { key: 'title', style: { display: 'flex', flexDirection: 'column', gap: 3 } }, [
-              h('strong', { key: 't', style: { fontSize: 14 } }, t('gatesTitle')),
-              h('span', { key: 'h', style: { ...small, fontSize: 11 } }, t('gatesHint')),
-            ]),
-            h('div', { key: 'actions', style: row }, [
-              h('button', {
-                key: 'refresh',
-                type: 'button',
-                style: { ...button, padding: '2px 8px' },
-                onClick: () => setReloadKey((current) => current + 1),
-              }, t('membersRefresh')),
-              h('button', {
-                key: 'close',
-                type: 'button',
-                style: { ...button, padding: '2px 8px' },
-                onClick: close,
-              }, '×'),
-            ]),
-          ]),
+        return h(React.Fragment, null, [
+          h('small', { key: 'scope', style: small }, t('gatesHint')),
           error === '' ? null : h('div', { key: 'error', style: banner('state-error') }, error),
           h('div', {
             key: 'list',
@@ -3528,90 +3294,68 @@ window.__ModuleLoader__.load({
                   }, busy === gate.id ? t('saving') : disabledNow(gate) ? t('gatesEnable') : t('gatesDisable')),
                 ]))),
         ])
-        const backdrop = h('div', {
-          key: 'backdrop',
-          onClick: close,
-          style: { position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0, 0, 0, 0.28)' },
-        }, [panel])
-        return h(React.Fragment, null, [trigger, createPortal === null ? backdrop : createPortal(backdrop, document.body)])
       }
-    }
 
-    function createTeamPanel(ctx, t) {
-      const PullControl = createPullControl(ctx, t)
-      const MembersControl = createMembersControl(ctx, t)
-      const GatesControl = createGatesControl(ctx, t)
-      return function TeamPanel({ sessionId, useSessions }) {
-        const [menuOpen, setMenuOpen] = React.useState(false)
-        const [active, setActive] = React.useState(null)
-        const preset = useSessions === undefined
-          ? undefined
-          : useSessions((state) => {
-              const value = state.byId?.[sessionId]?.projectionValues?.agentPreset
-              return typeof value === 'string' ? value : undefined
-            })
-        if (useSessions !== undefined && preset !== 'team-lead') return null
-
-        const entries = [
-          { key: 'pull', label: t('teamMenuPull'), icon: '＋' },
-          { key: 'members', label: t('teamMenuMembers'), icon: '◎' },
-          { key: 'gates', label: t('teamMenuGates'), icon: '⛨' },
-        ]
-        const trigger = h('button', {
-          key: 'trigger',
-          type: 'button',
-          title: t('teamPanel'),
-          style: { ...button, padding: '4px 8px', fontSize: 12, whiteSpace: 'nowrap' },
-          onClick: () => setMenuOpen((current) => !current),
-        }, `☰ ${t('teamPanel')}`)
-
-        const menu = menuOpen
-          ? h('div', {
-              key: 'menu',
-              style: {
-                position: 'fixed',
-                bottom: 96,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 2,
-                padding: 6,
-                background: 'var(--dsw-alias-bg-overlay)',
-                border: '1px solid var(--dsw-alias-border-l2)',
-                borderRadius: 10,
-                boxShadow: '0 12px 32px rgba(0, 0, 0, 0.32)',
-                zIndex: 1001,
-              },
-            }, entries.map((entry) => h('button', {
-              key: entry.key,
-              type: 'button',
-              style: { ...button, textAlign: 'left', justifyContent: 'flex-start', minWidth: 180 },
-              onClick: () => {
-                setMenuOpen(false)
-                setActive(entry.key)
-              },
-            }, `${entry.icon}  ${entry.label}`)))
-          : null
-
-        const panelFor = (key) => {
-          if (key === null) return null
-          const props = { sessionId, useSessions, embedded: true, onClose: () => setActive(null) }
-          if (key === 'pull') return h(PullControl, { key: 'pull', ...props })
-          if (key === 'members') return h(MembersControl, { key: 'members', ...props })
-          return h(GatesControl, { key: 'gates', ...props })
+      function TeamButton({ sessionId }) {
+        const [page, setPage] = React.useState(null)
+        const [refresh, setRefresh] = React.useState(0)
+        const [position, setPosition] = React.useState({})
+        const trigger = React.useRef(null)
+        const popup = React.useRef(null)
+        const open = page !== null
+        const place = () => {
+          const rect = trigger.current.getBoundingClientRect()
+          const width = Math.min(480, window.innerWidth - 16)
+          setPosition({ width, left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)), bottom: window.innerHeight - rect.top + 6, maxHeight: Math.max(40, rect.top - 14) })
         }
-
-        return h(React.Fragment, null, [
-          trigger,
-          menu,
-          createPortal === null
-            ? panelFor(active)
-            : (active === null ? null : createPortal(panelFor(active), document.body)),
+        const close = () => { setPage(null); trigger.current?.focus() }
+        React.useEffect(() => {
+          if (!open) return
+          popup.current?.focus()
+          const outside = event => {
+            if (!popup.current?.contains(event.target) && !trigger.current?.contains(event.target)) setPage(null)
+          }
+          const key = event => { if (event.key === 'Escape') { event.preventDefault(); close() } }
+          document.addEventListener('pointerdown', outside, true)
+          document.addEventListener('keydown', key)
+          window.addEventListener('resize', place)
+          window.addEventListener('scroll', place, true)
+          return () => {
+            document.removeEventListener('pointerdown', outside, true)
+            document.removeEventListener('keydown', key)
+            window.removeEventListener('resize', place)
+            window.removeEventListener('scroll', place, true)
+          }
+        }, [open])
+        const action = (key, label, text, fn, extra = {}) => h('button', {
+          key, type: 'button', title: label, 'aria-label': label, onClick: fn, style: button, ...extra,
+        }, text)
+        const panel = !open ? null : h('section', {
+          key: 'panel', ref: popup, tabIndex: -1, role: 'dialog', 'aria-label': t('teamTitle'),
+          style: { position: 'fixed', ...position, boxSizing: 'border-box', zIndex: 1001, display: 'flex', flexDirection: 'column', gap: 10, overflow: 'auto', padding: 12, borderRadius: 12, border: '1px solid var(--dsw-alias-border-l2)', background: 'var(--dsw-alias-bg-overlay)', color: 'var(--dsw-alias-label-primary)', boxShadow: '0 8px 32px #0003' },
+        }, [
+          h('div', { key: 'header', style: { ...row, gap: 6 } }, [
+            h('strong', { key: 'title', style: { flex: 1 } }, t('teamTitle')),
+            page !== 'pull' && action('refresh', t('membersRefresh'), '↻', () => setRefresh(n => n + 1)),
+            action('close', t('teamClose'), '×', close),
+          ]),
+          h('div', { key: 'pages', style: row }, ['members', 'gates'].map(id => {
+            const selected = page === id || (page === 'pull' && id === 'members')
+            const label = t(id === 'members' ? 'teamMembers' : 'gatesModel')
+            return action(id, label, label, () => setPage(id), { 'aria-pressed': selected, style: selected ? primaryButton : button })
+          })),
+          page === 'pull' ? h(PullPage, { key: 'pull', sessionId, onDone: () => setPage(current => current === 'pull' ? 'members' : current) }) : page === 'gates' ? h(GatesPage, { key: 'gates', sessionId, refresh }) : h(MembersPage, { key: 'members', sessionId, reloadKey: refresh }),
+          page === 'members' && action('add', t('pullMembers'), `＋ ${t('pullMembers')}`, () => setPage('pull'), { style: { ...button, alignSelf: 'flex-start' } }),
         ])
+        return h(React.Fragment, null, [action('team', t('teamPanel'), [h(TeamRolesIcon, { key: 'icon', size: 15 }), t('teamPanel')], () => {
+          if (open) close(); else { place(); setPage('members') }
+        }, { ref: trigger, 'aria-haspopup': 'dialog', 'aria-expanded': open, style: { ...button, display: 'inline-flex', gap: 5, alignItems: 'center', padding: '4px 8px' } }), panel && (createPortal ? createPortal(panel, document.body) : panel)])
+      }
+      return function TeamControl({ sessionId, useSessions }) {
+        const preset = useSessions?.(state => state.byId?.[sessionId]?.projectionValues?.agentPreset)
+        return preset === 'team-lead' ? h(TeamButton, { key: sessionId, sessionId }) : null
       }
     }
-
     function TeamRolesIcon({ size = 18 }) {
       return h('svg', {
         width: size,
