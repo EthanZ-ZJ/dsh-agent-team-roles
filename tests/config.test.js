@@ -53,3 +53,16 @@ test('readConfig unwraps a volatile field', () => {
 test('the built-in general role stays valid', () => {
   assert.equal(validateRole(normalizeRole(GENERAL_ROLE)), undefined)
 })
+
+test('fallback route must be configured as a pair', () => {
+  const base = { ...GENERAL_ROLE, id: 'dev', fallbackProvider: 'p2', fallbackModel: 'm2' }
+  assert.equal(validateRole(normalizeRole(base)), undefined)
+  assert.match(
+    validateRole(normalizeRole({ ...base, fallbackProvider: 'p2', fallbackModel: '' })),
+    /both fallbackProvider and fallbackModel/,
+  )
+  assert.match(
+    validateRole(normalizeRole({ ...base, fallbackProvider: '', fallbackModel: 'm2' })),
+    /both fallbackProvider and fallbackModel/,
+  )
+})

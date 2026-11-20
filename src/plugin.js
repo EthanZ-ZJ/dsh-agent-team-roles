@@ -89,6 +89,10 @@ const RoleSchema = z.object({
   provider: z.string().default('').description('LLM provider route; empty inherits the Session route.'),
   model: z.string().default('').description('Provider-owned model id; empty inherits the Session model.'),
   reasoningEffort: z.string().default('').description('Reasoning effort; empty keeps the adapter default.'),
+  fallbackProvider: z.string().default('')
+    .description('Fallback LLM provider when the primary route is unavailable (for example quota exhausted); empty means no fallback.'),
+  fallbackModel: z.string().default('')
+    .description('Fallback model id; must be configured together with fallbackProvider.'),
   toolMode: z.string().default('all').description('Tool policy: all, or a custom allow-list.'),
   tools: z.array(z.string()).default([]).description('Allowed tool names when toolMode is custom.'),
   denyCommands: z.array(z.string()).default([])
@@ -176,6 +180,10 @@ export function apply(ctx, config) {
   // deliberate safe default (no stale approval survives a restart).
   const gateLedger = new GateLedger()
   const codexThreads = new CodexThreadStore()
+  // Live handle of every installed member Agent, keyed by "<root>:<member>".
+  // switch_member_model uses it to re-select a member's model without touching
+  // its session, so primary/fallback share the same conversation context.
+  const memberAgents = new Map()
   const tools = createTools({
     ctx,
     config,
@@ -184,6 +192,7 @@ export function apply(ctx, config) {
     roles: rolesReader,
     ledger: gateLedger,
     codexThreads,
+    memberAgents,
   })
 
   // The Settings page writes a natural-language request into the volatile
@@ -424,6 +433,7 @@ export function apply(ctx, config) {
           ruleStore,
           roles: rolesReader,
           ctx,
+          memberAgents,
         })
       }
     } catch (error) {
@@ -786,19 +796,27 @@ export function roleForMember(snapshot, catalog, name) {
 }
 
 /** Install one member's role prompt, model route, tool policy, and skills. */
-function installMember({ agent, membership, scoped, register, tools, snapshots, ruleStore, roles, ctx }) {
+function installMember({ agent, membership, scoped, register, tools, snapshots, ruleStore, roles, ctx, memberAgents }) {
   const snapshot = snapshots.get(membership.root.id, membership.name)
   // D7: Codex members are relay Agents for an external process. They keep only
   // codex_exec + collaboration tools, get the relay persona, and never register
   // report_gate_event or any role denyCommands guard.
   if (snapshot?.executor === 'codex') {
-    installCodexMember({ agent, membership, scoped, register, tools, snapshots, roles, ctx })
+    installCodexMember({ agent, membership, scoped, register, tools, snapshots, roles, ctx, memberAgents })
     return
   }
   const role = roleForMember(snapshot, tools.catalog(), membership.name)
   if (role === undefined) return
   const roleId = role.id
   const frozen = snapshot?.frozen ?? role
+
+  // Keep the live Agent handle so the Lead can re-select its model later while
+  // preserving the member's session context.
+  const handleKey = `${membership.root.id}:${membership.name}`
+  if (memberAgents !== undefined) {
+    memberAgents.set(handleKey, agent)
+    register(() => memberAgents.delete(handleKey))
+  }
 
   if (frozen.provider !== '' && frozen.model !== '') {
     try {

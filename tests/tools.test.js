@@ -29,6 +29,7 @@ test('the Lead tool set uses standard JSON Schema for arguments and output', () 
     'list_team_roles',
     'record_role_feedback',
     'spawn_team_member',
+    'switch_member_model',
     'update_team_role',
   ])
   for (const tool of tools.lead) {
@@ -210,4 +211,55 @@ test('argument validation rejects unknown fields and wrong enums', async () => {
   const tool = build().lead.find((candidate) => candidate.name === 'record_role_feedback')
   await assert.rejects(() => tool.execute({ role: 'general', text: 'x', scope: 'forever' }, {}), /one of/)
   await assert.rejects(() => tool.execute({ role: 'general', text: 'x', extra: true }, {}), /unknown argument/)
+})
+
+test('switch_member_model re-selects the fallback route in place and sends a continue message', async () => {
+  const selected = []
+  const sent = []
+  const tools = createTools({
+    ctx: {
+      agentTeams: {
+        tryMembership: () => ({ role: 'lead', root: { id: 'root-1' }, name: 'lead' }),
+        listMembers: () => [{ role: 'teammate', name: 'dev', status: 'active' }],
+        sendMessage: async (caller, payload) => { sent.push(payload) },
+      },
+    },
+    config: {},
+    snapshots: { get: () => ({ roleId: 'dev' }) },
+    rules: { list: () => [], add: async () => { throw new Error('not used') }, forget: async () => false },
+    roles: {
+      read: () => [{ ...GENERAL_ROLE, id: 'dev', name: 'DEV', provider: 'p1', model: 'm1', fallbackProvider: 'p2', fallbackModel: 'm2' }],
+    },
+    memberAgents: new Map([['root-1:dev', { model: { select: (route) => selected.push(route) } }]]),
+  })
+  const tool = tools.lead.find((candidate) => candidate.name === 'switch_member_model')
+  const result = await tool.execute({ member: 'dev', route: 'fallback' }, { agent: { id: 'root-1' } })
+  assert.deepEqual(result, { member: 'dev', route: 'fallback', provider: 'p2', model: 'm2', messageSent: true })
+  assert.equal(selected.length, 1)
+  assert.equal(selected[0].provider, 'p2')
+  assert.equal(selected[0].model, 'm2')
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].target, 'dev')
+})
+
+test('switch_member_model refuses a role without a configured fallback', async () => {
+  const tools = createTools({
+    ctx: {
+      agentTeams: {
+        tryMembership: () => ({ role: 'lead', root: { id: 'root-1' }, name: 'lead' }),
+        listMembers: () => [{ role: 'teammate', name: 'general', status: 'active' }],
+        sendMessage: async () => { throw new Error('not used') },
+      },
+    },
+    config: {},
+    snapshots: { get: () => ({ roleId: 'general' }) },
+    rules: { list: () => [], add: async () => { throw new Error('not used') }, forget: async () => false },
+    roles: { read: () => [GENERAL_ROLE] },
+    memberAgents: new Map(),
+  })
+  const tool = tools.lead.find((candidate) => candidate.name === 'switch_member_model')
+  await assert.rejects(
+    () => tool.execute({ member: 'general', route: 'fallback' }, { agent: { id: 'root-1' } }),
+    /no fallback model configured/,
+  )
 })

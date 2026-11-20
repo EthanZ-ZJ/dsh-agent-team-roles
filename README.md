@@ -343,3 +343,13 @@ node --test
 ## 许可证
 
 MIT。
+
+## 模型主备与额度耗尽
+
+每个角色可配置一个**备用模型**（`fallbackProvider` / `fallbackModel`，设置页“备用模型”下拉；成对配置）。额度耗尽或主路由失效时的正确处置：
+
+1. 对 Lead 说：“把 dev 切到备用模型继续”（或 Lead 自行判断）；Lead 调用 `switch_member_model(member:"dev", route:"fallback")`。
+2. 工具在**原成员**上重新选择模型（会话与上下文保持不变），并自动发送一条“继续”消息——不新建成员、不丢上下文。
+3. 额度恢复后：`switch_member_model(member:"dev", route:"primary")` 切回主模型，上下文照旧。
+
+边界：若成员已经处于不可恢复的终态、无法接收消息，工具会明确报错，此时应修正角色路由（`update_team_role`）后重新拉取成员；成员模型切换只影响当前对话，不改角色配置。

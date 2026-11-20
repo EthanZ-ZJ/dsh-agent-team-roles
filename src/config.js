@@ -59,6 +59,8 @@ export function normalizeRole(input) {
     provider: text(role.provider),
     model: text(role.model),
     reasoningEffort: text(role.reasoningEffort),
+    fallbackProvider: text(role.fallbackProvider),
+    fallbackModel: text(role.fallbackModel),
     toolMode,
     tools: toolMode === 'custom' && Array.isArray(role.tools)
       ? [...new Set(role.tools.map(text).filter(Boolean))]
@@ -136,6 +138,9 @@ export function validateRole(role) {
   if (role.persona.length > PERSONA_LIMIT) return `role "${role.id}" persona exceeds ${PERSONA_LIMIT} characters`
   if (role.provider === '' ? role.model !== '' : role.model === '') {
     return `role "${role.id}" must configure both provider and model, or neither`
+  }
+  if ((role.fallbackProvider ?? '') === '' ? (role.fallbackModel ?? '') !== '' : (role.fallbackModel ?? '') === '') {
+    return `role "${role.id}" must configure both fallbackProvider and fallbackModel, or neither`
   }
   if (role.toolMode === 'custom' && role.tools.length === 0) {
     return `role "${role.id}" uses a custom tool policy but lists no tools`

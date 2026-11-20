@@ -191,6 +191,8 @@ const ROLE_VIEW = {
     provider: { type: 'string', required: true },
     model: { type: 'string', required: true },
     reasoningEffort: { type: 'string', required: true },
+    fallbackProvider: { type: 'string', required: true },
+    fallbackModel: { type: 'string', required: true },
     toolMode: { type: 'string', required: true },
     tools: { type: 'array', required: true, items: { type: 'string' } },
     skills: { type: 'array', required: true, items: { type: 'string' } },
@@ -220,6 +222,8 @@ async function roleView(role) {
     provider: role.provider,
     model: role.model,
     reasoningEffort: role.reasoningEffort,
+    fallbackProvider: role.fallbackProvider ?? '',
+    fallbackModel: role.fallbackModel ?? '',
     toolMode: role.toolMode,
     tools: [...role.tools],
     skills: [...role.skills],
@@ -246,7 +250,7 @@ export function roleIdForAgent(ctx, snapshots, roles, agent) {
  * @param options - plugin context, live Config readers, stores, and catalog.
  * @returns the Lead and member tool definitions.
  */
-export function createTools({ ctx, config, snapshots, rules, roles, ledger, codexThreads }) {
+export function createTools({ ctx, config, snapshots, rules, roles, ledger, codexThreads, memberAgents = new Map() }) {
   /** Read the live role catalog. */
   const catalog = () => mergeRoles(roles.read())
 
@@ -555,6 +559,8 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
     provider: { type: 'string', description: 'LLM provider route; empty inherits the Session route.' },
     model: { type: 'string', description: 'Provider-owned model id; empty inherits the Session model.' },
     reasoningEffort: { type: 'string', description: 'Reasoning effort; empty keeps the adapter default.' },
+    fallbackProvider: { type: 'string', description: 'Fallback LLM provider used when the primary route is unavailable; empty means no fallback.' },
+    fallbackModel: { type: 'string', description: 'Fallback model id; must be configured together with fallbackProvider.' },
     toolMode: {
       type: 'string',
       enum: ['all', 'custom'],
@@ -768,6 +774,93 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
     },
   })
 
+  /**
+   * Hot-swap one existing member's model route and continue its task.
+   *
+   * The member keeps its session and conversation context; only the model
+   * behind it changes. Lead-only by scope (members never receive this tool).
+   */
+  const switchMemberModel = defineTool({
+    name: 'switch_member_model',
+    description:
+      'Switch one existing teammate to its role\'s fallback or primary model route WITHOUT losing its conversation context, then send a continue message. Use when the member\'s model quota is exhausted or its route stops working. Lead only.',
+    parameters: {
+      member: { type: 'string', required: true, description: 'Teammate name from the roster.' },
+      route: {
+        type: 'string',
+        required: true,
+        enum: ['fallback', 'primary'],
+        description: 'fallback = the role\'s fallback route; primary = the role\'s main route.',
+      },
+      message: {
+        type: 'string',
+        description: 'Optional continue message; defaults to a standard "continue from where you stopped" instruction.',
+      },
+    },
+    output: jsonOutput({
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        member: { type: 'string', required: true },
+        route: { type: 'string', required: true },
+        provider: { type: 'string', required: true },
+        model: { type: 'string', required: true },
+        messageSent: { type: 'boolean', required: true },
+      },
+    }),
+    async execute(args, exec) {
+      if (exec.agent === undefined) throw new Error('switch_member_model requires a calling Agent')
+      const caller = exec.agent
+      const membership = ctx.agentTeams.tryMembership(caller)
+      if (membership === undefined || membership.role !== 'lead') {
+        throw new Error('Only the Team Lead can switch a member model.')
+      }
+      const target = ctx.agentTeams.listMembers(caller)
+        .filter((item) => item.role === 'teammate')
+        .find((item) => item.name === args.member)
+      if (target === undefined) throw new Error(`no teammate named "${args.member}" in this Team`)
+      const catalog = mergeRoles(roles.read())
+      const snapshot = snapshots.get(caller.id, target.name)
+      const role = snapshot === undefined ? roleForTarget(catalog, target.name) : findRole(catalog, snapshot.roleId)
+      if (role === undefined) throw new Error(`cannot resolve the configured role of "${target.name}"`)
+      const route = args.route === 'fallback'
+        ? { label: 'fallback', provider: role.fallbackProvider ?? '', model: role.fallbackModel ?? '' }
+        : { label: 'primary', provider: role.provider, model: role.model }
+      if (route.provider === '' || route.model === '') {
+        throw new Error(args.route === 'fallback'
+          ? `role "${role.id}" has no fallback model configured; set fallbackProvider and fallbackModel first`
+          : `role "${role.id}" has no explicit primary model (it inherits the Session route); configure provider and model first`)
+      }
+      const agent = memberAgents.get(`${membership.root.id}:${target.name}`)
+      if (agent === undefined) {
+        throw new Error(`no runtime handle for "${target.name}"; it was not created by this plugin instance`)
+      }
+      try {
+        agent.model?.select({
+          provider: route.provider,
+          model: route.model,
+          ...(role.reasoningEffort === '' ? {} : { reasoningEffort: role.reasoningEffort }),
+        })
+      } catch (error) {
+        throw new Error(`cannot switch the model of "${target.name}": ${error.message}`)
+      }
+      const text = typeof args.message === 'string' && args.message.trim() !== ''
+        ? args.message.trim()
+        : `Your model route is now ${route.provider}/${route.model}. Continue the task you were working on from where you stopped; do not restart it.`
+      try {
+        await ctx.agentTeams.sendMessage(caller, {
+          target: target.name,
+          content: [{ type: 'text', text }],
+          signal: new AbortController().signal,
+        })
+      } catch (error) {
+        throw new Error(`switched "${target.name}" to ${route.provider}/${route.model}, but the continue message failed (${error.message}). ` +
+          'If that member is in a terminal failed state, fix the role route with update_team_role and pull a fresh member instead.')
+      }
+      return { member: target.name, route: route.label, provider: route.provider, model: route.model, messageSent: true }
+    },
+  })
+
   /** Run one Codex CLI turn and return the relayed result. */
   const codexExec = defineTool({
     name: 'codex_exec',
@@ -822,6 +915,7 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
       createTeamRole,
       updateTeamRole,
       deleteTeamRole,
+      switchMemberModel,
     ],
     member: [rememberRoleRule, listMyRules, listTeamRoles, createTeamRole, reportGateEvent],
     codexMember: [codexExec],

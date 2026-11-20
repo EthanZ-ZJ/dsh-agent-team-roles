@@ -215,6 +215,9 @@ window.__ModuleLoader__.load({
       skillLoadFailed: '（内容加载失败）',
       skillViewGuide: '设置页不提供新增/修改技能的入口。要新增技能，请直接让 agent 处理——例如对 Team Lead 说：「给 pm 角色新增一个 xxx 技能，写到 ~/.dsh/agent-team-roles/skills/pm/xxx/SKILL.md」；文件放好后点「刷新」即可在这里查看。',
       effortDefault: '默认（跟随会话）',
+      fallbackModel: '备用模型',
+      fallbackNone: '不配备用',
+      fallbackHint: '主模型额度耗尽或不可用时，可一键把成员切到备用模型继续（上下文保留）。',
       ruleHint: 'permanent 会立即进入提示词；candidate 需要重复或在这里确认；session 只在当前会话生效，不会出现在这里。',
       history: '历史记忆',
       noHistory: '该角色还没有历史记忆。',
@@ -436,6 +439,9 @@ window.__ModuleLoader__.load({
       skillLoadFailed: '(failed to load content)',
       skillViewGuide: 'This page intentionally has no add/edit button for skills. To add one, just ask an agent — e.g. tell the Team Lead: "add an xxx skill for the pm role, write it to ~/.dsh/agent-team-roles/skills/pm/xxx/SKILL.md"; click Refresh afterwards to view it here.',
       effortDefault: 'Default (follow the session)',
+      fallbackModel: 'Fallback model',
+      fallbackNone: 'No fallback',
+      fallbackHint: 'Used when the primary route is unavailable (for example quota exhausted); switching keeps the member context.',
       ruleHint: 'permanent reaches the prompt immediately; candidate waits for a repeat or confirmation here; session rules only live in the current Session and do not appear here.',
       history: 'Memory history',
       noHistory: 'No memory history for this role yet.',
@@ -2593,6 +2599,39 @@ window.__ModuleLoader__.load({
                       },
                     }, options)
                   })(),
+                ]),
+                h('label', { key: 'fallback', style: label }, [
+                  h('span', { key: 'l' }, t('fallbackModel')),
+                  (() => {
+                    // Optional fallback route: same catalog as the primary
+                    // picker. Empty means no fallback configured.
+                    const pairs = [...catalogPairs]
+                    const currentProvider = selected.fallbackProvider ?? ''
+                    const currentModel = selected.fallbackModel ?? ''
+                    const current = currentProvider === '' || currentModel === '' ? '' : `${currentProvider}::${currentModel}`
+                    if (current !== '' && !pairs.some((pair) => pair.provider === currentProvider && pair.id === currentModel)) {
+                      pairs.unshift({ provider: currentProvider, id: currentModel, name: '' })
+                    }
+                    return h('select', {
+                      key: 'i',
+                      style: input,
+                      value: current,
+                      onChange: (event) => {
+                        if (event.target.value === '') onEdit({ fallbackProvider: '', fallbackModel: '' })
+                        else {
+                          const [provider, model] = event.target.value.split('::')
+                          onEdit({ fallbackProvider: provider, fallbackModel: model })
+                        }
+                      },
+                    }, [
+                      h('option', { key: 'none', value: '' }, t('fallbackNone')),
+                      ...pairs.map((pair) => h('option', {
+                        key: `${pair.provider}::${pair.id}`,
+                        value: `${pair.provider}::${pair.id}`,
+                      }, `${pair.provider}/${pair.id}${pair.name ? ` — ${pair.name}` : ''}`)),
+                    ])
+                  })(),
+                  h('span', { key: 'hint', style: { ...small, fontSize: 11 } }, t('fallbackHint')),
                 ]),
                 h('label', { key: 'effort', style: label }, [
                   h('span', { key: 'l' }, t('effort')),
