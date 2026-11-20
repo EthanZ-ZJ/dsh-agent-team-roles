@@ -220,7 +220,7 @@ window.__ModuleLoader__.load({
       membersHint: '打开时刷新一次，可点「刷新」再取最新状态；「备用·自动」表示额度失败后由插件自动切换。',
       membersRefresh: '刷新',
       teamPanel: '团队',
-      teamTitle: 'This team', teamMembers: 'Members', teamClose: 'Close',
+      teamTitle: '本群团队', teamMembers: '成员', teamClose: '关闭',
       gatesModel: '闸门',
       gatesTitle: '闸门（本群）',
       gatesHint: '启停只影响当前会话，重启后恢复全局默认。',
