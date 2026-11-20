@@ -219,6 +219,10 @@ window.__ModuleLoader__.load({
       membersTitle: '成员模型（实时）',
       membersHint: '打开时刷新一次，可点「刷新」再取最新状态；「备用·自动」表示额度失败后由插件自动切换。',
       membersRefresh: '刷新',
+      teamPanel: '团队',
+      teamMenuPull: '拉取成员',
+      teamMenuMembers: '成员模型',
+      teamMenuGates: '闸门',
       gatesModel: '闸门',
       gatesTitle: '闸门（本群）',
       gatesHint: '启停只影响当前会话，重启后恢复全局默认。',
@@ -472,6 +476,10 @@ window.__ModuleLoader__.load({
       membersTitle: 'Member models (live)',
       membersHint: 'Fetches once when opened; click Refresh for the latest state. "fallback·auto" means the plugin switched after a quota failure.',
       membersRefresh: 'Refresh',
+      teamPanel: 'Team',
+      teamMenuPull: 'Pull a member',
+      teamMenuMembers: 'Member models',
+      teamMenuGates: 'Gates',
       gatesModel: 'Gates',
       gatesTitle: 'Gates (this Team)',
       gatesHint: 'Toggling affects this session only; global defaults return after restart.',
@@ -2998,8 +3006,12 @@ window.__ModuleLoader__.load({
     }
 
     function createPullControl(ctx, t) {
-      return function PullControl({ sessionId, useSessions }) {
-        const [open, setOpen] = React.useState(false)
+      return function PullControl({ sessionId, useSessions, embedded = false, onClose }) {
+        const [open, setOpen] = React.useState(embedded === true)
+        const close = () => { setOpen(false); if (onClose !== undefined) onClose() }
+        // Embedded mode: load the roles as soon as the panel mounts.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        React.useEffect(() => { if (embedded) void openPanel() }, [embedded])
         const [roles, setRoles] = React.useState([])
         const [task, setTask] = React.useState('')
         const [loading, setLoading] = React.useState(false)
@@ -3065,7 +3077,7 @@ window.__ModuleLoader__.load({
           onClick: openPanel,
         }, `＋ ${t('pullMembers')}`)
 
-        if (!open) return trigger
+        if (!open) return embedded ? null : trigger
 
         const panel = h('div', {
           key: 'panel',
@@ -3107,7 +3119,7 @@ window.__ModuleLoader__.load({
                 key: 'close',
                 type: 'button',
                 style: { ...button, padding: '2px 8px' },
-                onClick: () => setOpen(false),
+                onClick: close,
               }, '×'),
             ]),
           ]),
@@ -3175,7 +3187,7 @@ window.__ModuleLoader__.load({
 
         const backdrop = h('div', {
           key: 'backdrop',
-          onClick: () => { if (busy === '') setOpen(false) },
+          onClick: () => { if (busy === '') close() },
           style: { position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0, 0, 0, 0.28)' },
         }, [panel])
 
@@ -3187,8 +3199,9 @@ window.__ModuleLoader__.load({
     }
 
     function createMembersControl(ctx, t) {
-      return function MembersControl({ sessionId, useSessions }) {
-        const [open, setOpen] = React.useState(false)
+      return function MembersControl({ sessionId, useSessions, embedded = false, onClose }) {
+        const [open, setOpen] = React.useState(embedded === true)
+        const close = () => { setOpen(false); if (onClose !== undefined) onClose() }
         const [team, setTeam] = React.useState(null)
         const [error, setError] = React.useState('')
         const preset = useSessions === undefined
@@ -3251,7 +3264,7 @@ window.__ModuleLoader__.load({
           },
         }, `◎ ${t('membersModel')}`)
 
-        if (!open) return trigger
+        if (!open) return embedded ? null : trigger
 
         const rows = team === null
           ? []
@@ -3292,7 +3305,7 @@ window.__ModuleLoader__.load({
               key: 'close',
               type: 'button',
               style: { ...button, padding: '2px 8px' },
-              onClick: () => setOpen(false),
+              onClick: close,
             }, '×'),
           ]),
           error === '' ? null : h('div', { key: 'error', style: banner('state-error') }, error),
@@ -3341,7 +3354,7 @@ window.__ModuleLoader__.load({
         ])
         const backdrop = h('div', {
           key: 'backdrop',
-          onClick: () => setOpen(false),
+          onClick: close,
           style: { position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0, 0, 0, 0.28)' },
         }, [panel])
         return h(React.Fragment, null, [trigger, createPortal === null ? backdrop : createPortal(backdrop, document.body)])
@@ -3349,8 +3362,9 @@ window.__ModuleLoader__.load({
     }
 
     function createGatesControl(ctx, t) {
-      return function GatesControl({ sessionId, useSessions }) {
-        const [open, setOpen] = React.useState(false)
+      return function GatesControl({ sessionId, useSessions, embedded = false, onClose }) {
+        const [open, setOpen] = React.useState(embedded === true)
+        const close = () => { setOpen(false); if (onClose !== undefined) onClose() }
         const [view, setView] = React.useState(null)
         const [error, setError] = React.useState('')
         const [busy, setBusy] = React.useState('')
@@ -3418,7 +3432,7 @@ window.__ModuleLoader__.load({
           },
         }, `⛨ ${t('gatesModel')}`)
 
-        if (!open) return trigger
+        if (!open) return embedded ? null : trigger
 
         const rows = view === null ? [] : view.gates
         const panel = h('div', {
@@ -3461,7 +3475,7 @@ window.__ModuleLoader__.load({
                 key: 'close',
                 type: 'button',
                 style: { ...button, padding: '2px 8px' },
-                onClick: () => setOpen(false),
+                onClick: close,
               }, '×'),
             ]),
           ]),
@@ -3516,10 +3530,85 @@ window.__ModuleLoader__.load({
         ])
         const backdrop = h('div', {
           key: 'backdrop',
-          onClick: () => setOpen(false),
+          onClick: close,
           style: { position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0, 0, 0, 0.28)' },
         }, [panel])
         return h(React.Fragment, null, [trigger, createPortal === null ? backdrop : createPortal(backdrop, document.body)])
+      }
+    }
+
+    function createTeamPanel(ctx, t) {
+      const PullControl = createPullControl(ctx, t)
+      const MembersControl = createMembersControl(ctx, t)
+      const GatesControl = createGatesControl(ctx, t)
+      return function TeamPanel({ sessionId, useSessions }) {
+        const [menuOpen, setMenuOpen] = React.useState(false)
+        const [active, setActive] = React.useState(null)
+        const preset = useSessions === undefined
+          ? undefined
+          : useSessions((state) => {
+              const value = state.byId?.[sessionId]?.projectionValues?.agentPreset
+              return typeof value === 'string' ? value : undefined
+            })
+        if (useSessions !== undefined && preset !== 'team-lead') return null
+
+        const entries = [
+          { key: 'pull', label: t('teamMenuPull'), icon: '＋' },
+          { key: 'members', label: t('teamMenuMembers'), icon: '◎' },
+          { key: 'gates', label: t('teamMenuGates'), icon: '⛨' },
+        ]
+        const trigger = h('button', {
+          key: 'trigger',
+          type: 'button',
+          title: t('teamPanel'),
+          style: { ...button, padding: '4px 8px', fontSize: 12, whiteSpace: 'nowrap' },
+          onClick: () => setMenuOpen((current) => !current),
+        }, `☰ ${t('teamPanel')}`)
+
+        const menu = menuOpen
+          ? h('div', {
+              key: 'menu',
+              style: {
+                position: 'fixed',
+                bottom: 96,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 2,
+                padding: 6,
+                background: 'var(--dsw-alias-bg-overlay)',
+                border: '1px solid var(--dsw-alias-border-l2)',
+                borderRadius: 10,
+                boxShadow: '0 12px 32px rgba(0, 0, 0, 0.32)',
+                zIndex: 1001,
+              },
+            }, entries.map((entry) => h('button', {
+              key: entry.key,
+              type: 'button',
+              style: { ...button, textAlign: 'left', justifyContent: 'flex-start', minWidth: 180 },
+              onClick: () => {
+                setMenuOpen(false)
+                setActive(entry.key)
+              },
+            }, `${entry.icon}  ${entry.label}`)))
+          : null
+
+        const panelFor = (key) => {
+          if (key === null) return null
+          const props = { sessionId, useSessions, embedded: true, onClose: () => setActive(null) }
+          if (key === 'pull') return h(PullControl, { key: 'pull', ...props })
+          if (key === 'members') return h(MembersControl, { key: 'members', ...props })
+          return h(GatesControl, { key: 'gates', ...props })
+        }
+
+        return h(React.Fragment, null, [
+          trigger,
+          menu,
+          createPortal === null
+            ? panelFor(active)
+            : (active === null ? null : createPortal(panelFor(active), document.body)),
+        ])
       }
     }
 
@@ -3569,25 +3658,11 @@ window.__ModuleLoader__.load({
         }, TeamRolesIcon)), 'agent-team-roles:sidebar-entry')
         ctx.effect(() => ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
           name: 'conversation.input.left',
-          id: 'agent-team-roles-pull',
+          id: 'agent-team-roles-team',
           order: 15,
-          label: () => t('pullMembers'),
+          label: () => t('teamPanel'),
           locale: NS,
-        }, createPullControl(ctx, t))), 'agent-team-roles:pull-control')
-        ctx.effect(() => ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
-          name: 'conversation.input.left',
-          id: 'agent-team-roles-members',
-          order: 16,
-          label: () => t('membersModel'),
-          locale: NS,
-        }, createMembersControl(ctx, t))), 'agent-team-roles:members-control')
-        ctx.effect(() => ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
-          name: 'conversation.input.left',
-          id: 'agent-team-roles-gates',
-          order: 17,
-          label: () => t('gatesModel'),
-          locale: NS,
-        }, createGatesControl(ctx, t))), 'agent-team-roles:gates-control')
+        }, createTeamPanel(ctx, t))), 'agent-team-roles:team-control')
       },
     }
   },
