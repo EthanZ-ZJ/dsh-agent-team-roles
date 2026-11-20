@@ -219,6 +219,20 @@ window.__ModuleLoader__.load({
       membersTitle: '成员模型（实时）',
       membersHint: '打开时刷新一次，可点「刷新」再取最新状态；「备用·自动」表示额度失败后由插件自动切换。',
       membersRefresh: '刷新',
+      gatesModel: '闸门',
+      gatesTitle: '闸门（本群）',
+      gatesHint: '启停只影响当前会话，重启后恢复全局默认。',
+      gatesEmpty: '本群没有配置闸门。',
+      gatesEnable: '启用',
+      gatesDisable: '停用',
+      gatesLoadFailed: '加载失败：',
+      gatesToggleFailed: '操作失败：',
+      gateStateOn: 'on',
+      gateStateOffSession: 'off·群',
+      gateStateOffGlobal: 'off·全局',
+      gateStateOnSession: 'on·群',
+      gateStateNa: 'n/a',
+
       membersLead: 'Lead',
       membersEmpty: '本群还没有成员。',
       membersNoTeam: '当前会话尚未加入团队。',
@@ -458,6 +472,20 @@ window.__ModuleLoader__.load({
       membersTitle: 'Member models (live)',
       membersHint: 'Fetches once when opened; click Refresh for the latest state. "fallback·auto" means the plugin switched after a quota failure.',
       membersRefresh: 'Refresh',
+      gatesModel: 'Gates',
+      gatesTitle: 'Gates (this Team)',
+      gatesHint: 'Toggling affects this session only; global defaults return after restart.',
+      gatesEmpty: 'No gates configured for this Team.',
+      gatesEnable: 'Enable',
+      gatesDisable: 'Disable',
+      gatesLoadFailed: 'Load failed: ',
+      gatesToggleFailed: 'Action failed: ',
+      gateStateOn: 'on',
+      gateStateOffSession: 'off·session',
+      gateStateOffGlobal: 'off·global',
+      gateStateOnSession: 'on·session',
+      gateStateNa: 'n/a',
+
       membersLead: 'Lead',
       membersEmpty: 'No members in this Team yet.',
       membersNoTeam: 'This session is not in a Team yet.',
@@ -3320,6 +3348,181 @@ window.__ModuleLoader__.load({
       }
     }
 
+    function createGatesControl(ctx, t) {
+      return function GatesControl({ sessionId, useSessions }) {
+        const [open, setOpen] = React.useState(false)
+        const [view, setView] = React.useState(null)
+        const [error, setError] = React.useState('')
+        const [busy, setBusy] = React.useState('')
+        const [reloadKey, setReloadKey] = React.useState(0)
+        const preset = useSessions === undefined
+          ? undefined
+          : useSessions((state) => {
+              const value = state.byId?.[sessionId]?.projectionValues?.agentPreset
+              return typeof value === 'string' ? value : undefined
+            })
+        React.useEffect(() => {
+          if (!open || sessionId === undefined) return undefined
+          let cancelled = false
+          fetch(`/agent-team-roles/gates/${encodeURIComponent(sessionId)}`)
+            .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
+            .then((data) => {
+              if (cancelled) return
+              setView({ gates: Array.isArray(data.gates) ? data.gates : [], reason: data.reason ?? '' })
+              setError('')
+            })
+            .catch((caught) => {
+              if (!cancelled) setError(`${t('gatesLoadFailed')}${caught.message}`)
+            })
+          return () => {
+            cancelled = true
+          }
+        }, [open, sessionId, t, reloadKey])
+        if (useSessions !== undefined && preset !== 'team-lead') return null
+
+        const stateLabel = (gate) => {
+          if (!gate.applicable) return t('gateStateNa')
+          if (gate.state === 'off-session') return t('gateStateOffSession')
+          if (gate.state === 'off-global') return t('gateStateOffGlobal')
+          if (gate.state === 'on-session') return t('gateStateOnSession')
+          return t('gateStateOn')
+        }
+        const disabledNow = (gate) => gate.state === 'off-session' || gate.state === 'off-global'
+        const toggle = async (gate) => {
+          if (busy !== '' || sessionId === undefined) return
+          setBusy(gate.id)
+          setError('')
+          try {
+            const line = `/team-gates ${disabledNow(gate) ? 'enable' : 'disable'} ${gate.id}`
+            const response = await ctx.remote.commands.execute(sessionId, line, [])
+            if (!response.ok) throw new Error(response.error.message)
+            if (response.value !== undefined && response.value.result.kind === 'error') {
+              throw new Error(response.value.result.text)
+            }
+            setReloadKey((current) => current + 1)
+          } catch (caught) {
+            setError(`${t('gatesToggleFailed')}${caught.message}`)
+          } finally {
+            setBusy('')
+          }
+        }
+
+        const trigger = h('button', {
+          key: 'trigger',
+          type: 'button',
+          title: t('gatesTitle'),
+          style: { ...button, padding: '4px 8px', fontSize: 12, whiteSpace: 'nowrap' },
+          onClick: () => {
+            setOpen((current) => !current)
+            setError('')
+          },
+        }, `⛨ ${t('gatesModel')}`)
+
+        if (!open) return trigger
+
+        const rows = view === null ? [] : view.gates
+        const panel = h('div', {
+          key: 'panel',
+          role: 'dialog',
+          'aria-label': t('gatesTitle'),
+          onClick: (event) => event.stopPropagation(),
+          style: {
+            position: 'fixed',
+            left: '50%',
+            bottom: 96,
+            transform: 'translateX(-50%)',
+            width: 'min(560px, calc(100vw - 32px))',
+            maxHeight: '62vh',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            padding: 14,
+            background: 'var(--dsw-alias-bg-overlay)',
+            color: 'var(--dsw-alias-label-primary)',
+            border: '1px solid var(--dsw-alias-border-l2)',
+            borderRadius: 12,
+            boxShadow: '0 18px 50px rgba(0, 0, 0, 0.35)',
+            zIndex: 1001,
+          },
+        }, [
+          h('div', { key: 'head', style: { ...row, justifyContent: 'space-between', gap: 8 } }, [
+            h('div', { key: 'title', style: { display: 'flex', flexDirection: 'column', gap: 3 } }, [
+              h('strong', { key: 't', style: { fontSize: 14 } }, t('gatesTitle')),
+              h('span', { key: 'h', style: { ...small, fontSize: 11 } }, t('gatesHint')),
+            ]),
+            h('div', { key: 'actions', style: row }, [
+              h('button', {
+                key: 'refresh',
+                type: 'button',
+                style: { ...button, padding: '2px 8px' },
+                onClick: () => setReloadKey((current) => current + 1),
+              }, t('membersRefresh')),
+              h('button', {
+                key: 'close',
+                type: 'button',
+                style: { ...button, padding: '2px 8px' },
+                onClick: () => setOpen(false),
+              }, '×'),
+            ]),
+          ]),
+          error === '' ? null : h('div', { key: 'error', style: banner('state-error') }, error),
+          h('div', {
+            key: 'list',
+            style: { display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto', minHeight: 0 },
+          }, view === null
+            ? [h('span', { key: 'loading', style: small }, t('loading'))]
+            : rows.length === 0
+              ? [h('span', { key: 'empty', style: small }, view.reason !== '' ? view.reason : t('gatesEmpty'))]
+              : rows.map((gate) => h('div', {
+                  key: gate.id,
+                  style: {
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0, 1fr) auto',
+                    gap: 8,
+                    alignItems: 'center',
+                    padding: '8px 10px',
+                    border: '1px solid var(--dsw-alias-border-l1)',
+                    borderRadius: 8,
+                    background: 'var(--dsw-alias-bg-layer-1)',
+                  },
+                }, [
+                  h('div', { key: 'copy', style: { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 } }, [
+                    h('div', { key: 'line', style: { display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' } }, [
+                      h('span', { key: 'id', style: { fontSize: 13, fontWeight: 600 } }, gate.id),
+                      h('span', {
+                        key: 'state',
+                        style: {
+                          ...small,
+                          fontSize: 10,
+                          padding: '1px 6px',
+                          borderRadius: 999,
+                          background: 'var(--dsw-alias-bg-layer-2)',
+                          whiteSpace: 'nowrap',
+                        },
+                      }, stateLabel(gate)),
+                    ]),
+                    h('span', { key: 'deny', style: { ...small, fontSize: 11, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
+                      `deny ${gate.deny} ← ${gate.require}`),
+                    gate.description === '' ? null : h('span', { key: 'desc', style: { ...small, fontSize: 11 } }, gate.description),
+                  ]),
+                  h('button', {
+                    key: 'toggle',
+                    type: 'button',
+                    style: primaryButton,
+                    disabled: busy !== '' || !gate.applicable,
+                    onClick: () => toggle(gate),
+                  }, busy === gate.id ? t('saving') : disabledNow(gate) ? t('gatesEnable') : t('gatesDisable')),
+                ]))),
+        ])
+        const backdrop = h('div', {
+          key: 'backdrop',
+          onClick: () => setOpen(false),
+          style: { position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0, 0, 0, 0.28)' },
+        }, [panel])
+        return h(React.Fragment, null, [trigger, createPortal === null ? backdrop : createPortal(backdrop, document.body)])
+      }
+    }
+
     function TeamRolesIcon({ size = 18 }) {
       return h('svg', {
         width: size,
@@ -3378,6 +3581,13 @@ window.__ModuleLoader__.load({
           label: () => t('membersModel'),
           locale: NS,
         }, createMembersControl(ctx, t))), 'agent-team-roles:members-control')
+        ctx.effect(() => ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
+          name: 'conversation.input.left',
+          id: 'agent-team-roles-gates',
+          order: 17,
+          label: () => t('gatesModel'),
+          locale: NS,
+        }, createGatesControl(ctx, t))), 'agent-team-roles:gates-control')
       },
     }
   },

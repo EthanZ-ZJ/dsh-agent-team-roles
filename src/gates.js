@@ -146,6 +146,32 @@ export function gateApplicable(gate, liveRoles) {
   return keyRoles.some((role) => liveRoles.has(role))
 }
 
+/**
+ * Resolve one gate's effective state for a Team.
+ *
+ * The session overlay (a Map<gateId, disabled:boolean> for the current Team)
+ * wins over the global config default, so an operator can turn a gate off (or
+ * back on) for this conversation only.
+ *
+ * @returns 'on' | 'off-session' | 'off-global' | 'on-session'
+ */
+export function gateState(globalDisabled, sessionOverrides, gateId) {
+  if (sessionOverrides !== undefined && sessionOverrides.has(gateId)) {
+    return sessionOverrides.get(gateId) === true ? 'off-session' : 'on-session'
+  }
+  return globalDisabled.has(gateId) ? 'off-global' : 'on'
+}
+
+/** Gate ids effectively disabled for one Team (session overlay wins). */
+export function effectiveDisabledGates(gates, globalDisabled, sessionOverrides) {
+  const disabled = []
+  for (const gate of Array.isArray(gates) ? gates : []) {
+    const state = gateState(globalDisabled, sessionOverrides, gate.id)
+    if (state === 'off-session' || state === 'off-global') disabled.push(gate.id)
+  }
+  return disabled
+}
+
 /** Report the first validation failure of one gate, or undefined when valid. */
 export function validateGate(gate) {
   if (!GATE_ID.test(gate.id)) return `gate id "${gate.id}" must be lowercase kebab-case (letters, digits, hyphens; at most 64 characters)`

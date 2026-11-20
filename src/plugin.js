@@ -25,16 +25,19 @@ import {
   auditGateList,
   commandFromArgs,
   commandSuccessEvent,
+  effectiveDisabledGates,
   evaluateGates,
   gateApplicable,
   gateKeyRoles,
   gateRequirement,
+  gateState,
   normalizeGates,
   pathFromArgs,
   validateGate,
 } from './gates.js'
 import { GateLedger } from './ledger.js'
 import { shouldAutoSwitch } from './auto-fallback.js'
+import { buildGateView, gatesRoute } from './gate-view.js'
 import { buildRootView, memberModelsRoute } from './member-models.js'
 import { installGateParser } from './gate-parse.js'
 import { CodexThreadStore } from './codex-store.js'
@@ -194,6 +197,10 @@ export function apply(ctx, config) {
   const memberRouteOverrides = new Map()
   // Live Lead Agent handles keyed by team root, for the member-model view.
   const leadAgents = new Map()
+  // Session-scoped gate enable/disable overlay: teamId -> Map<gateId, disabled>.
+  // The global Config list stays the policy default; this overlay is a per-Team
+  // operational decision and dies with the process, like the gate ledger.
+  const sessionGateOverrides = new Map()
   const tools = createTools({
     ctx,
     config,
@@ -332,14 +339,19 @@ export function apply(ctx, config) {
       }
       const applicable = gates.filter((gate) => gateApplicable(gate, liveRoles))
       if (applicable.length === 0) return next()
+      const teamId = caller.membership.root.id
       const decision = evaluateGates({
         gates: applicable,
-        disabled: readConfig(config, 'gatesDisabled') ?? [],
+        disabled: effectiveDisabledGates(
+          applicable,
+          new Set(readConfig(config, 'gatesDisabled') ?? []),
+          sessionGateOverrides.get(teamId),
+        ),
         role: caller.roleId,
         tool: exec.name,
         args: exec.arguments,
         ledger: gateLedger,
-        teamId: caller.membership.root.id,
+        teamId,
       })
       return decision ?? next()
     } catch (error) {
@@ -481,7 +493,7 @@ export function apply(ctx, config) {
 
     try {
       if (membership.role === 'lead') {
-        const applied = installLead({ scoped, register, tools, ctx, snapshots, roles: rolesReader, agent, playbook: leadPlaybook })
+        const applied = installLead({ scoped, register, tools, ctx, snapshots, roles: rolesReader, agent, playbook: leadPlaybook, gateSummary: gateSummaryFor })
         // A Lead whose session preset is not resolved yet (early `agent/created`)
         // installs nothing; do not mark it installed, so the pre-step backstop
         // retries once the session context is complete.
@@ -647,6 +659,13 @@ export function apply(ctx, config) {
           text: 'Team templates are available only in a session using the Team Lead preset.',
         }
       }
+      const sessionSummary = () => {
+        const overridden = [...(sessionGateOverrides.get(teamId) ?? new Map()).entries()]
+        if (overridden.length === 0) return 'session overrides: none (global defaults apply)'
+        return 'session overrides: ' + overridden
+          .map(([id, off]) => `${id}=${off ? 'off' : 'on'}`)
+          .join(', ')
+      }
       const [action, argument] = rawInput.trim().split(/\s+/, 2)
       const templates = await loadTemplates(true)
       if (action === 'list' || action === undefined || action === '') {
@@ -720,8 +739,17 @@ export function apply(ctx, config) {
         }
       }
       const gates = normalizeGates(readConfig(config, 'gates') ?? [])
-      const disabled = new Set(readConfig(config, 'gatesDisabled') ?? [])
+      const globalDisabled = new Set(readConfig(config, 'gatesDisabled') ?? [])
       const teamId = membership.root.id
+      const sessionMap = () => {
+        let map = sessionGateOverrides.get(teamId)
+        if (map === undefined) {
+          map = new Map()
+          sessionGateOverrides.set(teamId, map)
+        }
+        return map
+      }
+      const stateOf = (gate) => gateState(globalDisabled, sessionGateOverrides.get(teamId), gate.id)
       let liveRoles
       try {
         liveRoles = rosterRoles(agent)
@@ -734,14 +762,11 @@ export function apply(ctx, config) {
         if (argument === undefined || !gates.some((gate) => gate.id === argument)) {
           return { kind: 'error', text: `unknown gate "${argument ?? ''}"` }
         }
-        const editor = ctx.get('configEditor')
-        await editor.edit(ctx.fiber.entry, (current) => {
-          const next = new Set(Array.isArray(current.gatesDisabled) ? current.gatesDisabled : [])
-          if (action === 'enable') next.delete(argument)
-          else next.add(argument)
-          return { ...current, gatesDisabled: [...next] }
-        })
-        return { kind: 'success', text: `Gate "${argument}" ${action === 'enable' ? 'enabled' : 'disabled'}.` }
+        sessionMap().set(argument, action === 'disable')
+        return {
+          kind: 'success',
+          text: `Gate "${argument}" ${action === 'enable' ? 'enabled' : 'disabled'} for THIS session only (cleared on restart). Global defaults change in the plugin settings.`,
+        }
       }
       if (gates.length === 0) return { kind: 'success', text: 'No workflow gates configured.' }
       if (action === undefined || action === '' || action === 'list') {
@@ -752,12 +777,18 @@ export function apply(ctx, config) {
             : `event "${gate.require.event}" from ${gate.require.byRoles.join('/')}` +
               (gate.require.freshFor === undefined ? '' : ` (fresh ${gate.require.freshFor}s)`)
           const description = gate.description === '' ? '' : ` — ${gate.description}`
-          const flag = disabled.has(gate.id)
-            ? '[off]'
-            : applicable(gate) ? '[on] ' : '[n/a]'
+          const state = stateOf(gate)
+          const flag = !applicable(gate)
+            ? '[n/a]  '
+            : state === 'off-session'
+              ? '[off·群]'
+              : state === 'off-global'
+                ? '[off·全局]'
+                : state === 'on-session' ? '[on·群] ' : '[on]   '
           return `${flag} ${gate.id}: deny ${gate.deny.role} ` +
             `${gate.deny.tool.join('/')}${pattern} ← ${requirement}${description}`
         })
+        lines.push('', sessionSummary())
         return { kind: 'success', text: lines.join('\n') }
       }
       if (action !== 'status') {
@@ -766,7 +797,9 @@ export function apply(ctx, config) {
       const lines = gates.map((gate) => {
         if (!applicable(gate)) {
           const keyRoles = gateKeyRoles(gate).join(', ')
-          return `${disabled.has(gate.id) ? '[off]' : '[n/a]'} ${gate.id}: inapplicable (no live member with role ${keyRoles})`
+          const state = stateOf(gate)
+          const flag = state === 'off-session' ? '[off·群]' : state === 'off-global' ? '[off·全局]' : '[n/a]  '
+          return `${flag} ${gate.id}: inapplicable (no live member with role ${keyRoles})`
         }
         const requirement = gateRequirement(gate)
         if (requirement === undefined) return `${gate.id}: invalid requirement`
@@ -784,8 +817,15 @@ export function apply(ctx, config) {
             ? 'unsatisfied (no event recorded)'
             : `unsatisfied (last ${event} by ${latest.role} at ${new Date(latest.at).toISOString()}` +
               `${requirement.freshFor === undefined ? '' : `, expired after ${requirement.freshFor}s`})`
-        return `${disabled.has(gate.id) ? '[off]' : '[on] '} ${gate.id}: ${state}`
+        const gateStateValue = stateOf(gate)
+        const flag = gateStateValue === 'off-session'
+          ? '[off·群]'
+          : gateStateValue === 'off-global'
+            ? '[off·全局]'
+            : gateStateValue === 'on-session' ? '[on·群] ' : '[on]   '
+        return `${flag} ${gate.id}: ${state}`
       })
+      lines.push('', sessionSummary())
       return { kind: 'success', text: lines.join('\n') }
     },
   }), 'agent-team-roles:team-gates-command')
@@ -798,6 +838,37 @@ export function apply(ctx, config) {
       'agent-team-roles:settings-policy',
     )
   })
+
+  const listGateView = (sessionId) => {
+    const lead = leadAgents.get(sessionId)
+    if (lead === undefined) return undefined
+    const gates = normalizeGates(readConfig(config, 'gates') ?? [])
+    let liveRoles
+    try {
+      liveRoles = rosterRoles(lead)
+    } catch {
+      liveRoles = new Set()
+    }
+    return buildGateView({
+      gates,
+      globalDisabled: new Set(readConfig(config, 'gatesDisabled') ?? []),
+      sessionMap: sessionGateOverrides.get(sessionId),
+      liveRoles,
+    })
+  }
+
+  /** One-line gate state summary for the Lead prompt. */
+  const gateSummaryFor = (teamId) => {
+    const view = listGateView(teamId)
+    if (view === undefined || view.gates.length === 0) return ''
+    const parts = view.gates.map((gate) => {
+      if (!gate.applicable) return `${gate.id}=n/a`
+      if (gate.state === 'off-session') return `${gate.id}=off(session)`
+      if (gate.state === 'off-global') return `${gate.id}=off(global)`
+      return `${gate.id}=on`
+    })
+    return `Current workflow gates: ${parts.join('; ')}.`
+  }
 
   const listMemberRoots = () => {
     const catalog = mergeRoles(rolesReader.read())
@@ -834,6 +905,7 @@ export function apply(ctx, config) {
     scope.effect(() => scope.webServer.register(skillRoute()), 'agent-team-roles:skill-routes')
     scope.effect(() => scope.webServer.register(modelCatalogRoute(scope.llm)), 'agent-team-roles:model-catalog-route')
     scope.effect(() => scope.webServer.register(memberModelsRoute(listMemberRoots)), 'agent-team-roles:member-models-route')
+    scope.effect(() => scope.webServer.register(gatesRoute(listGateView)), 'agent-team-roles:gates-view-route')
   })
 }
 
@@ -856,7 +928,7 @@ export function isTeamLeadPreset(agent, ctx) {
 }
 
 /** Install the Lead's role catalog, tools, and the official-spawn guard. */
-function installLead({ scoped, register, tools, ctx, snapshots, roles, agent, playbook }) {
+function installLead({ scoped, register, tools, ctx, snapshots, roles, agent, playbook, gateSummary }) {
   // Manual pulls and the team description are Team-Lead-preset features; other
   // presets run plain sessions and must not carry the roster catalog.
   if (!isTeamLeadPreset(agent, ctx)) return false
@@ -865,6 +937,21 @@ function installLead({ scoped, register, tools, ctx, snapshots, roles, agent, pl
     order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY') + 10,
     text: () => leadCatalog(tools.catalog(), typeof playbook === 'function' ? playbook() : ''),
   }))
+  // Current gate state for this Team (global defaults + session overrides), so
+  // the Lead knows which locks are live without asking.
+  if (typeof gateSummary === 'function') {
+    register(scoped.systemPrompt.section({
+      name: 'agent-team-roles:lead-gates',
+      order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY') + 12,
+      text: () => {
+        try {
+          return gateSummary(agent.id)
+        } catch {
+          return ''
+        }
+      },
+    }))
+  }
   register(scoped.systemPrompt.section({
     name: 'agent-team-roles:active-members',
     order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY') + 11,
