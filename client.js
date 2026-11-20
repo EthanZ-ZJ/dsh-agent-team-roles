@@ -2409,19 +2409,34 @@ window.__ModuleLoader__.load({
         : rules
             .filter((rule) => rule.roleId === selectedRole)
             .sort((left, right) => (right.updatedAt ?? right.createdAt ?? 0) - (left.updatedAt ?? left.createdAt ?? 0))
-      // Dropdown candidates for the route combo inputs: providers seen in the
-      // catalog plus the common ones; models seen across configured roles.
-      const providerCandidates = [...new Set([
+      // Pure dropdowns for the route fields: providers come from the host's
+      // built-in adapter registry (remote.llm.listProviders); models come from
+      // the roles catalog — the models actually in use in this deployment.
+      // No free-text entry: an unlisted current value is kept as an extra
+      // option so nothing is silently lost.
+      const [registryProviders, setRegistryProviders] = React.useState(null)
+      React.useEffect(() => {
+        let cancelled = false
+        try {
+          ctx.remote?.llm?.listProviders?.()?.then((info) => {
+            if (cancelled) return
+            const names = (Array.isArray(info) ? info : [])
+              .map((entry) => (entry !== null && typeof entry === 'object' ? entry.provider ?? entry.id ?? entry.name : entry))
+              .filter((name) => typeof name === 'string' && name !== '')
+            setRegistryProviders(names.length === 0 ? null : names)
+          }).catch(() => { })
+        } catch {
+          // Remote absent: the fallback option list stays.
+        }
+        return () => {
+          cancelled = true
+        }
+      }, [])
+      const providerOptions = [...new Set(registryProviders ?? [
         'deepseek-account', 'zai', 'openai', 'anthropic', 'google', 'openrouter',
         ...roles.map((role) => role.provider).filter(Boolean),
       ])]
-      const modelCandidates = [...new Set(roles.map((role) => role.model).filter(Boolean))]
-      const routeDatalists = [
-        h('datalist', { key: 'atr-provider-options', id: 'atr-provider-options' },
-          providerCandidates.map((name) => h('option', { key: name, value: name }))),
-        h('datalist', { key: 'atr-model-options', id: 'atr-model-options' },
-          modelCandidates.map((name) => h('option', { key: name, value: name }))),
-      ]
+      const modelOptions = [...new Set(roles.map((role) => role.model).filter(Boolean))]
       const [installedSkills, setInstalledSkills] = React.useState([])
       const [skillView, setSkillView] = React.useState(null)
       React.useEffect(() => {
@@ -2554,23 +2569,35 @@ window.__ModuleLoader__.load({
               h('div', { key: 'route', style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 12 } }, [
                 h('label', { key: 'provider', style: label }, [
                   h('span', { key: 'l' }, t('provider')),
-                  h('input', {
-                    key: 'i',
-                    style: input,
-                    list: 'atr-provider-options',
-                    value: selected.provider ?? '',
-                    onChange: (event) => onEdit({ provider: event.target.value }),
-                  }),
+                  (() => {
+                    const current = selected.provider ?? ''
+                    const options = [...new Set(providerOptions.includes(current) || current === '' ? providerOptions : [current, ...providerOptions])]
+                    return h('select', {
+                      key: 'i',
+                      style: input,
+                      value: current,
+                      onChange: (event) => onEdit({ provider: event.target.value }),
+                    }, [
+                      h('option', { key: 'inherit', value: '' }, t('effortDefault')),
+                      ...options.map((name) => h('option', { key: name, value: name }, name)),
+                    ])
+                  })(),
                 ]),
                 h('label', { key: 'model', style: label }, [
                   h('span', { key: 'l' }, t('model')),
-                  h('input', {
-                    key: 'i',
-                    style: input,
-                    list: 'atr-model-options',
-                    value: selected.model ?? '',
-                    onChange: (event) => onEdit({ model: event.target.value }),
-                  }),
+                  (() => {
+                    const current = selected.model ?? ''
+                    const options = [...new Set(modelOptions.includes(current) || current === '' ? modelOptions : [current, ...modelOptions])]
+                    return h('select', {
+                      key: 'i',
+                      style: input,
+                      value: current,
+                      onChange: (event) => onEdit({ model: event.target.value }),
+                    }, [
+                      h('option', { key: 'inherit', value: '' }, t('effortDefault')),
+                      ...options.map((name) => h('option', { key: name, value: name }, name)),
+                    ])
+                  })(),
                 ]),
                 h('label', { key: 'effort', style: label }, [
                   h('span', { key: 'l' }, t('effort')),
@@ -2728,7 +2755,6 @@ window.__ModuleLoader__.load({
                     ]))),
               ]),
             ]),
-          ...routeDatalists,
       ])
     }
 
