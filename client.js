@@ -215,6 +215,20 @@ window.__ModuleLoader__.load({
       skillLoadFailed: '（内容加载失败）',
       skillViewGuide: '设置页不提供新增/修改技能的入口。要新增技能，请直接让 agent 处理——例如对 Team Lead 说：「给 pm 角色新增一个 xxx 技能，写到 ~/.dsh/agent-team-roles/skills/pm/xxx/SKILL.md」；文件放好后点「刷新」即可在这里查看。',
       effortDefault: '默认（跟随会话）',
+      membersModel: '成员模型',
+      membersTitle: '成员模型（实时）',
+      membersHint: '每 1.5 秒自动刷新；「备用·自动」表示额度失败后由插件自动切换。',
+      membersLead: 'Lead',
+      membersEmpty: '本群还没有成员。',
+      membersNoTeam: '当前会话尚未加入团队。',
+      membersRefreshFailed: '刷新失败：',
+      membersNoModel: '（未指定，跟随环境）',
+      modelSourceSession: '跟随会话',
+      modelSourcePrimary: '主模型',
+      modelSourceFallbackAuto: '备用·自动',
+      modelSourceFallbackManual: '备用·手动',
+      modelPending: '待激活',
+
       fallbackModel: '备用模型',
       fallbackNone: '不配备用',
       fallbackHint: '主模型额度耗尽或不可用时，可一键把成员切到备用模型继续（上下文保留）。',
@@ -439,6 +453,20 @@ window.__ModuleLoader__.load({
       skillLoadFailed: '(failed to load content)',
       skillViewGuide: 'This page intentionally has no add/edit button for skills. To add one, just ask an agent — e.g. tell the Team Lead: "add an xxx skill for the pm role, write it to ~/.dsh/agent-team-roles/skills/pm/xxx/SKILL.md"; click Refresh afterwards to view it here.',
       effortDefault: 'Default (follow the session)',
+      membersModel: 'Member models',
+      membersTitle: 'Member models (live)',
+      membersHint: 'Refreshes every 1.5s; "fallback·auto" means the plugin switched after a quota failure.',
+      membersLead: 'Lead',
+      membersEmpty: 'No members in this Team yet.',
+      membersNoTeam: 'This session is not in a Team yet.',
+      membersRefreshFailed: 'Refresh failed: ',
+      membersNoModel: '(unset, follows environment)',
+      modelSourceSession: 'session',
+      modelSourcePrimary: 'primary',
+      modelSourceFallbackAuto: 'fallback·auto',
+      modelSourceFallbackManual: 'fallback·manual',
+      modelPending: 'pending',
+
       fallbackModel: 'Fallback model',
       fallbackNone: 'No fallback',
       fallbackHint: 'Used when the primary route is unavailable (for example quota exhausted); switching keeps the member context.',
@@ -3120,6 +3148,168 @@ window.__ModuleLoader__.load({
       }
     }
 
+    function createMembersControl(ctx, t) {
+      return function MembersControl({ sessionId, useSessions }) {
+        const [open, setOpen] = React.useState(false)
+        const [team, setTeam] = React.useState(null)
+        const [error, setError] = React.useState('')
+        const preset = useSessions === undefined
+          ? undefined
+          : useSessions((state) => {
+              const value = state.byId?.[sessionId]?.projectionValues?.agentPreset
+              return typeof value === 'string' ? value : undefined
+            })
+        React.useEffect(() => {
+          if (!open || sessionId === undefined) return undefined
+          let cancelled = false
+          const load = async () => {
+            try {
+              const response = await fetch('/agent-team-roles/member-models')
+              if (!response.ok) throw new Error(`HTTP ${response.status}`)
+              const data = await response.json()
+              if (cancelled) return
+              const root = Array.isArray(data.roots)
+                ? data.roots.find((entry) => entry.rootId === sessionId)
+                : undefined
+              setTeam(root ?? null)
+              setError(root === undefined ? t('membersNoTeam') : '')
+            } catch (caught) {
+              if (!cancelled) setError(`${t('membersRefreshFailed')}${caught.message}`)
+            }
+          }
+          void load()
+          const timer = setInterval(load, 1500)
+          return () => {
+            cancelled = true
+            clearInterval(timer)
+          }
+        }, [open, sessionId, t])
+        if (useSessions !== undefined && preset !== 'team-lead') return null
+
+        const labelOf = (member) => {
+          if (member.provider === '' && member.model === '') return t('membersNoModel')
+          return `${member.provider}/${member.model}${member.reasoningEffort === '' ? '' : ` · ${member.reasoningEffort}`}`
+        }
+        const sourceLabel = (source) => {
+          if (source === 'primary') return t('modelSourcePrimary')
+          if (source === 'fallback-auto') return t('modelSourceFallbackAuto')
+          if (source === 'fallback-manual') return t('modelSourceFallbackManual')
+          return t('modelSourceSession')
+        }
+        const dotColor = (status) => status === 'failed'
+          ? 'var(--dsw-alias-state-error-primary)'
+          : status === 'running' || status === 'active'
+            ? 'var(--dsw-alias-state-success-primary)'
+            : 'var(--dsw-alias-label-tertiary)'
+
+        const trigger = h('button', {
+          key: 'trigger',
+          type: 'button',
+          title: t('membersTitle'),
+          style: { ...button, padding: '4px 8px', fontSize: 12, whiteSpace: 'nowrap' },
+          onClick: () => {
+            setOpen((current) => !current)
+            setError('')
+          },
+        }, `◎ ${t('membersModel')}`)
+
+        if (!open) return trigger
+
+        const rows = team === null
+          ? []
+          : [
+              { key: 'lead', name: t('membersLead'), roleName: '', status: 'running', provider: team.lead.provider, model: team.lead.model, reasoningEffort: team.lead.reasoningEffort, source: 'session', pending: false },
+              ...(team.members ?? []).map((member) => ({ key: member.name, ...member })),
+            ]
+        const panel = h('div', {
+          key: 'panel',
+          role: 'dialog',
+          'aria-label': t('membersTitle'),
+          onClick: (event) => event.stopPropagation(),
+          style: {
+            position: 'fixed',
+            left: '50%',
+            bottom: 96,
+            transform: 'translateX(-50%)',
+            width: 'min(520px, calc(100vw - 32px))',
+            maxHeight: '60vh',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            padding: 14,
+            background: 'var(--dsw-alias-bg-overlay)',
+            color: 'var(--dsw-alias-label-primary)',
+            border: '1px solid var(--dsw-alias-border-l2)',
+            borderRadius: 12,
+            boxShadow: '0 18px 50px rgba(0, 0, 0, 0.35)',
+            zIndex: 1001,
+          },
+        }, [
+          h('div', { key: 'head', style: { ...row, justifyContent: 'space-between', gap: 8 } }, [
+            h('div', { key: 'title', style: { display: 'flex', flexDirection: 'column', gap: 3 } }, [
+              h('strong', { key: 't', style: { fontSize: 14 } }, t('membersTitle')),
+              h('span', { key: 'h', style: { ...small, fontSize: 11 } }, t('membersHint')),
+            ]),
+            h('button', {
+              key: 'close',
+              type: 'button',
+              style: { ...button, padding: '2px 8px' },
+              onClick: () => setOpen(false),
+            }, '×'),
+          ]),
+          error === '' ? null : h('div', { key: 'error', style: banner('state-error') }, error),
+          h('div', {
+            key: 'list',
+            style: { display: 'flex', flexDirection: 'column', gap: 4, overflowY: 'auto', minHeight: 0 },
+          }, rows.length === 0
+            ? [h('span', { key: 'empty', style: small }, error === '' ? t('membersEmpty') : '')]
+            : rows.map((member) => h('div', {
+                key: member.key,
+                style: {
+                  display: 'grid',
+                  gridTemplateColumns: '10px minmax(0, 1.1fr) minmax(0, 1.6fr) auto',
+                  gap: 8,
+                  alignItems: 'center',
+                  padding: '6px 8px',
+                  border: '1px solid var(--dsw-alias-border-l1)',
+                  borderRadius: 8,
+                  background: 'var(--dsw-alias-bg-layer-1)',
+                },
+              }, [
+                h('span', { key: 'dot', style: { width: 8, height: 8, borderRadius: 999, background: dotColor(member.status) } }),
+                h('span', { key: 'name', style: { fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
+                  member.roleName === '' ? member.name : `${member.name} · ${member.roleName}`),
+                h('span', { key: 'model', style: { fontSize: 12, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, labelOf(member)),
+                h('span', { key: 'tags', style: { display: 'flex', gap: 4, alignItems: 'center' } }, [
+                  h('span', {
+                    key: 'source',
+                    style: {
+                      ...small,
+                      fontSize: 10,
+                      padding: '1px 6px',
+                      borderRadius: 999,
+                      background: 'var(--dsw-alias-bg-layer-2)',
+                      whiteSpace: 'nowrap',
+                    },
+                  }, sourceLabel(member.source)),
+                  member.pending === true
+                    ? h('span', {
+                        key: 'pending',
+                        style: { ...small, fontSize: 10, padding: '1px 6px', borderRadius: 999, background: 'var(--dsw-alias-bg-layer-2)', whiteSpace: 'nowrap' },
+                      }, t('modelPending'))
+                    : null,
+                ]),
+              ]))),
+        ])
+        const backdrop = h('div', {
+          key: 'backdrop',
+          onClick: () => setOpen(false),
+          style: { position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0, 0, 0, 0.28)' },
+        }, [panel])
+        return h(React.Fragment, null, [trigger, createPortal === null ? backdrop : createPortal(backdrop, document.body)])
+      }
+    }
+
     function TeamRolesIcon({ size = 18 }) {
       return h('svg', {
         width: size,
@@ -3171,6 +3361,13 @@ window.__ModuleLoader__.load({
           label: () => t('pullMembers'),
           locale: NS,
         }, createPullControl(ctx, t))), 'agent-team-roles:pull-control')
+        ctx.effect(() => ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
+          name: 'conversation.input.left',
+          id: 'agent-team-roles-members',
+          order: 16,
+          label: () => t('membersModel'),
+          locale: NS,
+        }, createMembersControl(ctx, t))), 'agent-team-roles:members-control')
       },
     }
   },

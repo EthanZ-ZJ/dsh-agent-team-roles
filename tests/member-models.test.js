@@ -1,0 +1,104 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { buildRootView, describeMember, memberModelsRoute } from '../src/member-models.js'
+
+const role = {
+  id: 'dev',
+  name: 'DEV',
+  provider: 'p1',
+  model: 'm1',
+  reasoningEffort: 'high',
+  fallbackProvider: 'p2',
+  fallbackModel: 'm2',
+}
+
+test('a live selection matching the primary route reports primary', () => {
+  const view = describeMember({
+    name: 'dev',
+    status: 'active',
+    role,
+    live: { provider: 'p1', model: 'm1', reasoningEffort: 'high' },
+    hasAgent: true,
+  })
+  assert.equal(view.source, 'primary')
+  assert.equal(view.provider, 'p1')
+  assert.equal(view.pending, false)
+})
+
+test('a live selection matching the fallback route reports the override via', () => {
+  const auto = describeMember({
+    name: 'dev',
+    status: 'active',
+    role,
+    live: { provider: 'p2', model: 'm2' },
+    override: { provider: 'p2', model: 'm2', via: 'auto', at: 123 },
+    hasAgent: true,
+  })
+  assert.equal(auto.source, 'fallback-auto')
+  assert.equal(auto.changedAt, 123)
+  const manual = describeMember({
+    name: 'dev',
+    status: 'active',
+    role,
+    live: { provider: 'p2', model: 'm2' },
+    override: { provider: 'p2', model: 'm2', via: 'lead', at: 456 },
+    hasAgent: true,
+  })
+  assert.equal(manual.source, 'fallback-manual')
+})
+
+test('a dormant member uses the pending override and marks it pending', () => {
+  const view = describeMember({
+    name: 'dev',
+    status: 'inactive',
+    role,
+    override: { provider: 'p2', model: 'm2', via: 'auto', at: 9 },
+  })
+  assert.equal(view.provider, 'p2')
+  assert.equal(view.source, 'fallback-auto')
+  assert.equal(view.pending, true)
+})
+
+test('without live state or override the role route is shown; empty role follows the session', () => {
+  const fromRole = describeMember({ name: 'dev', status: 'inactive', role })
+  assert.equal(fromRole.provider, 'p1')
+  assert.equal(fromRole.source, 'primary')
+  assert.equal(fromRole.pending, true)
+
+  const inherits = describeMember({
+    name: 'general',
+    status: 'inactive',
+    role: { id: 'general', provider: '', model: '' },
+  })
+  assert.equal(inherits.provider, '')
+  assert.equal(inherits.source, 'session')
+})
+
+test('buildRootView lists the lead selection and every teammate', () => {
+  const root = buildRootView({
+    rootId: 'root-1',
+    leadSelection: { provider: 'p1', model: 'm1' },
+    roster: [{ name: 'dev', status: 'active' }, { name: 'general', status: 'failed' }],
+    roleOf: (name) => (name === 'dev' ? role : { id: 'general', provider: '', model: '' }),
+    liveOf: (name) => (name === 'dev' ? { provider: 'p2', model: 'm2' } : undefined),
+    overrideOf: (name) => (name === 'dev' ? { provider: 'p2', model: 'm2', via: 'auto', at: 1 } : undefined),
+  })
+  assert.equal(root.rootId, 'root-1')
+  assert.equal(root.lead.provider, 'p1')
+  assert.deepEqual(root.members.map((member) => member.name), ['dev', 'general'])
+  assert.equal(root.members[0].source, 'fallback-auto')
+  assert.equal(root.members[1].status, 'failed')
+})
+
+test('memberModelsRoute serves JSON and rejects non-GET', async () => {
+  const route = memberModelsRoute(() => [{ rootId: 'root-1', lead: {}, members: [] }])
+  assert.equal(route.path, '/agent-team-roles/member-models')
+  const ok = await route.resource(new Request('http://localhost/agent-team-roles/member-models'))
+  assert.equal(ok.status, 200)
+  assert.equal((await ok.json()).roots.length, 1)
+  const denied = await route.resource(new Request('http://localhost/agent-team-roles/member-models', { method: 'POST' }))
+  assert.equal(denied.status, 405)
+  const broken = memberModelsRoute(() => { throw new Error('boom') })
+  const fallback = await broken.resource(new Request('http://localhost/agent-team-roles/member-models'))
+  assert.deepEqual(await fallback.json(), { roots: [] })
+})

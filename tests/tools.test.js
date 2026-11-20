@@ -266,7 +266,10 @@ test('switch_member_model works on a dormant member through the route override',
   const result = await tool.execute({ member: 'dev', route: 'fallback' }, { agent: { id: 'root-1' } })
   assert.equal(result.applied, 'pending-activation')
   assert.equal(result.provider, 'p2')
-  assert.deepEqual(overrides.get('root-1:dev'), { provider: 'p2', model: 'm2' })
+  assert.deepEqual(
+    { ...overrides.get('root-1:dev'), at: 0 },
+    { provider: 'p2', model: 'm2', via: 'lead', at: 0 },
+  )
   assert.equal(sent.length, 1)
 })
 

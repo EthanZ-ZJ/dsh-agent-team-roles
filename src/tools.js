@@ -842,7 +842,7 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
       // a dormant member has no live handle and the override is what installMember
       // applies when the continue message wakes it.
       const overrides = memberRouteOverrides
-      if (overrides !== undefined) overrides.set(handleKey, routeValue)
+      if (overrides !== undefined) overrides.set(handleKey, { ...routeValue, via: 'lead', at: Date.now() })
       const agent = memberAgents.get(handleKey)
       let applied = 'pending-activation'
       if (agent !== undefined) {

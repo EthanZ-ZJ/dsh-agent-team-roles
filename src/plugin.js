@@ -35,6 +35,7 @@ import {
 } from './gates.js'
 import { GateLedger } from './ledger.js'
 import { shouldAutoSwitch } from './auto-fallback.js'
+import { buildRootView, memberModelsRoute } from './member-models.js'
 import { installGateParser } from './gate-parse.js'
 import { CodexThreadStore } from './codex-store.js'
 import { modelCatalogRoute } from './model-catalog.js'
@@ -191,6 +192,8 @@ export function apply(ctx, config) {
   // Agent; the override is applied by installMember on the next activation,
   // which keeps the same session (and therefore the same context).
   const memberRouteOverrides = new Map()
+  // Live Lead Agent handles keyed by team root, for the member-model view.
+  const leadAgents = new Map()
   const tools = createTools({
     ctx,
     config,
@@ -421,7 +424,7 @@ export function apply(ctx, config) {
       // Bound the memo; turns are monotonic so older keys are useless.
       if (autoFallbackAttempts.size > 500) autoFallbackAttempts.clear()
       autoFallbackAttempts.add(attemptKey)
-      memberRouteOverrides?.set(key, target)
+      memberRouteOverrides?.set(key, { ...target, via: 'auto', at: Date.now() })
       try {
         agent.model?.select(target)
       } catch (error) {
@@ -485,6 +488,11 @@ export function apply(ctx, config) {
         if (applied === false) {
           dispose()
           return
+        }
+        // Keep the Lead handle so the member-model view can list this Team.
+        if (leadAgents !== undefined) {
+          leadAgents.set(agent.id, agent)
+          register(() => leadAgents.delete(agent.id))
         }
       } else {
         installMember({
@@ -791,12 +799,41 @@ export function apply(ctx, config) {
     )
   })
 
+  const listMemberRoots = () => {
+    const catalog = mergeRoles(rolesReader.read())
+    const roots = []
+    for (const [rootId, lead] of leadAgents) {
+      let roster = []
+      try {
+        roster = ctx.agentTeams.listMembers(lead)
+          .filter((member) => member.role === 'teammate')
+          .map((member) => ({ name: member.name, status: member.status }))
+      } catch {
+        roster = []
+      }
+      roots.push(buildRootView({
+        rootId,
+        leadSelection: lead.model?.current?.(),
+        roster,
+        roleOf: (name) => {
+          const snapshot = snapshots.get(rootId, name)
+          return snapshot?.frozen ?? roleForTarget(catalog, name)
+        },
+        liveOf: (name) => memberAgents.get(`${rootId}:${name}`)?.model?.current?.(),
+        overrideOf: (name) => memberRouteOverrides.get(`${rootId}:${name}`),
+      }))
+    }
+    return roots
+  }
+
   // Read-only HTTP routes for the Settings page (same origin): installed role
-  // skills, and the host model catalog that backs the role model dropdown.
+  // skills, the host model catalog that backs the role model dropdown, and the
+  // live member-model view shown next to the pull control.
   // Skills are authored by agents, never through these endpoints — GET only.
   ctx.inject(['llm', 'webServer'], (scope) => {
     scope.effect(() => scope.webServer.register(skillRoute()), 'agent-team-roles:skill-routes')
     scope.effect(() => scope.webServer.register(modelCatalogRoute(scope.llm)), 'agent-team-roles:model-catalog-route')
+    scope.effect(() => scope.webServer.register(memberModelsRoute(listMemberRoots)), 'agent-team-roles:member-models-route')
   })
 }
 
