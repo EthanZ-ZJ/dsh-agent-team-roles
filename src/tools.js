@@ -48,7 +48,7 @@ function parameterSchema(parameters) {
       type: spec.type,
       ...(spec.description === undefined ? {} : { description: spec.description }),
       ...(spec.enum === undefined ? {} : { enum: spec.enum }),
-      ...(spec.items === undefined ? {} : { items: spec.items }),
+      ...(spec.items === undefined ? {} : { items: valueSchema(spec.items) }),
     }
     if (spec.required === true) required.push(name)
   }

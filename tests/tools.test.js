@@ -336,3 +336,31 @@ test('switch_member_model refuses a role without a configured fallback', async (
     /no fallback model configured/,
   )
 })
+
+test('every tool parameter schema is valid JSON Schema with only array-typed required', () => {
+  const tools = createTools({
+    ctx: { agentTeams: { tryMembership: () => undefined } },
+    config: {},
+    snapshots: { get: () => undefined },
+    rules: { list: () => [] },
+    roles: { read: () => [] },
+    ledger: {},
+  })
+  const invalid = []
+  const walk = (schema, path) => {
+    if (schema === null || typeof schema !== 'object') return
+    for (const [key, value] of Object.entries(schema)) {
+      if (key === 'required' && !Array.isArray(value)) invalid.push(path + '.required=' + JSON.stringify(value))
+      if (key === 'properties' && value && typeof value === 'object') {
+        for (const [name, child] of Object.entries(value)) walk(child, path + '.' + name)
+      }
+      if (key === 'items') walk(value, path + '[]')
+    }
+  }
+  for (const tool of [...tools.lead, ...tools.member]) walk(tool.parameters, tool.name)
+  assert.deepEqual(invalid, [])
+  const create = tools.lead.find((tool) => tool.name === 'create_team_role')
+  const fallbacks = create.parameters.properties.fallbacks
+  assert.equal(fallbacks.type, 'array')
+  assert.deepEqual(fallbacks.items.required, ['provider', 'model'])
+})
