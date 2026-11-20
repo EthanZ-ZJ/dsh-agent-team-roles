@@ -724,9 +724,21 @@ export function apply(ctx, config) {
   })
 }
 
-/** Whether this session runs the Team Lead preset. */
-export function isTeamLeadPreset(agent) {
-  const candidates = [agent?.session?.header?.agentPreset]
+/**
+ * Whether this session runs the Team Lead preset.
+ *
+ * The session header is written increasingly late; at `agent/created` it may
+ * still be missing. The composed preset and the session-preset resolver are
+ * consulted too, exactly like the Lead command gates do, so a freshly created
+ * Team Lead session is recognized on the first install.
+ */
+export function isTeamLeadPreset(agent, ctx) {
+  const presets = ctx?.get?.('agentPresets')
+  const candidates = [
+    agent?.session?.header?.agentPreset,
+    presets?.composedPreset?.(agent?.ctx),
+    presets?.presetForSession?.(agent?.session),
+  ]
   return candidates.includes('team-lead')
 }
 
@@ -734,7 +746,7 @@ export function isTeamLeadPreset(agent) {
 function installLead({ scoped, register, tools, ctx, snapshots, roles, agent, playbook }) {
   // Manual pulls and the team description are Team-Lead-preset features; other
   // presets run plain sessions and must not carry the roster catalog.
-  if (!isTeamLeadPreset(agent)) return
+  if (!isTeamLeadPreset(agent, ctx)) return
   register(scoped.systemPrompt.section({
     name: 'agent-team-roles:lead-catalog',
     order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY') + 10,
