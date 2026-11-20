@@ -56,5 +56,13 @@
   },
   "scripts": {
     "test": "node --test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EthanZ-ZJ/dsh-agent-team-roles.git"
+  },
+  "homepage": "https://github.com/EthanZ-ZJ/dsh-agent-team-roles",
+  "bugs": {
+    "url": "https://github.com/EthanZ-ZJ/dsh-agent-team-roles/issues"
   }
 }
