@@ -140,7 +140,6 @@ window.__ModuleLoader__.load({
       skillLoadFailed: '（内容加载失败）',
       skillReveal: '在文件管理器中定位',
       skillRevealFailed: '无法在文件管理器中定位此技能。',
-      skillRevealUnavailable: '当前连接不支持打开文件管理器。',
       effortDefault: '默认（跟随会话）',
       membersModel: '成员模型',
       membersTitle: '成员模型（实时）',
@@ -324,7 +323,6 @@ window.__ModuleLoader__.load({
       skillLoadFailed: '(failed to load content)',
       skillReveal: 'Show in file manager',
       skillRevealFailed: 'Could not reveal this skill in the file manager.',
-      skillRevealUnavailable: 'This connection cannot open the file manager.',
       effortDefault: 'Default (follow the session)',
       membersModel: 'Member models',
       membersTitle: 'Member models (live)',
@@ -1105,13 +1103,6 @@ window.__ModuleLoader__.load({
                 selectedRole,
                 selected,
                 busy,
-                getSessionRemote: () => {
-                  try {
-                    return ctx.remote?.session
-                  } catch {
-                    return undefined
-                  }
-                },
                 onSelect: (id) => { setSelectedRole(id); setNotice('') },
                 onAdd: addRole,
                 onRemove: removeRole,
@@ -1487,24 +1478,20 @@ window.__ModuleLoader__.load({
       ])
     }
 
-    function SkillReveal({ t, getSessionRemote, filePath }) {
+    function SkillReveal({ t, role, skill }) {
       const [busy, setBusy] = React.useState(false)
       const [error, setError] = React.useState('')
-      if (typeof filePath !== 'string' || !filePath) return null
-      const remote = () => {
-        try {
-          return typeof getSessionRemote === 'function' ? getSessionRemote() : undefined
-        } catch {
-          return undefined
-        }
-      }
-      const available = typeof remote()?.openWorkspacePath === 'function'
       const reveal = async () => {
         setBusy(true)
         setError('')
         try {
-          const result = await remote().openWorkspacePath({ path: filePath, action: 'reveal' })
-          if (!result.ok) setError(result.error?.message || t('skillRevealFailed'))
+          const response = await fetch('/agent-team-roles/skill-reveal', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ role, skill }),
+          })
+          const data = await response.json().catch(() => ({}))
+          if (!response.ok) setError(data.error || t('skillRevealFailed'))
         } catch {
           setError(t('skillRevealFailed'))
         } finally {
@@ -1512,13 +1499,12 @@ window.__ModuleLoader__.load({
         }
       }
       return h('div', { style: { ...row, flexWrap: 'wrap' } }, [
-        h('button', { key: 'reveal', type: 'button', style: button, disabled: !available || busy, onClick: reveal }, t('skillReveal')),
-        !available ? h('span', { key: 'unavailable', style: small }, t('skillRevealUnavailable')) : null,
+        h('button', { key: 'reveal', type: 'button', style: button, disabled: busy, onClick: reveal }, t('skillReveal')),
         error ? h('span', { key: 'error', role: 'alert', style: small }, error) : null,
       ])
     }
 
-    function RolesPanel({ t, roles, rules, selectedRole, selected, busy, getSessionRemote, onSelect, onAdd, onRemove, onEdit, onRename, onSave, onRefresh }) {
+    function RolesPanel({ t, roles, rules, selectedRole, selected, busy, onSelect, onAdd, onRemove, onEdit, onRename, onSave, onRefresh }) {
       const roleRules = roles === undefined || rules === undefined
         ? []
         : rules
@@ -1585,7 +1571,7 @@ window.__ModuleLoader__.load({
         key: 'skill-content', role: 'region', 'aria-label': skillName,
         style: { ...card, ...panel },
       }, skillView?.url !== skillUrl ? t('loading') : skillView.error ? t('skillLoadFailed') : [
-        h(SkillReveal, { key: skillUrl, t, getSessionRemote, filePath: skillView.filePath }),
+        h(SkillReveal, { key: skillUrl, t, role: selectedRole, skill: skillName }),
         h('pre', {
           key: 'text', tabIndex: 0,
           style: { margin: 0, maxHeight: 360, overflow: 'auto', font: 'inherit', lineHeight: 1.6, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' },

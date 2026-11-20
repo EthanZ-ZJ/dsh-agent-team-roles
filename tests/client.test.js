@@ -628,27 +628,26 @@ test('primary and fallback efforts are edited independently', async () => {
   assert.equal(updated.fallbackReasoningEffort, 'medium')
 })
 
-test('skill preview reveals the selected file through the native remote only on click', async (t) => {
-  const filePath = 'C:\\Team Skills\\dev\\clean-code-guard\\SKILL.md'
-  t.mock.method(globalThis, 'fetch', async (url) => {
-    const data = url.endsWith('/dev/clean-code-guard') ? { content: '# Clean Code', filePath }
+test('skill preview reveals the selected skill through the host route only on click', async (t) => {
+  const posts = []
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    if (url === '/agent-team-roles/skill-reveal') {
+      posts.push({ url, method: init.method, body: JSON.parse(init.body) })
+      return { ok: true, json: async () => ({ revealed: true }) }
+    }
+    const data = url.endsWith('/dev/clean-code-guard') ? { content: '# Clean Code', filePath: 'C:\\skills\\SKILL.md' }
       : url.endsWith('/dev') ? { skills: ['clean-code-guard'] } : { routes: [] }
     return { ok: true, json: async () => data }
   })
-  const calls = []
   const harness = createReactHarness()
   const dev = { id: 'dev', name: 'DEV' }
-  const mounted = await mountSection(harness, {
-    describe: () => namespaceView(baseValue({ roles: [dev] }), 1),
-    session: { async openWorkspacePath(request) { calls.push(request); return { ok: true } } },
-  })
+  const mounted = await mountSection(harness, { describe: () => namespaceView(baseValue({ roles: [dev] }), 1) })
   const roles = findComponent(mounted.tree, 'RolesPanel')
   const renderRoles = () => harness.render(roles.type, roles.props)
   findButton(await renderRoles(), 'clean-code-guard').props.onClick()
   const preview = findComponent(await renderRoles(), 'SkillReveal')
   const button = findButton(await harness.render(preview.type, preview.props), 'skillReveal')
-  assert.deepEqual(calls, [])
-  assert.equal(button.props.disabled, false)
+  assert.deepEqual(posts, [])
   await button.props.onClick()
-  assert.deepEqual(calls, [{ path: filePath, action: 'reveal' }])
+  assert.deepEqual(posts, [{ url: '/agent-team-roles/skill-reveal', method: 'POST', body: { role: 'dev', skill: 'clean-code-guard' } }])
 })

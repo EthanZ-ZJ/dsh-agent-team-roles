@@ -41,7 +41,7 @@ import { buildGateView, gatesRoute } from './gate-view.js'
 import { buildRootView, memberModelsRoute, modelSelection } from './member-models.js'
 import { CodexThreadStore } from './codex-store.js'
 import { modelCatalogRoute } from './model-catalog.js'
-import { skillRoute } from './skill-routes.js'
+import { skillRevealRoute, skillRoute } from './skill-routes.js'
 import { copyTemplateSkills, discoverTemplates, mergeTemplateGates, seedTemplates, templatesRoot, upsertRoles } from './templates.js'
 import { MemberSnapshots, RoleStore, RuleStore, stateDir } from './store.js'
 import { spawnRoleMember } from './spawn.js'
@@ -901,6 +901,7 @@ export function apply(ctx, config) {
   // Skills are authored by agents, never through these endpoints — GET only.
   ctx.inject(['llm', 'webServer'], (scope) => {
     scope.effect(() => scope.webServer.register(skillRoute()), 'agent-team-roles:skill-routes')
+    scope.effect(() => scope.webServer.register(skillRevealRoute(() => scope.get('sessionController'))), 'agent-team-roles:skill-reveal-route')
     scope.effect(() => scope.webServer.register(modelCatalogRoute(scope.llm)), 'agent-team-roles:model-catalog-route')
     scope.effect(() => scope.webServer.register(memberModelsRoute(listMemberRoots)), 'agent-team-roles:member-models-route')
     scope.effect(() => scope.webServer.register(gatesRoute(listGateView)), 'agent-team-roles:gates-view-route')
