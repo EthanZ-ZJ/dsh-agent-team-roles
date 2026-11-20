@@ -1,172 +1,174 @@
+> English · [中文](README.zh-CN.md)
+
 # dsh-agent-team-roles
 
-面向 DeepSeek Harness 官方 Agent Teams 运行时的**通用团队引擎 + 领域模板包**。
+A **generic team engine plus domain template packs** for the official Agent Teams runtime of DeepSeek Harness.
 
-这是一个**伴生插件**：`@deepseek-ai/dsh-experimental-agent-team` 继续负责成员名册（roster）、成员间消息、共享任务板和成员生命周期；本插件补上官方运行时没有的部分——可复用的角色定义、按角色召唤、命令级命令策略（denyCommands），以及成员运行中持续更新的“已学规则”层。
+This is a **companion plugin**: `@deepseek-ai/dsh-experimental-agent-team` keeps owning the roster, member messaging, the shared task board, and member lifecycle; this plugin adds what the official runtime does not have — reusable role definitions, role-based spawning, command-level command policy (`denyCommands`), and a layer of "learned rules" that members keep updating while they run.
 
-**引擎与领域分离**：插件本体（`src/`）只包含对任何领域都成立的机制——召唤与复用、握手协议、工具守卫、并发调度纪律、规则学习；具体流程（谁检视谁、谁先谁后、禁止什么命令）全部是数据，来自内置的 `software-dev` 模板包或你自己编写的模板。不应用任何模板、`leadPlaybook` 为空时，插件退化为纯通用调度引擎，完全可用。
+**Engine and domain are separate**: the plugin itself (`src/`) contains only mechanisms that hold for any domain — spawning and reuse, the handshake protocol, tool guards, concurrency discipline, rule learning. The concrete workflow (who reviews whom, what comes first, which commands are forbidden) is all data, supplied by the built-in `software-dev` template pack or by a template you write yourself. With no template applied and an empty `leadPlaybook`, the plugin degrades into a plain generic scheduling engine and still works.
 
-## 功能
+## Features
 
-- **设置里管理角色预设**：每个角色有 id、职责、常驻提示词（standing prompt）、可选模型路由与推理强度、工具策略、私有技能。
-- **按角色召唤**：Lead 调用 `spawn_team_member({ role, prompt })`，而不是官方的临时召唤工具。角色提示词、模型路由、工具策略、技能与已学规则会在成员首轮请求前装进它的 Agent 作用域。
-- **自更新角色提示词**：成员或 Lead 通过 `remember_role_rule` / `record_role_feedback` 记录长期要求。持久规则写入插件的 volatile Config；成员的提示词段在每次组装时重新读取，因此**下一步**就生效，同时持久化给后续实例。`session` 规则只存在内存中。
-- **规则审阅**：设置页列出已学规则的状态、证据次数和来源，可修改状态与内容、停用或删除；方向（polarity）只能在新增规则时选择。
-- **`general` 兜底角色**：默认自带且可编辑，处理没有专门角色匹配的任务；移除官方临时出口后仍保留派活能力。
-- **移除临时出口**：官方 `spawn_teammate` 被工具守卫（tool guard）拦截，Lead 被明确要求使用带角色的 `spawn_team_member`。
-- **Team Lead 预设**：插件自带一个 `team-lead` Agent 预设（调度型 Leader），并在左侧主导航提供 **Agent 团队角色** 入口。手动拉取成员只在 Team Lead 预设的会话中开放。
+- **Role presets managed in Settings**: each role has an id, responsibility, standing prompt, optional model route and reasoning effort, tool policy, and private skills.
+- **Role-based spawning**: the Lead calls `spawn_team_member({ role, prompt })` instead of the official ephemeral spawn tool. The role prompt, model route, tool policy, skills, and learned rules are installed into the member's Agent scope before its first request.
+- **Self-updating role prompts**: members or the Lead record long-term requirements through `remember_role_rule` / `record_role_feedback`. Durable rules are written to the plugin's volatile Config; the member's prompt section is re-read on every assembly, so the change takes effect on the **next step** and persists for later instances. `session` rules stay in memory only.
+- **Rule review**: the Settings page lists each learned rule's status, evidence count, and source; you can edit its status and text, retire it, or delete it. Direction (polarity) can only be chosen when a rule is added.
+- **`general` fallback role**: shipped, editable, handles tasks that match no specialized role; it keeps dispatch working after the official ephemeral exit is removed.
+- **Removing the ephemeral exit**: the official `spawn_teammate` is blocked by a tool guard, and the Lead is explicitly told to use role-based `spawn_team_member`.
+- **Team Lead preset**: the plugin ships a `team-lead` Agent preset (a scheduling leader) and exposes an **Agent team roles** entry in the main navigation. Manual member pulling is available only in Team Lead preset sessions.
 
-## 环境要求
+## Requirements
 
-- DeepSeek Harness `>=0.2.2-rc.1 <0.3.0`。
-- 已启用 Agent Teams profile bundle（`@deepseek-ai/dsh-experimental-agent-team-profile`），它提供本插件组合使用的 Team 服务与工具。
-- 具备 Settings 与所需 Client 服务的 Web 或 Desktop profile。
+- DeepSeek Harness `>=0.2.2-rc.1 <0.3.0`.
+- The Agent Teams profile bundle enabled (`@deepseek-ai/dsh-experimental-agent-team-profile`), which provides the Team services and tools this plugin composes with.
+- A Web or Desktop profile with Settings and the required Client services.
 
-本插件不 fork、不修改官方包，也不依赖 `dsh-agent-team-presets`。
+The plugin does not fork or modify the official packages, and does not depend on `dsh-agent-team-presets`.
 
-## 安装
+## Install
 
-从本仓库安装：
+From this repository:
 
 ```sh
 dsh plugin --profile desktop add /absolute/path/to/dsh-agent-team-roles
 ```
 
-或在 GUI 中 **插件 → 添加插件**，填入本目录绝对路径后安装。bundle patch 会注册一行 `agent-team-roles`。
+Or in the GUI: **Plugins → Add plugin**, enter this directory's absolute path, and install. The bundle patch registers an `agent-team-roles` row.
 
-安装后打开 **设置 → Agent 团队角色**，默认已有 `general` 角色。
+After installation, open **Settings → Agent team roles**; a `general` role already exists.
 
-## 配置角色
+## Configure roles
 
-| 字段 | 含义 |
+| Field | Meaning |
 |---|---|
-| 角色 ID | 稳定身份，也是默认 teammate 目标；小写 kebab-case，`lead` 保留。 |
-| 显示名称 | 给 Lead 与设置页看的名字。 |
-| 职责描述 | 一行职责，供 Lead 选人；最长 200 字符。 |
-| 角色提示词 | 成员的常驻人设（persona）；最长 12000 字符。 |
-| 提供方 / 模型 / 推理强度 | 可选成员路由；提供方和模型必须同时填写或同时留空，都留空则继承当前会话路由。 |
-| 工具策略 | `all` 或自定义白名单。自定义策略也会拒绝未列出的作用域 Team 工具。 |
-| 私有技能 | 角色技能目录中的技能名；留空表示整个目录全部暴露。 |
-| 强调色 | 成员名册（roster）中的角色颜色。 |
+| Role id | Stable identity, also the default teammate target; lowercase kebab-case, `lead` reserved. |
+| Display name | Name shown to the Lead and in Settings. |
+| Responsibility | One-line responsibility the Lead uses to pick a member; at most 200 characters. |
+| Role prompt | The member's standing persona; at most 12000 characters. |
+| Provider / model / effort | Optional member route; provider and model must be filled together or left empty, and empty means inherit the current session route. |
+| Tool policy | `all`, or a custom allow-list. A custom policy also rejects scoped Team tools that are not listed. |
+| Private skills | Skill names inside the role skill folder; empty exposes the whole folder. |
+| Accent color | Role color in the roster. |
 
-Lead 的提示词里会看到当前角色目录，并应使用：
+The Lead's prompt shows the current role catalog and expects:
 
 ```text
-spawn_team_member({ role: "reviewer", prompt: "审查这次改动并报告问题。" })
+spawn_team_member({ role: "reviewer", prompt: "Review this change and report problems." })
 ```
 
-如果该角色已有**未失败**（`status` 不是 `failed`）的成员，命令会复用该成员，不会重复创建。只有该角色没有未失败成员时才新建；名字已被占用时会加数字后缀（`reviewer-2`），后缀会映射回同一个角色。
+If the role already has a member that has **not failed** (`status` is not `failed`), the command reuses that member instead of creating another. A new member is created only when the role has no healthy member; a taken name gets a numeric suffix (`reviewer-2`), and the suffix maps back to the same role.
 
-### 高级配置
+### Advanced configuration
 
-`freshProvider` / `forkProvider` 决定 fresh / fork 成员使用的子 Agent 后端（默认分别为 `spawn` / `fork`）。这两项不在设置页中，只能在插件配置（profile 配置）里修改。
+`freshProvider` / `forkProvider` choose the sub-agent backend used for fresh / fork members (defaults: `spawn` / `fork`). They are not on the Settings page and can only be changed in the plugin configuration (profile config).
 
-### 内置角色目录
+### Built-in role catalog
 
-bundle patch 预置以下角色（均可编辑或删除）：
+The bundle patch ships these roles (all editable or removable):
 
-| 角色 | id | 工具策略 | 职责 |
+| Role | id | Tool policy | Responsibility |
 |---|---|---|---|
-| General | `general` | 全部工具 | 未匹配专门角色的通用任务。 |
-| 产品经理 | `pm` | 只读 + 汇报 | 需求分析、用户场景、体验取舍；产出需求文档文本，不定义技术方案。 |
-| SE | `se` | 只读 + 文档写入 | 架构/契约负责人：维护 `docs/architecture.md`、接口契约与 ADR；可写 docs/ 与接口/类型定义文件，无 shell。 |
-| DEV | `dev` | 读写 + 终端 | 按 SE 契约实现；动手前先读契约，完成后报告改动与检查结果。git push 由 DEV 执行，但受工序闸门约束（检查不通过则被拒）。 |
-| TSE | `tse` | 读写 + pwsh | 设计并执行测试、报缺陷；只写 `tests/` 目录，不改生产代码。 |
-| CR | `cr` | 只读 + 汇报 | 代码检视人：对照契约逐项核对 diff，产出缺陷报告；fresh 召唤、不改任何文件。 |
+| General | `general` | All tools | General tasks that match no specialized role. |
+| Product manager | `pm` | Read-only + reporting | Requirements analysis, user scenarios, experience tradeoffs; produces requirement-document text, does not define technical solutions. |
+| SE | `se` | Read-only + documentation writes | Architecture/contract owner: maintains `docs/architecture.md`, interface contracts and ADRs; may write docs/ and interface/type definition files, has no shell. |
+| DEV | `dev` | Read/write + terminal | Implements against the SE contract; reads the contract before starting and reports changes and checks afterwards. DEV performs `git push`, constrained by workflow gates (rejected when checks fail). |
+| TSE | `tse` | Read/write + pwsh | Designs and runs tests, reports defects; writes only under `tests/`, never changes production code. |
+| CR | `cr` | Read-only + reporting | Code reviewer: checks the diff item by item against the contract and produces a defect report; spawned fresh, changes no files. |
 
-检视流程：diff 完成后由 Lead **并行派发 CR（静态检视）与 TSE（动态测试）**，两者独立执行、互不等待；缺陷由 Lead 派回 DEV 修复，修复后重新走 CR + TSE。
+Review flow: once a diff exists, the Lead **dispatches CR (static review) and TSE (dynamic testing) in parallel**; they run independently without waiting for each other. Defects go back to DEV through the Lead, and the fix goes through CR + TSE again.
 
-## 从输入区查看和拉取成员
+## Viewing and pulling members from the composer
 
-只有 Team Lead 预设会话的输入区显示 **Team（多人图标）**。点图标直接打开「成员」页，可在同一面板内切换到「闸门」页。面板锚定在图标旁，不遮罩会话，也不阻止继续输入。打开页面时按需读取当前状态；需要最新数据时点「刷新」，不做后台轮询。
+Only Team Lead preset sessions show **Team (people icon)** in the composer tool row. Clicking it opens the **Members** page directly, and you can switch to the **Gates** page inside the same panel. The panel anchors beside the icon, does not cover the conversation, and does not block typing. It reads the current state when opened; click **Refresh** for the latest data — there is no background polling.
 
-1. 在「成员」页查看当前名册和模型，点「拉取成员」在同一面板内选择角色。
-2. 可选填初始任务；留空则只做握手：新成员只回复 `READY`，不会为这条回复唤醒 Lead。
-3. 点角色对应的「拉取」。已有未失败成员时会复用该成员：填了任务就发给它，留空则不再发消息。
-4. 拉取成功后自动返回「成员」页并刷新名册，无需关闭面板或手动刷新。拉取通过 `/team-spawn <role> [task]` 执行，不经过模型回合；其他预设会话不能执行该命令。
+1. The **Members** page shows the current roster and models; **Pull a member** opens role selection inside the same panel.
+2. An initial task is optional; leaving it empty only performs the handshake: the new member replies `READY` and that reply does not wake the Lead.
+3. Click **Pull** on the role. An existing healthy member is reused: the task is sent to it, and with an empty task no message is sent.
+4. After a successful pull the panel returns to **Members** with a refreshed roster, so there is no need to close or refresh manually. Pulling runs `/team-spawn <role> [task]` without a model turn; other preset sessions cannot run that command.
 
-Lead 的系统提示里还有一段动态的 **Active team members**：每个已拉取成员的名字、角色、一句职能和状态，每一步重新生成。因此 Lead 不用被唤醒、也不用额外调用 `list_agents` 就能知道谁已存在、能做什么，并被明确要求把任务交给他们而不是重复创建。
+The Lead's system prompt also contains a dynamic **Active team members** section: name, role, one-line function, and status for every pulled member, regenerated each step. The Lead therefore knows who exists and what they can do without being woken or calling `list_agents`, and is explicitly told to hand work to them rather than duplicate them.
 
-同一个命令也可以从 `/` 菜单或直接输入：
+The same command can be run from the `/` menu or typed directly:
 
 ```text
-/team-spawn se 分析当前仓库的插件边界，给出实现方案
+/team-spawn se Analyze the plugin boundaries of this repository and propose an implementation.
 ```
 
-如果 Team 已达到成员上限或命令失败，错误会直接显示在拉取面板里。
+If the Team has reached its member limit or the command fails, the error is shown in the pull panel.
 
-## Team Lead 预设
+## Team Lead preset
 
-插件 bundle 自带一个 `team-lead` Agent 预设，安装后出现在新建会话的预设列表中：
+The bundle ships a `team-lead` Agent preset that appears in the new-session preset list after installation:
 
-- **定位**：调度型 Leader——拆分任务、派发给成员、传递结果；不亲自实现、不亲自验证，也不亲自执行 git 提交/推送（这些操作由 DEV 执行并受工序闸门约束）。
-- **调度规则**：先并发派发所有独立任务，派完即结束回合，不阻塞等待；只有在下一步确实依赖某个成员结果时才 `wait_agent`，且超时不超过 30 秒。
-- **兜底工具**：预设包含文件读写（`tool-fs`）、搜索（`tool-fs-search`）与终端（Windows 为 `tool-pwsh`）。默认仍以派发为主；只有成员明确报告权限不足阻塞任务、或用户要求 Leader 直接处理时，才用这些工具做最小必要的排查或落盘。
-- **注入边界**：角色目录、成员描述等团队信息只注入 Team Lead 预设的会话；其他预设会话是干净的普通工作会话，没有团队调度内容，也不能拉取成员。
+- **Position**: a scheduling leader — splits work, dispatches to members, relays results; it does not implement, does not verify, and does not run git commit/push itself (DEV does that under workflow gates).
+- **Scheduling rules**: dispatch every independent task first and end the turn without blocking; call `wait_agent` only when the next step truly depends on a member's result, with a timeout of at most 30 seconds.
+- **Fallback tools**: the preset includes file read/write (`tool-fs`), search (`tool-fs-search`), and a terminal (`tool-pwsh` on Windows). Dispatching stays the default; these tools are used for minimal investigation or recording only when a member reports a permission block or the user asks the Leader to act directly.
+- **Injection boundary**: role catalog, member descriptions, and other team information are injected only into Team Lead preset sessions; other preset sessions are clean working sessions with no team scheduling content and no member pulling.
 
-左侧主导航中的 **Agent 团队角色** 入口打开同一个角色管理页（角色编辑 + 历史记忆），无需进入设置。
+The **Agent team roles** entry in the main navigation opens the same role management page (role editing + rule history) without going through Settings.
 
-## 团队模板包
+## Template packs
 
-模板 = 角色目录 + Lead 编排 playbook + 私有技能，作为纯数据分发，可携带任意领域流程。
+A template = role catalog + Lead orchestration playbook + private skills, distributed as pure data and able to carry any domain workflow.
 
-### 目录结构
+### Directory layout
 
 ```text
-$DSH_HOME/agent-team-roles/templates/<模板 id>/
-  template.json          # 模板描述（必需）
-  skills/<角色 id>/       # 可选：该模板角色的私有技能
-    <技能名>/SKILL.md
+$DSH_HOME/agent-team-roles/templates/<template id>/
+  template.json          # template descriptor (required)
+  skills/<role id>/       # optional: private skills for this template's roles
+    <skill name>/SKILL.md
 ```
 
 ### template.json schema
 
 ```json
 {
-  "id": "software-dev",              // 必需；小写字母开头的 kebab-case，≤64 字符
-  "name": "Software Development Team", // 必填
-  "description": "……",               // 可选
-  "leadPlaybook": "……",              // 可选；应用后追加到 Lead 提示词
-  "roles": [ /* 同设置页角色结构，可含 denyCommands */ ],
-  "gates": [ /* 同设置页闸门结构；应用时合并，同 id 覆盖，总条数 ≤50 */ ]
+  "id": "software-dev",              // required; kebab-case starting with a lowercase letter, <=64 characters
+  "name": "Software Development Team", // required
+  "description": "...",               // optional
+  "leadPlaybook": "...",              // optional; appended to the Lead prompt when applied
+  "roles": [ /* same role shape as Settings; denyCommands allowed */ ],
+  "gates": [ /* same gate shape as Settings; merged on apply, same id overwrites, at most 50 total */ ]
 }
 ```
 
-`roles` 复用角色的 `normalizeRole`/`validateRole` 校验：任一角色非法即整个模板无效，发现的坏模板会被跳过（不报错、不影响其它模板）。
+`roles` reuse the role `normalizeRole`/`validateRole` checks: one invalid role makes the whole template invalid, and a broken template is skipped quietly (no error, no effect on other templates).
 
-### 内置模板
+### Built-in template
 
-插件激活时把包内 `templates/software-dev/` **播种**到状态目录（只创建缺失目录，永不覆盖用户改动）。因此内置模板后续更新（例如新增 gates）不会自动写入已有状态目录；需要删除 `<stateDir>/templates/<id>/` 后重载插件重新播种。`software-dev` 是软件开发部模板：PM/SE/DEV/TSE/CR 五角色 + 并行检视 playbook + 两条提交前闸门；DEV 与 TSE 带 `denyCommands` 禁止 `git push`。
+On activation the plugin **seeds** the packaged `templates/software-dev/` into the state directory (missing directories only; user changes are never overwritten). Later updates to the built-in template (for example new gates) therefore do not reach an existing state directory; delete `<stateDir>/templates/<id>/` and reload the plugin to seed it again. `software-dev` is the software-development department template: PM/SE/DEV/TSE/CR roles + a parallel-review playbook + two pre-commit gates; DEV and TSE carry `denyCommands` blocking `git push`.
 
-### 应用模板
+### Applying a template
 
-Team Lead 会话中使用命令：
+In a Team Lead session:
 
 ```text
-/team-template list          # 列出发现的模板
+/team-template list          # list discovered templates
 /team-template apply software-dev
 ```
 
-`apply` 做四件事：把模板 roles **upsert** 进角色目录（已有的更新、缺失的创建）；设置 `activeTemplate`，并把模板 playbook 复制进可编辑的 `leadPlaybook` 配置（设置页可见可改；配置非空时生效，配置为空时回退模板 playbook）；把模板 `gates` 合并进现有闸门列表（同 id 覆盖并回报 `replaced`；只校验模板自身 gates，合并后超过 50 条或模板 gate 非法则整次拒绝、不写入；现有列表里的非法 gate 原样保留、计入上限并在成功文本里以 `warnings:` 回报）；把模板 `skills/<角色 id>/` 合并复制到 `stateDir/skills/<角色 id>/`（覆盖同名文件，不删除其它文件）。gates 校验在任何写操作之前完成。
+`apply` does four things: it **upserts** the template roles into the role catalog (update existing, create missing); it sets `activeTemplate` and copies the template playbook into the editable `leadPlaybook` config (visible and editable in Settings; the config wins when non-empty, otherwise the template playbook is used); it merges the template `gates` into the current gate list (same id overwrites and reports `replaced`; only the template's own gates are validated, and if the merged list would exceed 50 entries or a template gate is invalid the whole apply is rejected without writing; invalid gates already in the list are kept as-is, counted toward the limit, and reported as `warnings:` in the success text); it merges and copies `skills/<role id>/` into `stateDir/skills/<role id>/` (overwriting same-named files, never deleting others). Gate validation happens before any write.
 
-## denyCommands：命令级策略
+## denyCommands: command-level policy
 
-角色可选字段 `denyCommands` 是一个 RegExp source 数组（≤20 条，单条 ≤200 字符，必须能编译为正则）。成员以该角色运行时，调用 `bash` / `pwsh` 且 `command` 参数命中任一模式即被拒绝，错误信息包含角色 id 与命中的规则。
+The optional role field `denyCommands` is an array of RegExp sources (at most 20 entries, each at most 200 characters, each must compile). While a member runs as that role, a `bash` / `pwsh` call whose `command` argument matches any pattern is rejected with an error naming the role id and the matched rule.
 
-- **独立于工具白名单**：`toolMode: all` 与 `custom` 都生效。典型用法——给角色附加无条件的命令封禁；需要“先满足前置条件才放行”的场景用 gates（见下节）。
-- 只匹配 shell 命令参数；其它工具不受影响。
-- 非 Team 成员不受该策略影响；策略数据属于角色定义，可在设置页对应的角色 JSON 中维护。
+- **Independent of the tool allow-list**: it applies to both `toolMode: all` and `custom`. Typical use: attach an unconditional command ban to a role; for "only allow once a precondition holds", use gates (next section).
+- It matches shell command arguments only; other tools are unaffected.
+- Non-Team members are unaffected; the policy belongs to the role definition and can be maintained in the role JSON in Settings.
 
-## 工序闸门（gates）
+## Workflow gates
 
-denyCommands 是**无条件**拒绝；gates 是**有状态的条件拒绝**：角色 R 执行操作 X 前，必须存在一份由角色集合 Y 最近产生、未过期且未被作废的“钥匙”事件 E，否则调用被拒。
+`denyCommands` is an **unconditional** rejection; gates are a **stateful conditional** rejection: before role R performs operation X, a "key" event E must exist that was produced recently by one of the roles Y, has not expired, and has not been invalidated — otherwise the call is rejected.
 
-### 三要素模型
+### The three-part model
 
 ```json
 {
   "id": "review-before-commit",
-  "description": "可选的人类可读说明，/team-gates 展示用",
+  "description": "Optional human-readable note, shown by /team-gates",
   "deny": {
     "role": "dev",
     "tool": ["bash", "pwsh"],
@@ -181,171 +183,171 @@ denyCommands 是**无条件**拒绝；gates 是**有状态的条件拒绝**：�
 }
 ```
 
-- `deny.role` / `deny.tool`：拦谁、拦哪个工具（1–8 个）。带 `commandPattern` 时只拦匹配的 shell 命令；不带时整工具拦截（write/edit 类）。
-- `require.event` + `byRoles`：钥匙事件名与可产生钥匙的角色（1–8 个）。
-- `freshFor`：秒；缺省表示永久有效，直到被作废。
-- `invalidateOn`：当匹配角色使用匹配工具成功后，清空该团队已记录的事件（改码即让旧批准失效）。可选 `pathPattern`（RegExp 源）把作废限定在匹配的文件路径上——例如只对代码扩展名生效，改文档/README 不作废检视批准。缺省 = 任何路径都作废。
-- 或者用 `require.commandSuccess = { role, tool, pattern }`：以“某角色成功执行了匹配命令”为钥匙，与 `event` 二选一。
+- `deny.role` / `deny.tool`: who is blocked and which tool (1–8). With `commandPattern` only matching shell commands are blocked; without it the whole tool is blocked (write/edit style).
+- `require.event` + `byRoles`: the key event name and the roles allowed to produce it (1–8).
+- `freshFor`: seconds; absent means valid until invalidated.
+- `invalidateOn`: when a matching role successfully uses a matching tool, the team's recorded events are cleared (changing code invalidates the old approval). An optional `pathPattern` (RegExp source) narrows invalidation to matching file paths — for example only code extensions, so editing docs/README does not invalidate a review approval. Absent = any path invalidates.
+- Alternatively `require.commandSuccess = { role, tool, pattern }` uses "role X successfully ran a matching command" as the key, mutually exclusive with `event`.
 
-### 两个事件源
+### Two event sources
 
-1. **上报工具** `report_gate_event({ event, note? })`：任何受管成员都可调用（隐式工具，不受白名单影响）。安全性由评估器保证：事件只有在产生者角色 ∈ 该 gate 的 `byRoles` 时才算数，无关角色发的事件是废纸。
-2. **命令成功**：`require.commandSuccess` 配置后，post-execute 监听器在匹配命令成功返回时自动记账。
+1. **Reporting tool** `report_gate_event({ event, note? })`: any managed member can call it (implicit tool, unaffected by the allow-list). Safety is enforced by the evaluator: an event only counts when its producer's role is in that gate's `byRoles`; events from unrelated roles are worthless.
+2. **Command success**: with `require.commandSuccess` configured, a post-execute listener records the key when the matching command succeeds.
 
-### /team-gates 命令
+### /team-gates commands
 
-Team Lead（且 Team Lead 预设会话）可用：
+Available to the Team Lead (and only in a Team Lead preset session):
 
 ```text
-/team-gates list                 # 每条 gate 一行：状态、deny 摘要、require 摘要
-/team-gates status               # 实时钥匙状态：最新事件由谁在何时产生、是否过期/不存在
+/team-gates list                 # one line per gate: state, deny summary, require summary
+/team-gates status               # live key state: who produced the latest event and when; expired/missing
 /team-gates enable <id>
 /team-gates disable <id>
 ```
 
-### 与 denyCommands 的关系
+### Relationship to denyCommands
 
-| 机制 | 条件 | 数据位置 |
+| Mechanism | Condition | Where the data lives |
 |---|---|---|
-| denyCommands | 无条件：命令匹配即拒 | 角色字段 |
-| gates | 有状态：缺少合格事件才拒 | Config.gates（设置页保存或模板 apply 写入） |
+| denyCommands | Unconditional: reject when the command matches | Role field |
+| gates | Stateful: reject only when a qualifying event is missing | Config.gates (saved in Settings or written by template apply) |
 
-### 已知限制
+### Known limitations
 
-- **内存态**：事件不持久化，宿主重启即清空，所有闸门回到“未满足”——刻意的安全默认。
-- **fail-open**：评估器内部异常时放行并记 warn 日志；只有配置合法且状态明确不满足才拒绝。
-- **单事件条件**：v1 不做 AND/OR 组合、分支或编排 DSL；多条 gate 各自独立（对同一调用可能依次拒绝，理由分别说明）。
-- **事件源有限**：任务板事件、消息、文件变更暂不作为事件源；只有上报工具与命令成功两种。
-- **仅受管成员**：没有 Team 成员身份或角色解析失败时直接放行。
-- **自动豁免（roster 感知）**：钥匙产出角色在当前团队 roster 中没有任何存活成员时，该 gate 视为"不适用"而整体放行（含 deny）——没拉 CR 的会话不会被检视闸门卡死；拉入 CR 后立即恢复强制。`/team-gates status` 会显示 `inapplicable`。
-- **作废粒度**：事件不携带工具信息，`invalidateOn` 命中即清空整个团队的事件桶。
-- **空配置零行为**：`gates` 为空时 pre/post-execute 监听器立即返回，不引入可感知开销。
-- **读侧自检**：配置里存在评估器会静默跳过的 gate（非法字段、重复 id）时，宿主在 pre/post-execute 读取侧每 id 每进程 warn 一次，但不阻断调用（fail-open）。
+- **In-memory**: events are not persisted; a host restart clears them and every gate drops back to "unsatisfied" — a deliberate safe default.
+- **fail-open**: evaluator exceptions allow the call and log a warning; only a valid configuration with a definitely unsatisfied state rejects.
+- **Single-event conditions**: v1 has no AND/OR composition, branching, or orchestration DSL; multiple gates are independent (one call may be rejected in turn, each with its own reason).
+- **Limited event sources**: task-board events, messages, and file changes are not event sources yet; only the reporting tool and command success.
+- **Managed members only**: no Team membership or an unresolvable role means allow.
+- **Automatic exemption (roster aware)**: when no live member of the key-producing roles exists in the current team roster, the gate is treated as "inapplicable" and allowed entirely (including its deny) — a session that never pulled CR is not stuck behind the review gate; pulling CR in restores enforcement immediately. `/team-gates status` shows `inapplicable`.
+- **Invalidation granularity**: events carry no tool information, so an `invalidateOn` hit clears the whole team event bucket.
+- **Zero behavior when empty**: with no gates configured the pre/post-execute listeners return immediately and add no perceptible cost.
+- **Read-side self-check**: when the configuration contains gates the evaluator would silently skip (invalid fields, duplicate ids), the host warns once per id per process on the pre/post-execute read side without blocking the call (fail-open).
 
-## 面向 Agent 的工具
+## Agent-facing tools
 
-| 工具 | 可调用者 | 用途 |
+| Tool | Callers | Purpose |
 |---|---|---|
-| `spawn_team_member` | Lead | 按角色召唤成员。 |
-| `list_team_roles` | Lead 与所有受管成员 | 读取角色目录。 |
-| `create_team_role` | Lead 与所有受管成员 | 创建新的可复用角色。 |
-| `update_team_role` | Lead | 更新角色；id 不可改。 |
-| `delete_team_role` | Lead | 删除角色；`general` 受保护。 |
-| `record_role_feedback` | Lead | 记录某角色的长期要求。 |
-| `list_role_rules` / `forget_role_rule` | Lead | 查看已学规则；forget 将规则退役（superseded），保留在历史中，不再进入提示词。 |
-| `remember_role_rule` / `list_my_rules` | 受管成员 | 学习并读取自己角色的规则。 |
+| `spawn_team_member` | Lead | Spawn a member by role. |
+| `list_team_roles` | Lead and every managed member | Read the role catalog. |
+| `create_team_role` | Lead and every managed member | Create a reusable role. |
+| `update_team_role` | Lead | Update a role; the id is immutable. |
+| `delete_team_role` | Lead | Delete a role; `general` is protected. |
+| `record_role_feedback` | Lead | Record a long-term requirement for a role. |
+| `list_role_rules` / `forget_role_rule` | Lead | Inspect learned rules; forget retires a rule (superseded), keeping it in history and out of the prompt. |
+| `remember_role_rule` / `list_my_rules` | Managed members | Learn and read their own role's rules. |
 
-受管成员即使处于自定义工具策略下也能保留一组隐式能力：`remember_role_rule`、`list_my_rules`、`list_team_roles`、`create_team_role` 与 `skill`。成员不能更新或删除角色。新建角色在下一次 `spawn_team_member` 时可用。
+Even under a custom tool policy, managed members keep an implicit set of capabilities: `remember_role_rule`, `list_my_rules`, `list_team_roles`, `create_team_role`, and `skill`. Members cannot update or delete roles. A new role is available on the next `spawn_team_member`.
 
-## 给其他插件：`agentTeamRoles`
+## For other plugins: `agentTeamRoles`
 
-Host 暴露一个受信任的进程内服务：
+The Host exposes a trusted in-process service:
 
 ```js
 const roles = ctx.get('agentTeamRoles')
-await roles.create({ id: 'reviewer', name: 'Reviewer', persona: '审查改动。' })
-await roles.update('reviewer', { persona: '严格审查改动。' })
-roles.list()          // 含内置 general 的合并目录
+await roles.create({ id: 'reviewer', name: 'Reviewer', persona: 'Review changes.' })
+await roles.update('reviewer', { persona: 'Review changes strictly.' })
+roles.list()          // merged catalog including the built-in general role
 roles.get('reviewer')
 await roles.remove('reviewer')
 ```
 
-该服务刻意按“受信任插件 API”设计，不校验调用方 Agent 身份。Agent 侧写入应走上面的工具，由作用域区分 Lead 与成员。写入通过实时配置编辑器持久化，并会出现在设置页。
+The service is deliberately a "trusted plugin API" and does not verify the calling Agent. Agent-side writes should go through the tools above, where scopes separate the Lead from members. Writes persist through the live config editor and show up in Settings.
 
-## 学到的规则
+## Learned rules
 
-两个工具负责写入：
+Two tools write rules:
 
-- `remember_role_rule`：成员记录与自己角色相关的长期要求。
-- `record_role_feedback`：Lead 代用户记录某角色的长期要求。
+- `remember_role_rule`: a member records a long-term requirement about its own role.
+- `record_role_feedback`: the Lead records a long-term requirement for a role on the user's behalf.
 
-两者都接受范围（scope）：
+Both accept a scope:
 
-| 范围 | 适用 | 行为 |
+| Scope | When to use | Behavior |
 |---|---|---|
-| `permanent` | “以后”“总是”“永远” | 立即生效并持久化。 |
-| `candidate` | 要求可能长期，但尚未确认 | 先保存；重复一次、以 `permanent` 再记录一次，或在设置页确认后转为生效（active）。 |
-| `session` | “这次”“先这样” | 仅内存生效，不持久化。 |
+| `permanent` | "from now on", "always", "forever" | Takes effect immediately and persists. |
+| `candidate` | Possibly long-term but unconfirmed | Saved first; promoted to active after a repeat, a second recording as `permanent`, or confirmation in Settings. |
+| `session` | "this time", "for now" | In-memory only, not persisted. |
 
-重复记录同一要求会增加证据次数（evidence）。方向相反的新要求会把旧规则标为已取代（superseded），而不是让两条矛盾指令同时留在提示词里。每个角色最多 40 条未取代的持久规则、单条 600 字符。`forget_role_rule` 与设置页中的退役都只是把规则标记为 `superseded` 保留在历史里；只有设置页“规则”标签中的手动删除才会物理删除。
+Recording the same requirement again increases its evidence count. A new requirement with the opposite direction marks the old rule as superseded instead of leaving two contradictory instructions in the prompt. Each role holds at most 40 un-superseded durable rules of 600 characters each. `forget_role_rule` and retirement in Settings only mark a rule `superseded` and keep it in history; only manual deletion on the **Rules** tab removes it physically.
 
-已学规则**不能**改变角色的工具策略或模型路由；成员也不能修改其他角色的规则。
+Learned rules **cannot** change a role's tool policy or model route, and members cannot change another role's rules.
 
-**角色规则只存角色的长期行为**（工作方式、边界、上报流程）。项目相关事实——品牌名、域名、数据模型、环境、版本、文件路径——不要写进角色规则或角色提示词；它们属于项目记忆库（`memory_capture`），否则会污染该角色在所有项目中的提示词。
+**Role rules hold only long-term role behavior** (working style, boundaries, reporting process). Project-specific facts — brand names, domains, data models, environments, versions, file paths — do not belong in role rules or role prompts; they belong in the project memory store (`memory_capture`), otherwise they pollute that role's prompt across every project.
 
-## 私有技能
+## Private skills
 
-角色技能放在：
+Role skills live in:
 
 ```text
-$DSH_HOME/agent-team-roles/skills/<角色 ID>/
-  <技能名>/SKILL.md
-  或
-  <技能名>.md
+$DSH_HOME/agent-team-roles/skills/<role id>/
+  <skill name>/SKILL.md
+  or
+  <skill name>.md
 ```
 
-`SKILL.md` 使用常规 frontmatter：
+`SKILL.md` uses ordinary frontmatter:
 
 ```markdown
 ---
 name: change-review
-description: 在报告前检查 diff 是否有回归。
-whenToUse: 改动准备进入审查时。
+description: Check the diff for regressions before reporting.
+whenToUse: When a change is about to enter review.
 ---
-审查这个 diff……
+Review this diff...
 ```
 
-技能只会注册到该成员的 Agent 作用域；全局技能仍由部署自身的 skill provider 提供。角色 `skills` 列表为空时暴露整个角色目录；非空时按技能 frontmatter 的 `name` 匹配（没有 frontmatter 时用文件名），只暴露列出的技能。
+Skills are registered only in that member's Agent scope; global skills still come from the deployment's own skill provider. An empty role `skills` list exposes the whole role folder; a non-empty list matches the skill frontmatter `name` (or the file name without frontmatter) and exposes only the listed skills.
 
-## 已知限制
+## Known limitations
 
-- **角色人设（persona）实时生效**。成员的提示词段在每次组装时读取当前角色定义；编辑角色后，已存在的成员在下一步即生效，无需重新召唤。创建时的快照仅在角色被删除后作为回退。
-- 自定义工具策略采用**工具守卫（guard）逐次拒绝**：白名单外的工具调用会失败并返回 `Tool "x" is not allowed by role "<id>"`。工具可见性交给所在 Agent 预设，因此成员（standard 预设）始终能看到 `read/glob/grep/write/edit` 等基础工具，是否可用由角色白名单决定。
-- 设置页的角色编辑区提供**历史记忆**：按角色列出全部规则（生效/候选/已退役）及其时间、证据与来源；退役不删记录。
-- 成员快照保存在 `$DSH_HOME/agent-team-roles/members.json`；成员结束后仍保留，供冷恢复重建配置。
-- 设置页当前不校验职责描述与角色提示词的长度上限；超长内容可能保存成功，但召唤成员时会因校验失败而报错。
-- 设置页的技能目录提示固定显示 `~/.dsh/agent-team-roles/...`；若自定义了 `DSH_HOME`，请以本文档中的 `$DSH_HOME` 路径为准。
-- 官方 Agent Teams 仍是实验功能；本插件把兼容窗口锁定在 `0.2.2-rc.1` 线。
-- **`cordis.patch.yml` 的 `config.roles` 只在全新安装时生效**。已安装 profile 的角色目录存在 volatile Config 里，patch 不会覆盖它；更新内置目录需要通过设置页修改，或卸载后重装 bundle。
-- 成员、Lead 与插件共享工作目录；规则和角色配置不提供文件系统隔离。
+- **Role personas are live**. A member's prompt section reads the current role definition on every assembly; editing a role affects existing members on their next step without re-spawning. The creation snapshot is only a fallback after the role is deleted.
+- A custom tool policy uses a **per-call tool guard**: a call outside the allow-list fails with `Tool "x" is not allowed by role "<id>"`. Tool visibility is left to the Agent preset, so members (standard preset) always see basic tools such as `read/glob/grep/write/edit`; the role allow-list decides whether they may be used.
+- The role editor provides **rule history**: every rule (active/candidate/superseded) with its time, evidence, and source; retiring keeps the record.
+- Member snapshots live in `$DSH_HOME/agent-team-roles/members.json`; they survive a member's end so a cold resume can rebuild its configuration.
+- The Settings page does not yet enforce the description and role-prompt length limits; over-long content may save but fails validation when a member is spawned.
+- The skill-folder hint in Settings always shows `~/.dsh/agent-team-roles/...`; with a custom `DSH_HOME`, use the `$DSH_HOME` paths from this document.
+- Official Agent Teams is still experimental; this plugin pins its compatibility window to the `0.2.2-rc.1` line.
+- **`config.roles` in `cordis.patch.yml` only applies to a fresh install**. An installed profile keeps the role catalog in volatile Config and the patch does not overwrite it; update the built-in catalog in Settings, or uninstall and reinstall the bundle.
+- Members, the Lead, and the plugin share the working directory; rules and role configuration provide no filesystem isolation.
 
-## 开发
+## Development
 
 ```sh
 node --test
 ```
 
-测试覆盖 8 个测试文件：`tests/config.test.js`（角色归一化与校验）、`tests/rules.test.js`（规则证据/提升/冲突/上限/退役）、`tests/prompts.test.js`（提示词渲染）、`tests/spawn.test.js`（复用/后缀/失败回滚/握手投递/standard 预设）、`tests/plugin.test.js`（握手识别/角色解析/预设门控）、`tests/store.test.js`（RoleStore 持久化）、`tests/tools.test.js`（工具 schema 与参数校验）、`tests/preset.test.js`（Team Lead 预设组装）。`src/skills.js` 以及 `RuleStore` 的 session/回退路径目前没有直接单测。插件本体已在真实 Agent Teams profile 中做过手工验证（召唤注入、规则热更新、私有技能）。
+The suite covers 8 test files: `tests/config.test.js` (role normalization and validation), `tests/rules.test.js` (rule evidence/promotion/conflicts/limits/retirement), `tests/prompts.test.js` (prompt rendering), `tests/spawn.test.js` (reuse/suffixes/failure rollback/handshake delivery/standard preset), `tests/plugin.test.js` (handshake detection/role resolution/preset gating), `tests/store.test.js` (RoleStore persistence), `tests/tools.test.js` (tool schemas and argument validation), `tests/preset.test.js` (Team Lead preset assembly). `src/skills.js` and the session/fallback paths of `RuleStore` have no direct unit tests yet. The plugin has also been verified by hand in a real Agent Teams profile (spawn injection, live rule updates, private skills).
 
-## 许可证
+## License
 
-MIT。
+MIT.
 
-## 模型主备与额度耗尽
+## Model fallback and quota exhaustion
 
-每个角色可配置一个主模型和最多 8 个**备用模型**（按顺序组成备用链）。主模型与每个备用模型都可单独设置推理强度；旧的单个 `fallbackProvider`/`fallbackModel`/`fallbackReasoningEffort` 仍被兼容，等同“备用 1”。额度耗尽或主路由失效时的正确处置：
+Each role can configure one primary model and up to 8 **fallback models** (an ordered fallback chain). The primary and every fallback model can have its own reasoning effort; the legacy single `fallbackProvider`/`fallbackModel`/`fallbackReasoningEffort` pair is still honored and counts as "fallback 1". When quota runs out or the primary route stops working:
 
-1. 对 Lead 说：“把 dev 切到备用模型继续”（或 Lead 自行判断）；Lead 调用 `switch_member_model(member:"dev", route:"fallback", index:0)` 指定链上的第几个备用。
-2. 自动切换同样按链推进：每轮最多切换 2 次，避免一次故障耗尽所有备用模型的额度；暂时性错误（超时、限流）仍交给宿主重试。
-2. 工具在**原成员**上重新选择模型（会话与上下文保持不变），并自动发送一条“继续”消息——不新建成员、不丢上下文。
-3. 额度恢复后：`switch_member_model(member:"dev", route:"primary")` 切回主模型，上下文照旧。
+1. Tell the Lead: "switch dev to its fallback and continue" (or let the Lead decide); the Lead calls `switch_member_model(member:"dev", route:"fallback", index:0)` to pick a position in the chain.
+2. Automatic switching advances through the chain too: at most 2 switches per turn, so one failure cannot burn every fallback's quota; transient errors (timeouts, rate limits) are left to the host's retry policy.
+3. The tool re-selects the model on the **existing member** (session and context unchanged) and sends a "continue" message automatically — no new member, no lost context.
+4. After quota recovers: `switch_member_model(member:"dev", route:"primary")` switches back to the primary model with the same context.
 
-边界：若成员已经处于不可恢复的终态、无法接收消息，工具会明确报错，此时应修正角色路由（`update_team_role`）后重新拉取成员；成员模型切换只影响当前对话，不改角色配置。
+Boundary: if a member is already in an unrecoverable terminal state and cannot receive messages, the tool fails explicitly; fix the role route (`update_team_role`) and pull a fresh member instead. Switching a member's model affects only the current conversation and does not change the role configuration.
 
-## 查看成员模型
+## Viewing member models
 
-Team 面板的「成员」页同时显示成员名册与模型信息：
+The **Members** page of the Team panel shows both the roster and model information:
 
-- 顶部一行是 Lead 自己的模型（= 团队根会话路由）
-- 每行：状态点（运行中 / 空闲 / 失败）、成员名 · 角色、`provider/model · 思考强度`、来源标签（跟随会话 / 主模型 / 备用·自动 / 备用·手动），备用切换待生效时标「待激活」
-- 数据来自 host 只读路由 `GET /agent-team-roles/member-models`：存活成员读 `agent.model.current()`（精确），休眠成员按“切换覆盖 → 角色快照”推算（即下次激活会生效的路由）
+- The top row is the Lead's own model (= the team root session route).
+- Each row: status dot (running / idle / failed), member name · role, `provider/model · reasoning effort`, and a source tag (session / primary / fallback·auto / fallback·manual); a pending fallback switch is marked "pending".
+- Data comes from the host read-only route `GET /agent-team-roles/member-models`: live members read `agent.model.current()` (exact), dormant members are derived from "switch override → role snapshot" (i.e. the route that will apply on next activation).
 
-## 闸门启停的作用域（会话级）
+## Gate toggle scope (session-level)
 
-闸门的**定义**与**全局默认停用**（设置页）全局共享；**启停**是**会话级**决策：
+Gate **definitions** and the **global default disable list** (Settings) are shared; **enabling/disabling** is a **session-level** decision:
 
-- `/team-gates enable|disable <id>` 只影响当前会话，重启后恢复全局默认
-- `/team-gates list|status` 标记来源：`[on]`、`[on·群]`、`[off·群]`（会话停用）、`[off·全局]`（配置默认停用）、`[n/a]`（本群无钥匙角色）
-- 优先级：会话覆盖 > 全局默认
-- 在 Team 面板内切换至「闸门」页，可查看状态并启停本会话的闸门；Lead 的提示词也包含 `Current workflow gates: …` 状态摘要
-- 事件钥匙仍按群隔离：A 群的批准不会放行 B 群
+- `/team-gates enable|disable <id>` affects only the current session and returns to the global default after a restart.
+- `/team-gates list|status` marks the source: `[on]`, `[on·session]`, `[off·session]` (disabled for this session), `[off·global]` (disabled by configuration), `[n/a]` (no key-producing role in this team).
+- Priority: session override > global default.
+- The **Gates** page in the Team panel shows the state and toggles gates for this session; the Lead's prompt also carries a `Current workflow gates: ...` summary.
+- Event keys stay isolated per team: an approval in team A never unlocks team B.
