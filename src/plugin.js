@@ -43,6 +43,7 @@ import { CodexThreadStore } from './codex-store.js'
 import { modelCatalogRoute } from './model-catalog.js'
 import { skillRevealRoute, skillRoute } from './skill-routes.js'
 import { SettingsLog, settingsLogNoteRoute, settingsLogRoute, applySettingsRoute } from './settings-log.js'
+import { roleCatalogRoute } from './role-routes.js'
 import { copyTemplateSkills, discoverTemplates, mergeTemplateGates, seedTemplates, templatesRoot, upsertRoles } from './templates.js'
 import { MemberSnapshots, RoleStore, RuleStore, stateDir } from './store.js'
 import { spawnRoleMember } from './spawn.js'
@@ -1029,6 +1030,7 @@ export function apply(ctx, config) {
     scope.effect(() => scope.webServer.register(modelCatalogRoute(scope.llm)), 'agent-team-roles:model-catalog-route')
     scope.effect(() => scope.webServer.register(memberModelsRoute(listMemberRoots)), 'agent-team-roles:member-models-route')
     scope.effect(() => scope.webServer.register(gatesRoute(listGateView)), 'agent-team-roles:gates-view-route')
+    scope.effect(() => scope.webServer.register(roleCatalogRoute(() => roleStore.list())), 'agent-team-roles:role-catalog-route')
     scope.effect(() => scope.webServer.register(settingsLogRoute(settingsLog)), 'agent-team-roles:settings-log-route')
     scope.effect(() => scope.webServer.register(settingsLogNoteRoute(settingsLog)), 'agent-team-roles:settings-log-note-route')
     scope.effect(() => scope.webServer.register(applySettingsRoute(async () => ({

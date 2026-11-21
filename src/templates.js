@@ -209,6 +209,59 @@ export async function copyTemplateSkills(templateDir, skillsRoot) {
 }
 
 /**
+ * Fields a template cannot clear by leaving them out.
+ *
+ * A parsed template role is normalized, so an unspecified model route arrives
+ * as `provider: ''`. Writing that through would erase a route the user
+ * configured in Settings — the exact regression this guard prevents. The same
+ * applies to a role's private skills and command policy: an empty template list
+ * means "not specified", not "clear it".
+ */
+const PRESERVE_WHEN_EMPTY = [
+  'name',
+  'description',
+  'persona',
+  'provider',
+  'model',
+  'reasoningEffort',
+  'fallbackProvider',
+  'fallbackModel',
+  'fallbackReasoningEffort',
+  'color',
+]
+
+const PRESERVE_WHEN_EMPTY_LIST = ['fallbacks', 'skills', 'denyCommands']
+
+/**
+ * Merge one template role over an existing one without erasing live settings.
+ *
+ * @param existing - the role currently in the catalog.
+ * @param incoming - the normalized role parsed from the template.
+ * @returns the patch to write, or the incoming role when it is new.
+ */
+export function mergeTemplateRole(existing, incoming) {
+  if (existing === undefined) return incoming
+  const patch = { ...incoming }
+  for (const field of PRESERVE_WHEN_EMPTY) {
+    const value = incoming[field]
+    if (value === undefined || value === null || value === '') {
+      // Keep the patch minimal: a field the live role does not carry either is
+      // simply left out instead of written back as undefined.
+      if (existing[field] === undefined) delete patch[field]
+      else patch[field] = existing[field]
+    }
+  }
+  for (const field of PRESERVE_WHEN_EMPTY_LIST) {
+    const value = incoming[field]
+    if (!Array.isArray(value) || value.length === 0) {
+      if (existing[field] === undefined) delete patch[field]
+      else patch[field] = existing[field]
+    }
+  }
+  return patch
+}
+
+/**
  * Upsert template roles into a live role store (get/create/update interface).
  *
  * Best-effort transactional: any failure rolls back the already-applied changes
@@ -225,7 +278,7 @@ export async function upsertRoles(store, roles) {
       if (existing === undefined) {
         await store.create(role)
       } else {
-        await store.update(role.id, role)
+        await store.update(role.id, mergeTemplateRole(existing, role))
       }
       undo.push({ id: role.id, existing })
       applied.push({ id: role.id, action: existing === undefined ? 'created' : 'updated' })

@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { diffRoles, SettingsLog, settingsLogRoute, settingsLogNoteRoute, applySettingsRoute } from '../src/settings-log.js'
+import { roleCatalogRoute } from '../src/role-routes.js'
 
 const role = (overrides = {}) => ({ id: 'dev', name: 'DEV', provider: 'p', model: 'm', tools: ['read'], ...overrides })
 
@@ -101,6 +102,25 @@ test('the settings log route reads entries and the note route attributes the act
   log.observe([role({ provider: 'q', model: 'm9' })])
   await log.queue
   assert.equal((await log.read(1))[0].actor, 'settings-ui')
+})
+
+test('the role catalog route summarizes routing and policy fields', async () => {
+  const route = roleCatalogRoute(() => [{
+    id: 'dev', name: 'DEV', provider: 'zai', model: 'glm-5.3-flash', reasoningEffort: 'high',
+    fallbacks: [{ provider: 'p2', model: 'm2', reasoningEffort: '' }],
+    toolMode: 'custom', tools: ['read', 'pwsh'], skills: ['clean-code-guard'], denyCommands: ['\\bgit\\s+push\\b'],
+    fallbackProvider: '', fallbackModel: '', fallbackReasoningEffort: '',
+  }])
+  assert.equal(route.kind, 'prefix')
+  const response = await route.resource(new Request('http://localhost/agent-team-roles/roles'))
+  const body = await response.json()
+  assert.deepEqual(body.roles[0], {
+    id: 'dev', name: 'DEV', provider: 'zai', model: 'glm-5.3-flash', reasoningEffort: 'high',
+    fallbacks: [{ provider: 'p2', model: 'm2', reasoningEffort: '' }],
+    toolMode: 'custom', tools: 2, skills: ['clean-code-guard'], denyCommands: ['\\bgit\\s+push\\b'],
+  })
+  const wrong = await roleCatalogRoute(() => []).resource(new Request('http://localhost/agent-team-roles/roles', { method: 'POST' }))
+  assert.equal(wrong.status, 405)
 })
 
 test('apply settings is POST-only and returns the applied members', async () => {

@@ -183,6 +183,59 @@ test('copyTemplateSkills merges role skill dirs without deleting unrelated files
   assert.equal(await fs.readFile(path.join(skillsRoot, 'qa', 'SKILL.md'), 'utf8'), 'qa')
 })
 
+test('a template update never erases a configured model route or policy', async () => {
+  const updated = []
+  const existing = {
+    id: 'existing',
+    name: 'SE',
+    description: 'old description',
+    persona: 'old persona',
+    provider: 'zai',
+    model: 'glm-5.3-flash',
+    reasoningEffort: 'high',
+    fallbacks: [{ provider: 'p2', model: 'm2', reasoningEffort: '' }],
+    skills: ['architecture-contracts'],
+    denyCommands: ['\\bgit\\s+push\\b'],
+    color: '#5ee0b5',
+    tools: ['read'],
+    toolMode: 'custom',
+  }
+  const store = {
+    get: (id) => (id === 'existing' ? existing : undefined),
+    create: async () => {},
+    update: async (id, patch) => updated.push([id, patch]),
+  }
+  // The parsed template role carries normalized empties for everything the
+  // template omits.
+  await upsertRoles(store, [{
+    id: 'existing',
+    name: 'SE',
+    description: 'new description',
+    persona: 'new persona',
+    provider: '',
+    model: '',
+    reasoningEffort: '',
+    fallbackProvider: '',
+    fallbackModel: '',
+    fallbackReasoningEffort: '',
+    fallbacks: [],
+    skills: [],
+    denyCommands: [],
+    color: '',
+    tools: ['read', 'glob', 'grep'],
+    toolMode: 'custom',
+  }])
+  const patch = updated[0][1]
+  assert.equal(patch.provider, 'zai', 'the configured provider survives')
+  assert.equal(patch.model, 'glm-5.3-flash')
+  assert.equal(patch.reasoningEffort, 'high')
+  assert.deepEqual(patch.fallbacks, [{ provider: 'p2', model: 'm2', reasoningEffort: '' }])
+  assert.deepEqual(patch.skills, ['architecture-contracts'])
+  assert.deepEqual(patch.denyCommands, ['\\bgit\\s+push\\b'])
+  assert.equal(patch.description, 'new description', 'a template value still wins')
+  assert.deepEqual(patch.tools, ['read', 'glob', 'grep'], 'tool policy still comes from the template')
+})
+
 test('upsertRoles creates missing roles and updates existing ones', async () => {
   const created = []
   const updated = []
