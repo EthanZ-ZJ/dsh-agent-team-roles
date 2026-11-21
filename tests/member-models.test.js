@@ -12,6 +12,23 @@ const role = {
   fallbackModel: 'm2',
 }
 
+test('a manual pick is labelled manual for both a live and a dormant member', () => {
+  const role = { id: 'dev', provider: 'zai', model: 'glm-5.3-flash', reasoningEffort: 'high' }
+  const override = { provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'low', route: 'manual', via: 'lead', at: 7 }
+  const live = describeMember({
+    name: 'dev', status: 'running', role,
+    live: { provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'low' },
+    override, hasAgent: true,
+  })
+  assert.equal(live.source, 'manual')
+  assert.equal(live.model, 'deepseek-flash')
+  assert.equal(live.pending, false)
+  const dormant = describeMember({ name: 'dev', status: 'inactive', role, override, hasAgent: false })
+  assert.equal(dormant.source, 'manual')
+  assert.equal(dormant.pending, true)
+  assert.equal(dormant.changedAt, 7)
+})
+
 test('a live selection matching the primary route reports primary', () => {
   const view = describeMember({
     name: 'dev',

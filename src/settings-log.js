@@ -15,6 +15,7 @@
 
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { readJsonBody } from './request-body.js'
 
 /** Fields compared per role; a model-route surprise is the motivating case. */
 export const LOGGED_FIELDS = [
@@ -267,7 +268,7 @@ export function settingsLogNoteRoute(log) {
       }
       let actor = 'settings'
       try {
-        const body = typeof req.json === 'function' ? await req.json() : JSON.parse(await req.text())
+        const body = await readJsonBody(req)
         if (typeof body?.actor === 'string' && body.actor.trim() !== '') actor = body.actor.trim().slice(0, 80)
       } catch {
         // An unreadable body still announces the Settings page.

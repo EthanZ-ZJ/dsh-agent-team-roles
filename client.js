@@ -181,6 +181,14 @@ window.__ModuleLoader__.load({
       modelSourceFallbackAuto: '备用·自动',
       modelSourceFallbackManual: '备用·手动',
       modelPending: '待激活',
+      modelSourceManual: '手动',
+      modelSwitch: '切换模型',
+      modelCancel: '取消',
+      modelApply: '应用',
+      modelApplied: '已切换',
+      modelApplyFailed: '切换失败：',
+      modelPick: '选择模型',
+      membersModelEffort: '推理强度',
 
       primaryModel: '主模型',
       modelEffortDefault: '模型默认',
@@ -380,6 +388,14 @@ window.__ModuleLoader__.load({
       modelSourceFallbackAuto: 'fallback·auto',
       modelSourceFallbackManual: 'fallback·manual',
       modelPending: 'pending',
+      modelSourceManual: 'manual',
+      modelSwitch: 'Switch model',
+      modelCancel: 'Cancel',
+      modelApply: 'Apply',
+      modelApplied: 'Switched',
+      modelApplyFailed: 'Switch failed: ',
+      modelPick: 'Choose a model',
+      membersModelEffort: 'Reasoning effort',
 
       primaryModel: 'Primary model',
       modelEffortDefault: 'Model default',
@@ -2179,6 +2195,20 @@ window.__ModuleLoader__.load({
       function MembersPage({ sessionId, reloadKey }) {
         const [team, setTeam] = React.useState(null)
         const [error, setError] = React.useState('')
+        const [catalog, setCatalog] = React.useState([])
+        const [editing, setEditing] = React.useState('')
+        const [draft, setDraft] = React.useState({ route: '', effort: '' })
+        const [saving, setSaving] = React.useState(false)
+        const [note, setNote] = React.useState('')
+        const [localKey, setLocalKey] = React.useState(0)
+        React.useEffect(() => {
+          let cancelled = false
+          fetch('/agent-team-roles/model-catalog')
+            .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
+            .then((data) => { if (!cancelled) setCatalog(Array.isArray(data.routes) ? data.routes : []) })
+            .catch(() => { if (!cancelled) setCatalog([]) })
+          return () => { cancelled = true }
+        }, [])
         React.useEffect(() => {
           if (sessionId === undefined) return undefined
           let cancelled = false
@@ -2201,13 +2231,47 @@ window.__ModuleLoader__.load({
           return () => {
             cancelled = true
           }
-        }, [sessionId, reloadKey])
+        }, [sessionId, reloadKey, localKey])
+        /** Apply one manual model selection to a member of this Team only. */
+        const applyModel = async (member) => {
+          if (saving || sessionId === undefined) return
+          const separator = draft.route.indexOf('\u0000')
+          if (draft.route === '' || separator < 0) {
+            setNote(t('modelPick'))
+            return
+          }
+          setSaving(true)
+          setNote('')
+          try {
+            const response = await fetch('/agent-team-roles/member-model', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                rootId: sessionId,
+                member: member.name,
+                provider: draft.route.slice(0, separator),
+                model: draft.route.slice(separator + 1),
+                reasoningEffort: draft.effort,
+              }),
+            })
+            const data = await response.json().catch(() => ({}))
+            if (!response.ok) throw new Error(data.error ?? `HTTP ${response.status}`)
+            setEditing('')
+            setNote(`${t('modelApplied')} ${member.name} → ${data.provider}/${data.model}`)
+            setLocalKey(current => current + 1)
+          } catch (caught) {
+            setNote(`${t('modelApplyFailed')}${caught.message}`)
+          } finally {
+            setSaving(false)
+          }
+        }
         const labelOf = (member) => {
           if (member.provider === '' && member.model === '') return t('membersNoModel')
           return `${member.provider}/${member.model}${member.reasoningEffort === '' ? '' : ` · ${member.reasoningEffort}`}`
         }
         const sourceLabel = (source) => {
           if (source === 'primary') return t('modelSourcePrimary')
+          if (source === 'manual') return t('modelSourceManual')
           if (source === 'fallback-auto') return t('modelSourceFallbackAuto')
           if (source === 'fallback-manual') return t('modelSourceFallbackManual')
           return t('modelSourceSession')
@@ -2225,6 +2289,7 @@ window.__ModuleLoader__.load({
             ]
         return h(React.Fragment, null, [
           error === '' ? null : h('div', { key: 'error', style: banner('state-error') }, error),
+          note === '' ? null : h('div', { key: 'note', style: banner('state-success') }, note),
           h('div', {
             key: 'list',
             style: { display: 'flex', flexDirection: 'column', gap: 4, overflowY: 'auto', minHeight: 0 },
@@ -2232,39 +2297,98 @@ window.__ModuleLoader__.load({
             ? [h('span', { key: 'empty', style: small }, error === '' ? t('loading') : '')]
             : rows.map((member) => h('div', {
                 key: member.key,
-                style: {
-                  display: 'grid',
-                  gridTemplateColumns: '10px minmax(0, 1.1fr) minmax(0, 1.6fr) auto',
-                  gap: 8,
-                  alignItems: 'center',
-                  padding: '6px 8px',
-                  border: '1px solid var(--dsw-alias-border-l1)',
-                  borderRadius: 8,
-                  background: 'var(--dsw-alias-bg-layer-1)',
-                },
+                style: { display: 'flex', flexDirection: 'column', gap: 4 },
               }, [
-                h('span', { key: 'dot', style: { width: 8, height: 8, borderRadius: 999, background: dotColor(member.status) } }),
-                h('span', { key: 'name', style: { fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
-                  member.roleName === '' ? member.name : `${member.name} · ${member.roleName}`),
-                h('span', { key: 'model', title: labelOf(member), style: { fontSize: 12, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, labelOf(member)),
-                h('span', { key: 'tags', style: { display: 'flex', gap: 4, alignItems: 'center' } }, [
-                  h('span', {
-                    key: 'source',
-                    style: {
-                      ...small,
-                      fontSize: 10,
-                      padding: '1px 6px',
-                      borderRadius: 999,
-                      background: 'var(--dsw-alias-bg-layer-2)',
-                      whiteSpace: 'nowrap',
-                    },
-                  }, sourceLabel(member.source) + (member.fallbackIndex === undefined ? '' : ' #' + (member.fallbackIndex + 1))),
-                  member.pending === true
-                    ? h('span', {
-                        key: 'pending',
-                        style: { ...small, fontSize: 10, padding: '1px 6px', borderRadius: 999, background: 'var(--dsw-alias-bg-layer-2)', whiteSpace: 'nowrap' },
-                      }, t('modelPending'))
-                    : null,
+                h('div', {
+                  key: 'row',
+                  style: {
+                    display: 'grid',
+                    gridTemplateColumns: '10px minmax(0, 1.1fr) minmax(0, 1.6fr) auto',
+                    gap: 8,
+                    alignItems: 'center',
+                    padding: '6px 8px',
+                    border: '1px solid var(--dsw-alias-border-l1)',
+                    borderRadius: 8,
+                    background: 'var(--dsw-alias-bg-layer-1)',
+                  },
+                }, [
+                  h('span', { key: 'dot', style: { width: 8, height: 8, borderRadius: 999, background: dotColor(member.status) } }),
+                  h('span', { key: 'name', style: { fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
+                    member.roleName === '' ? member.name : `${member.name} · ${member.roleName}`),
+                  h('span', { key: 'model', title: labelOf(member), style: { fontSize: 12, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, labelOf(member)),
+                  h('span', { key: 'tags', style: { display: 'flex', gap: 4, alignItems: 'center' } }, [
+                    h('span', {
+                      key: 'source',
+                      style: {
+                        ...small,
+                        fontSize: 10,
+                        padding: '1px 6px',
+                        borderRadius: 999,
+                        background: 'var(--dsw-alias-bg-layer-2)',
+                        whiteSpace: 'nowrap',
+                      },
+                    }, sourceLabel(member.source) + (member.fallbackIndex === undefined ? '' : ' #' + (member.fallbackIndex + 1))),
+                    member.pending === true
+                      ? h('span', {
+                          key: 'pending',
+                          style: { ...small, fontSize: 10, padding: '1px 6px', borderRadius: 999, background: 'var(--dsw-alias-bg-layer-2)', whiteSpace: 'nowrap' },
+                        }, t('modelPending'))
+                      : null,
+                    member.key === 'lead'
+                      ? null
+                      : h('button', {
+                          key: 'switch',
+                          type: 'button',
+                          style: { ...button, fontSize: 11, padding: '2px 8px' },
+                          onClick: () => {
+                            setNote('')
+                            if (editing === member.name) {
+                              setEditing('')
+                              return
+                            }
+                            setEditing(member.name)
+                            setDraft({ route: member.provider === '' ? '' : `${member.provider}\u0000${member.model}`, effort: member.reasoningEffort ?? '' })
+                          },
+                        }, editing === member.name ? t('modelCancel') : t('modelSwitch')),
+                  ]),
+                ]),
+                editing !== member.name ? null : h('div', {
+                  key: 'editor',
+                  style: { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', padding: '6px 8px', border: '1px dashed var(--dsw-alias-border-l2)', borderRadius: 8 },
+                }, [
+                  h('select', {
+                    key: 'model',
+                    'aria-label': t('modelPick'),
+                    style: { ...input, flex: '1 1 220px' },
+                    value: draft.route,
+                    onChange: (event) => setDraft(current => ({ ...current, route: event.target.value })),
+                  }, [
+                    h('option', { key: 'none', value: '' }, t('modelPick')),
+                    ...catalog.map((route) => h('option', {
+                      key: `${route.provider}\u0000${route.id}`,
+                      value: `${route.provider}\u0000${route.id}`,
+                    }, `${route.provider}/${route.id}`)),
+                  ]),
+                  h('select', {
+                    key: 'effort',
+                    'aria-label': t('membersModelEffort'),
+                    style: { ...input, flex: '0 0 140px' },
+                    value: draft.effort,
+                    onChange: (event) => setDraft(current => ({ ...current, effort: event.target.value })),
+                  }, [
+                    h('option', { key: 'default', value: '' }, t('effortDefault')),
+                    ...(Array.isArray(catalog.efforts) ? catalog.efforts : []).map((effort) => h('option', {
+                      key: effort.id,
+                      value: effort.id,
+                    }, effort.name ?? effort.id)),
+                  ]),
+                  h('button', {
+                    key: 'apply',
+                    type: 'button',
+                    style: primaryButton,
+                    disabled: saving,
+                    onClick: () => { void applyModel(member) },
+                  }, saving ? t('saving') : t('modelApply')),
                 ]),
               ]))),
         ])

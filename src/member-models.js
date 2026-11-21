@@ -39,7 +39,9 @@ export function describeMember({ name, status, role, live, override, hasAgent = 
   const fallback = chain[0] ?? { provider: '', model: '', reasoningEffort: '' }
   const overrideSource = override?.route === 'primary'
     ? 'primary'
-    : override?.via === 'auto' ? 'fallback-auto' : 'fallback-manual'
+    : override?.route === 'manual'
+      ? 'manual'
+      : override?.via === 'auto' ? 'fallback-auto' : 'fallback-manual'
   const fromOverride = override === undefined
     ? undefined
     : {

@@ -44,6 +44,7 @@ import { modelCatalogRoute } from './model-catalog.js'
 import { skillRevealRoute, skillRoute } from './skill-routes.js'
 import { SettingsLog, settingsLogNoteRoute, settingsLogRoute, applySettingsRoute } from './settings-log.js'
 import { roleCatalogRoute } from './role-routes.js'
+import { memberModelRoute } from './member-model-route.js'
 import { copyTemplateSkills, discoverTemplates, mergeTemplateGates, seedTemplates, templatesRoot, upsertRoles } from './templates.js'
 import { MemberSnapshots, RoleStore, RuleStore, stateDir } from './store.js'
 import { spawnRoleMember } from './spawn.js'
@@ -974,6 +975,32 @@ export function apply(ctx, config) {
   }
 
   /**
+   * Switch one member's model by hand, scoped to one Team (one session).
+   *
+   * The selection is applied to a live Agent immediately and recorded as an
+   * override so the next activation keeps it; the role definition is not
+   * touched, so other Teams and future members keep their configured route.
+   */
+  function switchMemberModel({ rootId, member, provider, model, reasoningEffort }) {
+    const catalog = mergeRoles(rolesReader.read())
+    const snapshot = snapshots.get(rootId, member)
+    const roleId = snapshot?.roleId ?? roleForTarget(catalog, member)?.id
+    if (snapshot === undefined && roleId === undefined) throw new Error(`unknown member "${member}" in this Team`)
+    const key = `${rootId}:${member}`
+    const selection = modelSelection({ provider, model, reasoningEffort })
+    const agent = memberAgents.get(key)
+    if (agent !== undefined) {
+      try {
+        agent.model?.select(selection)
+      } catch (error) {
+        throw new Error(`cannot select ${provider}/${model} for "${member}": ${error.message}`)
+      }
+    }
+    memberRouteOverrides.set(key, { ...selection, route: 'manual', via: 'lead', at: Date.now() })
+    return { rootId, member, roleId: roleId ?? '', ...selection, live: agent !== undefined }
+  }
+
+  /**
    * Re-apply Settings changes to every live member.
    *
    * Personas, tool policy, and denyCommands already read the live role per step;
@@ -1033,6 +1060,7 @@ export function apply(ctx, config) {
     scope.effect(() => scope.webServer.register(roleCatalogRoute(() => roleStore.list())), 'agent-team-roles:role-catalog-route')
     scope.effect(() => scope.webServer.register(settingsLogRoute(settingsLog)), 'agent-team-roles:settings-log-route')
     scope.effect(() => scope.webServer.register(settingsLogNoteRoute(settingsLog)), 'agent-team-roles:settings-log-note-route')
+    scope.effect(() => scope.webServer.register(memberModelRoute(switchMemberModel)), 'agent-team-roles:member-model-route')
     scope.effect(() => scope.webServer.register(applySettingsRoute(async () => ({
       members: applyLiveSettings(),
       roles: roleStore.list().length,

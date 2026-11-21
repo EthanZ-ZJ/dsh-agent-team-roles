@@ -5,6 +5,7 @@ import vm from 'node:vm'
 
 const bundle = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
 const members = '/agent-team-roles/member-models'
+const catalog = '/agent-team-roles/model-catalog'
 const gates = '/agent-team-roles/gates/root'
 
 // Render function components in place; keep hooks per mounted child, not per
@@ -73,7 +74,8 @@ function renderer() {
   }
 }
 
-async function mount() {
+async function mount(options = {}) {
+  const roster = options.members ?? []
   const view = renderer()
   const urls = [], commands = [], timers = [], composer = []
   let plugin, roleReads = 0, english, pulled = false
@@ -94,7 +96,19 @@ async function mount() {
         { at: 1700000000000, actor: 'settings', changes: [{ roleId: 'dev', fields: [{ field: 'model', from: 'a', to: 'b' }] }] },
       ] }) }
     }
-    const data = url === members ? { roots: [{ rootId: 'root', lead: { provider: 'test', model: pulled ? 'after-pull' : 'original', reasoningEffort: '' }, members: [] }] } : { gates: [], reason: 'gate list loaded' }
+    if (url === '/agent-team-roles/model-catalog') {
+      return { ok: true, json: async () => ({ routes: [
+        { provider: 'zai', id: 'glm-5.3-flash', name: 'GLM' },
+        { provider: 'deepseek-official', id: 'deepseek-flash', name: 'DeepSeek' },
+      ], efforts: [{ id: 'low', name: 'low' }, { id: 'high', name: 'high' }] }) }
+    }
+    if (url === '/agent-team-roles/member-model') {
+      assert.equal(method, 'POST')
+      const body = JSON.parse(options.body)
+      assert.equal(body.rootId, 'root')
+      return { ok: true, json: async () => ({ ...body, roleId: 'dev', live: true }) }
+    }
+    const data = url === members ? { roots: [{ rootId: 'root', lead: { provider: 'test', model: pulled ? 'after-pull' : 'original', reasoningEffort: '' }, members: roster }] } : { gates: [], reason: 'gate list loaded' }
     return { ok: true, json: async () => data }
   } })
   plugin.apply({
@@ -118,7 +132,7 @@ async function mount() {
     await matches[0].props.onClick({ currentTarget: { getBoundingClientRect: () => ({ left: 20, top: 400, bottom: 430, right: 50 }) }, stopPropagation() {} })
     await settle()
   }
-  return { view, urls, commands, timers, roleReads: () => roleReads, buttons, click, text: () => view.nodes.map(text).join(' ') }
+  return { view, urls, commands, timers, roleReads: () => roleReads, buttons, click, text: () => view.nodes.map(text).join(' '), composer: composer[0], props }
 }
 
 test('single composer trigger opens members directly; gates load only when selected or refreshed', async () => {
@@ -126,13 +140,13 @@ test('single composer trigger opens members directly; gates load only when selec
   assert.equal(panel.buttons().length, 1)
   assert.deepEqual(panel.urls, [])
   await panel.click(/team/i)
-  assert.deepEqual(panel.urls, [members])
+  assert.deepEqual(panel.urls, [catalog, members])
   assert.match(panel.text(), /test\/original/)
   await panel.click(/^gates$/i)
   assert.match(panel.text(), /gate list loaded/)
-  assert.deepEqual(panel.urls, [members, gates])
+  assert.deepEqual(panel.urls, [catalog, members, gates])
   await panel.click(/apply settings/i)
-  assert.deepEqual(panel.urls, [members, gates, '/agent-team-roles/apply-settings', gates],
+  assert.deepEqual(panel.urls, [catalog, members, gates, '/agent-team-roles/apply-settings', gates],
     'applying settings re-reads the gates view for this session')
   assert.match(panel.text(), /Applied to 1 live members/)
   assert.equal(panel.roleReads(), 0)
@@ -143,9 +157,29 @@ test('the log tab shows recorded settings changes with actor and fields', async 
   const panel = await mount()
   await panel.click(/team/i)
   await panel.click(/^log$/i)
-  assert.deepEqual(panel.urls, [members, '/agent-team-roles/settings-log?limit=50'])
+  assert.deepEqual(panel.urls, [catalog, members, '/agent-team-roles/settings-log?limit=50'])
   assert.match(panel.text(), /settings/)
   assert.match(panel.text(), /dev: model/)
+})
+
+test('the members page switches one member model for this Team only', async () => {
+  const panel = await mount({ members: [{
+    name: 'dev', roleId: 'dev', roleName: 'DEV', status: 'inactive',
+    provider: 'zai', model: 'glm-5.3-flash', reasoningEffort: 'high', source: 'primary', pending: true,
+  }] })
+  await panel.click(/team/i)
+  assert.match(panel.text(), /test\/original/)
+  await panel.click(/switch model/i)
+  const selects = panel.view.nodes.filter(node => node.type === 'select')
+  const picker = selects.find(node => node.props['aria-label'] === 'Choose a model')
+  assert.ok(picker, 'the picker renders inside the member row')
+  assert.deepEqual(picker.children.filter(child => child.type === 'option').map(option => option.props.value),
+    ['', 'zai\u0000glm-5.3-flash', 'deepseek-official\u0000deepseek-flash'])
+  picker.props.onChange({ target: { value: 'deepseek-official\u0000deepseek-flash' } })
+  await panel.view.settle(panel.composer, panel.props)
+  await panel.click(/^apply$/i)
+  assert.ok(panel.urls.includes('/agent-team-roles/member-model'))
+  assert.match(panel.text(), /Switched dev/)
 })
 
 test('pull selects presets inline and stays open for consecutive pulls', async () => {
@@ -157,7 +191,7 @@ test('pull selects presets inline and stays open for consecutive pulls', async (
   assert.match(panel.text(), /Developer/)
   await panel.click(/^pull(?: developer)?$/i)
   assert.deepEqual(panel.commands, [['root', '/team-spawn dev']])
-  assert.deepEqual(panel.urls, [members], 'no extra fetches while the pull page stays open')
+  assert.deepEqual(panel.urls, [catalog, members], 'no extra fetches while the pull page stays open')
   assert.match(panel.text(), /Pulled/, 'a success notice confirms the pull without navigating')
   assert.match(panel.text(), /Developer/, 'the role list stays visible for the next pull')
   await panel.click(/^pull(?: developer)?$/i)

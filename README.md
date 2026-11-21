@@ -315,6 +315,12 @@ Review this diff...
 
 Skills are registered only in that member's Agent scope; global skills still come from the deployment's own skill provider. An empty role `skills` list exposes the whole role folder; a non-empty list matches the skill frontmatter `name` (or the file name without frontmatter) and exposes only the listed skills.
 
+## Switching a member's model from the Team panel
+
+The Team panel's **Members** page lists each teammate with the model it is actually using. **Switch model** opens a picker for that member, filled from the host model catalog, plus a reasoning-effort select; **Apply** posts to `/agent-team-roles/member-model` with the Team root and member name.
+
+The switch is scoped to that Team (that session): a live member is re-selected in place without losing its conversation, and a dormant member keeps the selection as a pending override that applies on its next activation. The role definition is untouched, so other Teams and future members keep their configured route, and the row is labelled `manual` until the member returns to its role route or a fallback. Switching a Codex-backed member is refused: its model belongs to the external Codex CLI configuration.
+
 ## Settings change log and live apply
 
 Role configuration can be edited from the Settings page, the Lead tools, and the role service other plugins use. Two mechanisms make those edits observable and immediate:
