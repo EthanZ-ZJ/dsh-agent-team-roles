@@ -221,9 +221,18 @@ export function applySettingsRoute(apply) {
         res.setHeader('allow', 'POST')
         return sendJson(res, 405, { error: 'method not allowed' })
       }
+      // An optional rootId scopes the pass to one Team: the panel reports the
+      // count for the session it is showing, not for every Team in the process.
+      let rootId
       try {
-        const result = await apply()
-        return sendJson(res, 200, result)
+        const body = await readJsonBody(req)
+        if (typeof body?.rootId === 'string' && body.rootId.trim() !== '') rootId = body.rootId.trim()
+      } catch {
+        // No body means "every Team", which keeps older callers working.
+      }
+      try {
+        const result = await apply({ rootId })
+        return sendJson(res, 200, { ...result, scope: rootId === undefined ? 'all' : 'team' })
       } catch (error) {
         return sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) })
       }

@@ -2576,7 +2576,11 @@ window.__ModuleLoader__.load({
           setApplying(true)
           setNotice('')
           try {
-            const response = await fetch('/agent-team-roles/apply-settings', { method: 'POST' })
+            const response = await fetch('/agent-team-roles/apply-settings', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ rootId: sessionId }),
+            })
             if (!response.ok) {
               const body = await response.json().catch(() => ({}))
               throw new Error(body.error ?? `HTTP ${response.status}`)

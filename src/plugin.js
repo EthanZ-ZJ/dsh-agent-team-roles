@@ -1012,7 +1012,7 @@ export function apply(ctx, config) {
    * snapshot is what the next activation reads, and it is also what the panel
    * and the member-model view show while the member sleeps.
    */
-  async function applyLiveSettings() {
+  async function applyLiveSettings({ rootId } = {}) {
     const catalog = mergeRoles(rolesReader.read())
     const applied = []
     const seen = new Set()
@@ -1022,7 +1022,8 @@ export function apply(ctx, config) {
       if (roleId === undefined) return { roleId: undefined, role: undefined }
       return { roleId, role: findRole(catalog, roleId) }
     }
-    for (const [rootId, lead] of leadAgents) {
+    for (const [teamRootId, lead] of leadAgents) {
+      if (rootId !== undefined && teamRootId !== rootId) continue
       let roster = []
       try {
         roster = ctx.agentTeams.listMembers(lead)
@@ -1032,10 +1033,10 @@ export function apply(ctx, config) {
         roster = []
       }
       for (const name of roster) {
-        const key = `${rootId}:${name}`
+        const key = `${teamRootId}:${name}`
         if (seen.has(key)) continue
         seen.add(key)
-        const { roleId, role } = roleOfMember(rootId, name)
+        const { roleId, role } = roleOfMember(teamRootId, name)
         if (role === undefined) continue
         const appliedFields = []
         const agent = memberAgents.get(key)
@@ -1063,7 +1064,7 @@ export function apply(ctx, config) {
         } else {
           // Idle member: rebase the snapshot it will activate from.
           try {
-            await snapshots.rebase(rootId, name, role)
+            await snapshots.rebase(teamRootId, name, role)
             appliedFields.push('pending')
           } catch (error) {
             ctx.logger?.warn(`[agent-team-roles] cannot rebase the snapshot for "${name}": ${error.message}`)
@@ -1090,8 +1091,8 @@ export function apply(ctx, config) {
     scope.effect(() => scope.webServer.register(settingsLogRoute(settingsLog)), 'agent-team-roles:settings-log-route')
     scope.effect(() => scope.webServer.register(settingsLogNoteRoute(settingsLog)), 'agent-team-roles:settings-log-note-route')
     scope.effect(() => scope.webServer.register(memberModelRoute(switchMemberModel)), 'agent-team-roles:member-model-route')
-    scope.effect(() => scope.webServer.register(applySettingsRoute(async () => ({
-      members: await applyLiveSettings(),
+    scope.effect(() => scope.webServer.register(applySettingsRoute(async (request) => ({
+      members: await applyLiveSettings(request),
       roles: roleStore.list().length,
     }))), 'agent-team-roles:apply-settings-route')
   })

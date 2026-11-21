@@ -123,8 +123,12 @@ test('the role catalog route summarizes routing and policy fields', async () => 
   assert.equal(wrong.status, 405)
 })
 
-test('apply settings is POST-only and returns the applied members', async () => {
-  const route = applySettingsRoute(async () => ({ members: [{ member: 'dev', role: 'dev', applied: ['model'] }], roles: 3 }))
+test('apply settings is POST-only, forwards a Team scope, and reports the scope', async () => {
+  const calls = []
+  const route = applySettingsRoute(async (request) => {
+    calls.push(request)
+    return { members: [{ member: 'dev', role: 'dev', applied: ['model'] }], roles: 3 }
+  })
   assert.equal(route.kind, 'exact')
   const responses = []
   const res = {
@@ -140,7 +144,20 @@ test('apply settings is POST-only and returns the applied members', async () => 
   }
   await route.handler(new Request('http://localhost/agent-team-roles/apply-settings'), wrong)
   assert.equal(wrong.statusCode, 405)
+
   await route.handler(new Request('http://localhost/agent-team-roles/apply-settings', { method: 'POST' }), res)
   assert.equal(res.statusCode, 200)
+  assert.deepEqual(calls.at(-1), { rootId: undefined })
+  assert.equal(responses.at(-1).scope, 'all', 'a body-less call still refreshes every Team')
+
+  const scoped = { ...res, headers: {} }
+  await route.handler(new Request('http://localhost/agent-team-roles/apply-settings', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ rootId: 'session-1' }),
+  }), scoped)
+  assert.deepEqual(calls.at(-1), { rootId: 'session-1' })
+  assert.equal(scoped.statusCode, 200)
+  assert.equal(responses.at(-1).scope, 'team')
   assert.deepEqual(responses.at(-1).members[0].applied, ['model'])
 })
