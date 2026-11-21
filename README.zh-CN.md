@@ -316,7 +316,7 @@ whenToUse: 改动准备进入审查时。
 
 **变更日志。** `$DSH_HOME/agent-team-roles/settings.log` 是 JSONL 文件，每次观察到角色目录变化写一行：时间、操作者，以及每个角色的字段差异（`provider`、`model`、`reasoningEffort`、`fallbacks`、`tools`、`toolMode`、`denyCommands`、`skills`、`persona` 等）。操作者按来源标注：设置页保存是 `settings-ui`，Agent 与插件写入是 `role-service:update|create|remove`，模板应用是 `team-template apply: <id>`，面板刷新是 `apply settings`；无法归属的改动（例如手工编辑 profile）记为 `settings`。文件只保留最近 400 条。团队面板的「日志」页展示最近的记录，`GET /agent-team-roles/settings-log?limit=<n>` 返回同样的 JSON。模型路由若在没有明显原因时被改，能查到时间与来源。
 
-**即时生效。** 角色提示词、工具策略与 `denyCommands` 在每一步、每次工具调用时读取当前角色定义，因此改完立即作用于已存在的成员。成员 Agent 创建时被固化的两项——模型路由与私有技能——由团队面板的 **↻（应用设置）** 刷新：它 POST 到 `/agent-team-roles/apply-settings`，对每个在线成员重新选择角色路由（有显式备用切换的成员保持其覆盖），并重新安装私有技能，然后重载面板。未运行的成员在下次激活时使用新配置。
+**即时生效。** 角色提示词、工具策略与 `denyCommands` 在每一步、每次工具调用时读取当前角色定义，改完立即作用于已存在的成员。模型路由与私有技能由团队面板的 **↻（应用设置）** 刷新：它 POST 到 `/agent-team-roles/apply-settings`，**运行中**的成员原地重选模型并重装私有技能，**空闲待命**的成员则把已保存的快照重定位到当前角色——下次激活读的就是这份快照。有显式手动/备用切换的成员保留其路由。面板会报告刷新了多少个成员。
 
 ## 已知限制
 

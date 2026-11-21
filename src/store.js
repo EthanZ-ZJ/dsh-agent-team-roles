@@ -116,6 +116,23 @@ export class MemberSnapshots {
     await this.flush()
   }
 
+  /**
+   * Replace one dormant member's frozen role with the current definition.
+   *
+   * Used when Settings change a role while the member is idle: the next
+   * activation reads this snapshot, so rebasing here is what makes the refresh
+   * apply to a member that is not running right now.
+   */
+  async rebase(rootSessionId, name, frozen) {
+    const key = `${rootSessionId}\u0000${name}`
+    const current = this.records.get(key)
+    if (current === undefined) return undefined
+    const next = { ...current, frozen, updatedAt: Date.now() }
+    this.records.set(key, next)
+    await this.flush()
+    return next
+  }
+
   /** Persist the current snapshot map. */
   flush() {
     this.writeQueue = this.writeQueue.catch(() => undefined).then(async () => {

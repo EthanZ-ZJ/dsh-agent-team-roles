@@ -148,7 +148,7 @@ test('single composer trigger opens members directly; gates load only when selec
   await panel.click(/apply settings/i)
   assert.deepEqual(panel.urls, [catalog, members, gates, '/agent-team-roles/apply-settings', gates],
     'applying settings re-reads the gates view for this session')
-  assert.match(panel.text(), /Applied to 1 live members/)
+  assert.match(panel.text(), /Applied to 1 members \(busy \+ idle\)/)
   assert.equal(panel.roleReads(), 0)
   assert.equal(panel.timers.length, 0, 'idle pages must not schedule polling')
 })

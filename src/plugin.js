@@ -964,8 +964,12 @@ export function apply(ctx, config) {
         leadSelection: lead.model?.current?.(),
         roster,
         roleOf: (name) => {
+          // The live definition wins so an edit is visible immediately; the
+          // frozen snapshot only covers a deleted role.
           const snapshot = snapshots.get(rootId, name)
-          return snapshot?.frozen ?? roleForTarget(catalog, name)
+          return (snapshot === undefined ? undefined : findRole(catalog, snapshot.roleId))
+            ?? snapshot?.frozen
+            ?? roleForTarget(catalog, name)
         },
         liveOf: (name) => memberAgents.get(`${rootId}:${name}`)?.model?.current?.(),
         overrideOf: (name) => memberRouteOverrides.get(`${rootId}:${name}`),
@@ -1001,47 +1005,72 @@ export function apply(ctx, config) {
   }
 
   /**
-   * Re-apply Settings changes to every live member.
+   * Re-apply Settings changes to every member of every Team.
    *
-   * Personas, tool policy, and denyCommands already read the live role per step;
-   * this handles the two things captured when a member Agent was created: its
-   * model route and its private skills. A member with an explicit Lead route
-   * override (a manual or automatic fallback switch) keeps that route.
+   * A live member is re-selected in place. A member that is idle has no Agent
+   * to touch, so its frozen snapshot is rebased onto the current role — that
+   * snapshot is what the next activation reads, and it is also what the panel
+   * and the member-model view show while the member sleeps.
    */
-  function applyLiveSettings() {
+  async function applyLiveSettings() {
     const catalog = mergeRoles(rolesReader.read())
     const applied = []
-    for (const [handleKey, agent] of memberAgents) {
-      const separator = handleKey.indexOf(':')
-      if (separator < 0) continue
-      const rootId = handleKey.slice(0, separator)
-      const name = handleKey.slice(separator + 1)
+    const seen = new Set()
+    const roleOfMember = (rootId, name) => {
       const snapshot = snapshots.get(rootId, name)
       const roleId = snapshot?.roleId ?? roleForTarget(catalog, name)?.id
-      const role = roleId === undefined ? undefined : findRole(catalog, roleId)
-      if (role === undefined) continue
-      const appliedFields = []
-      if (memberRouteOverrides.get(handleKey) === undefined && role.provider !== '' && role.model !== '') {
-        try {
-          agent.model?.select(modelSelection(role))
-          appliedFields.push('model')
-        } catch (error) {
-          ctxWarn(agent, `cannot apply the role route for "${name}": ${error.message}`)
-        }
+      if (roleId === undefined) return { roleId: undefined, role: undefined }
+      return { roleId, role: findRole(catalog, roleId) }
+    }
+    for (const [rootId, lead] of leadAgents) {
+      let roster = []
+      try {
+        roster = ctx.agentTeams.listMembers(lead)
+          .filter((member) => member.role === 'teammate')
+          .map((member) => member.name)
+      } catch {
+        roster = []
       }
-      const previous = memberSkills.get(handleKey)
-      if (previous !== undefined) {
-        try {
-          previous()
-          memberSkills.delete(handleKey)
-          const next = installRoleSkills(agent, role)
-          if (next !== undefined) memberSkills.set(handleKey, next)
-          appliedFields.push('skills')
-        } catch (error) {
-          ctxWarn(agent, `cannot reinstall private skills for "${name}": ${error.message}`)
+      for (const name of roster) {
+        const key = `${rootId}:${name}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        const { roleId, role } = roleOfMember(rootId, name)
+        if (role === undefined) continue
+        const appliedFields = []
+        const agent = memberAgents.get(key)
+        if (agent !== undefined) {
+          if (memberRouteOverrides.get(key) === undefined && role.provider !== '' && role.model !== '') {
+            try {
+              agent.model?.select(modelSelection(role))
+              appliedFields.push('model')
+            } catch (error) {
+              ctxWarn(agent, `cannot apply the role route for "${name}": ${error.message}`)
+            }
+          }
+          const previous = memberSkills.get(key)
+          if (previous !== undefined) {
+            try {
+              previous()
+              memberSkills.delete(key)
+              const next = installRoleSkills(agent, role)
+              if (next !== undefined) memberSkills.set(key, next)
+              appliedFields.push('skills')
+            } catch (error) {
+              ctxWarn(agent, `cannot reinstall private skills for "${name}": ${error.message}`)
+            }
+          }
+        } else {
+          // Idle member: rebase the snapshot it will activate from.
+          try {
+            await snapshots.rebase(rootId, name, role)
+            appliedFields.push('pending')
+          } catch (error) {
+            ctx.logger?.warn(`[agent-team-roles] cannot rebase the snapshot for "${name}": ${error.message}`)
+          }
         }
+        applied.push({ member: name, role: role.id, live: agent !== undefined, applied: appliedFields })
       }
-      applied.push({ member: name, role: role.id, applied: appliedFields })
     }
     settingsLog.note('apply settings')
     return applied
@@ -1062,7 +1091,7 @@ export function apply(ctx, config) {
     scope.effect(() => scope.webServer.register(settingsLogNoteRoute(settingsLog)), 'agent-team-roles:settings-log-note-route')
     scope.effect(() => scope.webServer.register(memberModelRoute(switchMemberModel)), 'agent-team-roles:member-model-route')
     scope.effect(() => scope.webServer.register(applySettingsRoute(async () => ({
-      members: applyLiveSettings(),
+      members: await applyLiveSettings(),
       roles: roleStore.list().length,
     }))), 'agent-team-roles:apply-settings-route')
   })
@@ -1167,6 +1196,12 @@ export function roleForMember(snapshot, catalog, name) {
   return snapshot?.frozen ?? roleForTarget(catalog, name)
 }
 
+/** Pick the route a member must run with: switch override, live role, or snapshot. */
+export function effectiveMemberRoute({ override, liveRole, frozen }) {
+  if (override !== undefined) return override
+  return liveRole ?? frozen
+}
+
 /** Install one member's role prompt, model route, tool policy, and skills. */
 function installMember({ agent, membership, scoped, register, tools, snapshots, ruleStore, roles, ctx, memberAgents, memberSkills, memberRouteOverrides }) {
   const snapshot = snapshots.get(membership.root.id, membership.name)
@@ -1190,12 +1225,12 @@ function installMember({ agent, membership, scoped, register, tools, snapshots, 
     register(() => memberAgents.delete(handleKey))
   }
 
-  // A Lead-requested route override (for example switching to the fallback
-  // model after a quota failure) wins over the frozen role route. Members are
-  // disposed between turns, so applying it here — on the next activation — is
-  // what lets primary and fallback share one conversation context.
+  // A Lead-requested route override (for example a manual or fallback switch)
+  // wins over the role route. Otherwise the live role decides, so a Settings
+  // change reaches an existing member on its next activation; the frozen
+  // snapshot is only the fallback when the role itself is gone.
   const override = memberRouteOverrides?.get(handleKey)
-  const route = override !== undefined ? override : frozen
+  const route = effectiveMemberRoute({ override, liveRole: findRole(mergeRoles(roles.read()), roleId), frozen })
   if (route.provider !== '' && route.model !== '') {
     try {
       agent.model?.select(modelSelection(route))
