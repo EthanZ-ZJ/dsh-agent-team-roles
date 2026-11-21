@@ -985,7 +985,9 @@ export function apply(ctx, config) {
    * override so the next activation keeps it; the role definition is not
    * touched, so other Teams and future members keep their configured route.
    */
-  function switchMemberModel({ rootId, member, provider, model, reasoningEffort }) {
+  function switchMemberModel(request) {
+    if (request.clear === true) return clearMemberModel(request)
+    const { rootId, member, provider, model, reasoningEffort } = request
     const catalog = mergeRoles(rolesReader.read())
     const snapshot = snapshots.get(rootId, member)
     const roleId = snapshot?.roleId ?? roleForTarget(catalog, member)?.id
@@ -1011,6 +1013,31 @@ export function apply(ctx, config) {
     }
     memberRouteOverrides.set(key, { ...selection, route: 'manual', via: 'lead', at: Date.now() })
     return { rootId, member, roleId: roleId ?? '', ...selection, live: agent !== undefined }
+  }
+
+  /**
+   * Drop a manual switch so the member follows its role route again.
+   *
+   * Without this the override would outlive its purpose and mask every later
+   * role or Settings change for that member in this Team.
+   */
+  function clearMemberModel({ rootId, member }) {
+    const key = `${rootId}:${member}`
+    const catalog = mergeRoles(rolesReader.read())
+    const snapshot = snapshots.get(rootId, member)
+    const roleId = snapshot?.roleId ?? roleForTarget(catalog, member)?.id
+    if (snapshot === undefined && roleId === undefined) throw new Error(`unknown member "${member}" in this Team`)
+    memberRouteOverrides.delete(key)
+    const role = roleId === undefined ? undefined : findRole(catalog, roleId)
+    const agent = memberAgents.get(key)
+    if (agent !== undefined && role !== undefined) {
+      try {
+        agent.model?.select(modelSelection(role))
+      } catch (error) {
+        throw new Error(`cannot restore the role route for "${member}": ${error.message}`)
+      }
+    }
+    return { rootId, member, roleId: roleId ?? '', provider: role?.provider ?? '', model: role?.model ?? '', reasoningEffort: role?.reasoningEffort ?? '', live: agent !== undefined, cleared: true }
   }
 
   /**

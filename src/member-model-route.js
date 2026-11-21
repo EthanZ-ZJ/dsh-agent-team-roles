@@ -27,9 +27,10 @@ function sendJson(res, status, body) {
  */
 export function parseMemberModelRequest(body) {
   if (body === null || typeof body !== 'object') return { error: 'expected a JSON object' }
-  const { rootId, member, provider, model, reasoningEffort } = body
+  const { rootId, member, provider, model, reasoningEffort, clear } = body
   if (typeof rootId !== 'string' || rootId.trim() === '') return { error: 'rootId is required' }
   if (typeof member !== 'string' || !MEMBER.test(member)) return { error: 'member must be lowercase kebab-case' }
+  if (clear === true) return { rootId: rootId.trim(), member, clear: true }
   if (typeof provider !== 'string' || provider.trim() === '') return { error: 'provider is required' }
   if (typeof model !== 'string' || model.trim() === '') return { error: 'model is required' }
   if (reasoningEffort !== undefined && reasoningEffort !== null && typeof reasoningEffort !== 'string') {

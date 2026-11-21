@@ -33,6 +33,13 @@ test('a member model request validates required fields', () => {
     'reasoningEffort must be a string')
 })
 
+test('a clear request needs only the Team and member', () => {
+  assert.deepEqual(parseMemberModelRequest({ rootId: ' root ', member: 'dev', clear: true }), {
+    rootId: 'root', member: 'dev', clear: true,
+  })
+  assert.equal(parseMemberModelRequest({ rootId: 'root', member: 'dev', clear: 'yes' }).error, 'provider is required')
+})
+
 test('the route switches the model, rejects other methods, and maps failures', async () => {
   const calls = []
   const route = memberModelRoute(async (request) => {

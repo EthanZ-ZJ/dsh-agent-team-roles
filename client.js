@@ -191,6 +191,8 @@ window.__ModuleLoader__.load({
       modelRoutePrimary: '主模型',
       modelRouteFallback: '备用',
       modelNoRoutes: '该角色还没有配置模型或备用模型，请先在设置里配置。',
+      modelClear: '恢复角色路由',
+      modelCleared: '已恢复角色路由：',
 
       primaryModel: '主模型',
       modelEffortDefault: '模型默认',
@@ -400,6 +402,8 @@ window.__ModuleLoader__.load({
       modelRoutePrimary: 'primary',
       modelRouteFallback: 'fallback',
       modelNoRoutes: 'This role has no model or fallback configured yet; set one in Settings first.',
+      modelClear: 'Follow role again',
+      modelCleared: 'Role route restored: ',
 
       primaryModel: 'Primary model',
       modelEffortDefault: 'Model default',
@@ -2260,6 +2264,28 @@ window.__ModuleLoader__.load({
             setSaving(false)
           }
         }
+        /** Drop the manual switch so the member follows its role route again. */
+        const clearModel = async (member) => {
+          if (saving || sessionId === undefined) return
+          setSaving(true)
+          setNote('')
+          try {
+            const response = await fetch('/agent-team-roles/member-model', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ rootId: sessionId, member: member.name, clear: true }),
+            })
+            const data = await response.json().catch(() => ({}))
+            if (!response.ok) throw new Error(data.error ?? `HTTP ${response.status}`)
+            setEditing('')
+            setNote(`${t('modelCleared')} ${member.name}`)
+            setLocalKey(current => current + 1)
+          } catch (caught) {
+            setNote(`${t('modelApplyFailed')}${caught.message}`)
+          } finally {
+            setSaving(false)
+          }
+        }
         const labelOf = (member) => {
           if (member.provider === '' && member.model === '') return t('membersNoModel')
           return `${member.provider}/${member.model}${member.reasoningEffort === '' ? '' : ` · ${member.reasoningEffort}`}`
@@ -2373,6 +2399,13 @@ window.__ModuleLoader__.load({
                     disabled: saving || (Array.isArray(member.routes) ? member.routes : []).length === 0,
                     onClick: () => { void applyModel(member) },
                   }, saving ? t('saving') : t('modelApply')),
+                  h('button', {
+                    key: 'clear',
+                    type: 'button',
+                    style: { ...button, fontSize: 11 },
+                    disabled: saving,
+                    onClick: () => { void clearModel(member) },
+                  }, t('modelClear')),
                 ]),
               ]))),
         ])
