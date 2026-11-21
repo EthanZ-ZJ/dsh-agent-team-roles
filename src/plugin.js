@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Host plugin: role catalog, role-based spawning, runtime injection, and
  * self-learning rules for the official Agent Teams runtime.
  *
@@ -55,7 +55,10 @@ export const name = 'agent-team-roles'
 export const inject = ['agentTeams', 'agents', 'tools', 'commands', 'subagents']
 
 /** Tool names a managed member always keeps, even under a custom policy. */
-const IMPLICIT_MEMBER_TOOLS = [
+export const IMPLICIT_MEMBER_TOOLS = [
+  // Shared-image tasks promise the member can look at the picture; read_image
+  // is read-only and cannot widen what a member may change.
+  'read_image',
   'remember_role_rule',
   'list_my_rules',
   'list_team_roles',

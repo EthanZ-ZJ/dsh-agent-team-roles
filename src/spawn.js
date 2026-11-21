@@ -99,7 +99,7 @@ export async function resolveSharedImages(caller, images) {
 function withImageNote(prompt, images) {
   if (images.length === 0) return prompt
   const list = images.map((image) => '- ' + image).join('\n')
-  return prompt + '\n\nShared images (read each one with the read tool to see it):\n' + list
+  return prompt + '\n\nShared images (open each one with the read_image tool to see it):\n' + list
 }
 
 /** Pick a free target, appending a numeric suffix when the base is taken. */

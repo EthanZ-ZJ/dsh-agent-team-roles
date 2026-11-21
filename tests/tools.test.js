@@ -364,3 +364,9 @@ test('every tool parameter schema is valid JSON Schema with only array-typed req
   assert.equal(fallbacks.type, 'array')
   assert.deepEqual(fallbacks.items.required, ['provider', 'model'])
 })
+
+test('read_image stays available to members under any role policy', async () => {
+  const { IMPLICIT_MEMBER_TOOLS } = await import('../src/plugin.js')
+  assert.ok(IMPLICIT_MEMBER_TOOLS.includes('read_image'), 'shared images require read_image')
+  assert.ok(IMPLICIT_MEMBER_TOOLS.includes('skill'))
+})
