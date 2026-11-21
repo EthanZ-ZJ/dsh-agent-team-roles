@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildRootView, describeMember, memberModelsRoute } from '../src/member-models.js'
+import { buildRootView, configuredRoute, describeMember, memberModelsRoute } from '../src/member-models.js'
 
 const role = {
   id: 'dev',
@@ -11,6 +11,31 @@ const role = {
   fallbackProvider: 'p2',
   fallbackModel: 'm2',
 }
+
+test('only a configured route resolves, so an unlisted model cannot be switched in', () => {
+  const role = {
+    id: 'dev', provider: 'zai', model: 'glm-5.3-flash',
+    fallbackProvider: 'deepseek-official', fallbackModel: 'deepseek-flash',
+  }
+  assert.equal(configuredRoute(role, 'zai', 'glm-5.3-flash').kind, 'primary')
+  assert.equal(configuredRoute(role, 'deepseek-official', 'deepseek-flash').kind, 'fallback')
+  assert.equal(configuredRoute(role, 'zai', 'glm-4.6'), undefined)
+  assert.equal(configuredRoute({ id: 'pm' }, 'zai', 'glm-5.3-flash'), undefined)
+})
+
+test('the view offers only the role routes a manual switch may pick', () => {
+  const role = {
+    id: 'dev', provider: 'zai', model: 'glm-5.3-flash', reasoningEffort: 'high',
+    fallbackProvider: 'deepseek-official', fallbackModel: 'deepseek-flash', fallbackReasoningEffort: '',
+  }
+  const view = describeMember({ name: 'dev', status: 'inactive', role, hasAgent: false })
+  assert.deepEqual(view.routes, [
+    { provider: 'zai', model: 'glm-5.3-flash', reasoningEffort: 'high', kind: 'primary', index: -1 },
+    { provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: '', kind: 'fallback', index: 0 },
+  ])
+  const empty = describeMember({ name: 'dev', status: 'inactive', role: { id: 'dev' }, hasAgent: false })
+  assert.deepEqual(empty.routes, [], 'a role with no route offers nothing to pick')
+})
 
 test('a manual pick is labelled manual for both a live and a dormant member', () => {
   const role = { id: 'dev', provider: 'zai', model: 'glm-5.3-flash', reasoningEffort: 'high' }

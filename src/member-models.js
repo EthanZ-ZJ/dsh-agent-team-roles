@@ -22,6 +22,35 @@ function sameRoute(left, right) {
 }
 
 /**
+ * The routes a manual switch may pick for one role: its primary plus its
+ * configured fallback chain, in order. A blank entry offers nothing.
+ */
+/** Resolve one switchable route by provider and model, or undefined. */
+export function configuredRoute(role, provider, model) {
+  return memberSwitchRoutes(role).find((route) => route.provider === provider && route.model === model)
+}
+
+export function memberSwitchRoutes(role) {
+  const primary = {
+    provider: role?.provider ?? '',
+    model: role?.model ?? '',
+    reasoningEffort: role?.reasoningEffort ?? '',
+  }
+  return [
+    ...(primary.provider === '' || primary.model === '' ? [] : [{ ...primary, kind: 'primary', index: -1 }]),
+    ...roleFallbacks(role)
+      .map((entry, index) => ({
+        provider: entry.provider,
+        model: entry.model,
+        reasoningEffort: entry.reasoningEffort ?? '',
+        kind: 'fallback',
+        index,
+      }))
+      .filter((entry) => entry.provider !== '' && entry.model !== ''),
+  ]
+}
+
+/**
  * Describe one member's effective model route.
  *
  * @param input - { name, status, role, live?, override?, hasAgent }
@@ -89,6 +118,9 @@ export function describeMember({ name, status, role, live, override, hasAgent = 
     model: route.model ?? '',
     reasoningEffort: route.reasoningEffort ?? '',
     source,
+    // A manual switch may only pick from the role's configured routes, so the
+    // view carries that list instead of the whole host catalog.
+    routes: memberSwitchRoutes(role),
     ...(source.startsWith('fallback') && fallbackIndex >= 0 ? { fallbackIndex } : {}),
     pending,
     ...(fromOverride?.at ? { changedAt: fromOverride.at } : {}),

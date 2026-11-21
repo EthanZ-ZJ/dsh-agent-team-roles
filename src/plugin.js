@@ -38,7 +38,7 @@ import {
 import { GateLedger } from './ledger.js'
 import { shouldAutoSwitch } from './auto-fallback.js'
 import { buildGateView, gatesRoute } from './gate-view.js'
-import { buildRootView, memberModelsRoute, modelSelection } from './member-models.js'
+import { buildRootView, configuredRoute, memberModelsRoute, memberSwitchRoutes, modelSelection } from './member-models.js'
 import { CodexThreadStore } from './codex-store.js'
 import { modelCatalogRoute } from './model-catalog.js'
 import { skillRevealRoute, skillRoute } from './skill-routes.js'
@@ -990,8 +990,17 @@ export function apply(ctx, config) {
     const snapshot = snapshots.get(rootId, member)
     const roleId = snapshot?.roleId ?? roleForTarget(catalog, member)?.id
     if (snapshot === undefined && roleId === undefined) throw new Error(`unknown member "${member}" in this Team`)
+    // Only the role's configured routes are switchable: the picker offers them
+    // and the host enforces the same list, so a stale page cannot invent one.
+    const liveRole = roleId === undefined ? undefined : findRole(catalog, roleId)
+    const allowed = memberSwitchRoutes(liveRole ?? snapshot?.frozen)
+    const configured = configuredRoute(liveRole ?? snapshot?.frozen, provider, model)
+    if (configured === undefined) {
+      const names = allowed.map((route) => `${route.provider}/${route.model}`).join(', ')
+      throw new Error(`"${provider}/${model}" is not configured for role "${roleId ?? member}"; configured routes: ${names || '(none)'}`)
+    }
     const key = `${rootId}:${member}`
-    const selection = modelSelection({ provider, model, reasoningEffort })
+    const selection = modelSelection({ provider: configured.provider, model: configured.model, reasoningEffort })
     const agent = memberAgents.get(key)
     if (agent !== undefined) {
       try {

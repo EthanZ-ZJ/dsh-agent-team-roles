@@ -140,13 +140,13 @@ test('single composer trigger opens members directly; gates load only when selec
   assert.equal(panel.buttons().length, 1)
   assert.deepEqual(panel.urls, [])
   await panel.click(/team/i)
-  assert.deepEqual(panel.urls, [catalog, members])
+  assert.deepEqual(panel.urls, [members])
   assert.match(panel.text(), /test\/original/)
   await panel.click(/^gates$/i)
   assert.match(panel.text(), /gate list loaded/)
-  assert.deepEqual(panel.urls, [catalog, members, gates])
+  assert.deepEqual(panel.urls, [members, gates])
   await panel.click(/apply settings/i)
-  assert.deepEqual(panel.urls, [catalog, members, gates, '/agent-team-roles/apply-settings', gates],
+  assert.deepEqual(panel.urls, [members, gates, '/agent-team-roles/apply-settings', gates],
     'applying settings re-reads the gates view for this session')
   assert.match(panel.text(), /Applied to 1 members \(busy \+ idle\)/)
   assert.equal(panel.roleReads(), 0)
@@ -157,7 +157,7 @@ test('the log tab shows recorded settings changes with actor and fields', async 
   const panel = await mount()
   await panel.click(/team/i)
   await panel.click(/^log$/i)
-  assert.deepEqual(panel.urls, [catalog, members, '/agent-team-roles/settings-log?limit=50'])
+  assert.deepEqual(panel.urls, [members, '/agent-team-roles/settings-log?limit=50'])
   assert.match(panel.text(), /settings/)
   assert.match(panel.text(), /dev: model/)
 })
@@ -166,20 +166,26 @@ test('the members page switches one member model for this Team only', async () =
   const panel = await mount({ members: [{
     name: 'dev', roleId: 'dev', roleName: 'DEV', status: 'inactive',
     provider: 'zai', model: 'glm-5.3-flash', reasoningEffort: 'high', source: 'primary', pending: true,
+    routes: [
+      { provider: 'zai', model: 'glm-5.3-flash', reasoningEffort: 'high', kind: 'primary', index: -1 },
+      { provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: '', kind: 'fallback', index: 0 },
+    ],
   }] })
   await panel.click(/team/i)
   assert.match(panel.text(), /test\/original/)
   await panel.click(/switch model/i)
   const selects = panel.view.nodes.filter(node => node.type === 'select')
-  const picker = selects.find(node => node.props['aria-label'] === 'Choose a model')
+  const picker = selects.find(node => node.props['aria-label'] === 'Choose a configured model')
   assert.ok(picker, 'the picker renders inside the member row')
-  assert.deepEqual(picker.children.filter(child => child.type === 'option').map(option => option.props.value),
-    ['', 'zai\u0000glm-5.3-flash', 'deepseek-official\u0000deepseek-flash'])
-  picker.props.onChange({ target: { value: 'deepseek-official\u0000deepseek-flash' } })
+  assert.deepEqual(picker.children.filter(child => child.type === 'option').map(option => option.props.value), ['', '0', '1'],
+    'only the role primary and its fallbacks are offered')
+  assert.match(panel.text(), /primary · zai\/glm-5\.3-flash/)
+  assert.match(panel.text(), /fallback 1 · deepseek-official\/deepseek-flash/)
+  picker.props.onChange({ target: { value: '1' } })
   await panel.view.settle(panel.composer, panel.props)
   await panel.click(/^apply$/i)
   assert.ok(panel.urls.includes('/agent-team-roles/member-model'))
-  assert.match(panel.text(), /Switched dev/)
+  assert.match(panel.text(), /Switched dev → deepseek-official\/deepseek-flash/)
 })
 
 test('pull selects presets inline and stays open for consecutive pulls', async () => {
@@ -191,7 +197,7 @@ test('pull selects presets inline and stays open for consecutive pulls', async (
   assert.match(panel.text(), /Developer/)
   await panel.click(/^pull(?: developer)?$/i)
   assert.deepEqual(panel.commands, [['root', '/team-spawn dev']])
-  assert.deepEqual(panel.urls, [catalog, members], 'no extra fetches while the pull page stays open')
+  assert.deepEqual(panel.urls, [members], 'no extra fetches while the pull page stays open')
   assert.match(panel.text(), /Pulled/, 'a success notice confirms the pull without navigating')
   assert.match(panel.text(), /Developer/, 'the role list stays visible for the next pull')
   await panel.click(/^pull(?: developer)?$/i)

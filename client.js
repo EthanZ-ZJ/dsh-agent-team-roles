@@ -187,8 +187,10 @@ window.__ModuleLoader__.load({
       modelApply: '应用',
       modelApplied: '已切换',
       modelApplyFailed: '切换失败：',
-      modelPick: '选择模型',
-      membersModelEffort: '推理强度',
+      modelPick: '选择模型（角色配置的模型）',
+      modelRoutePrimary: '主模型',
+      modelRouteFallback: '备用',
+      modelNoRoutes: '该角色还没有配置模型或备用模型，请先在设置里配置。',
 
       primaryModel: '主模型',
       modelEffortDefault: '模型默认',
@@ -394,8 +396,10 @@ window.__ModuleLoader__.load({
       modelApply: 'Apply',
       modelApplied: 'Switched',
       modelApplyFailed: 'Switch failed: ',
-      modelPick: 'Choose a model',
-      membersModelEffort: 'Reasoning effort',
+      modelPick: 'Choose a configured model',
+      modelRoutePrimary: 'primary',
+      modelRouteFallback: 'fallback',
+      modelNoRoutes: 'This role has no model or fallback configured yet; set one in Settings first.',
 
       primaryModel: 'Primary model',
       modelEffortDefault: 'Model default',
@@ -2195,20 +2199,11 @@ window.__ModuleLoader__.load({
       function MembersPage({ sessionId, reloadKey }) {
         const [team, setTeam] = React.useState(null)
         const [error, setError] = React.useState('')
-        const [catalog, setCatalog] = React.useState([])
         const [editing, setEditing] = React.useState('')
-        const [draft, setDraft] = React.useState({ route: '', effort: '' })
+        const [draft, setDraft] = React.useState('')
         const [saving, setSaving] = React.useState(false)
         const [note, setNote] = React.useState('')
         const [localKey, setLocalKey] = React.useState(0)
-        React.useEffect(() => {
-          let cancelled = false
-          fetch('/agent-team-roles/model-catalog')
-            .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
-            .then((data) => { if (!cancelled) setCatalog(Array.isArray(data.routes) ? data.routes : []) })
-            .catch(() => { if (!cancelled) setCatalog([]) })
-          return () => { cancelled = true }
-        }, [])
         React.useEffect(() => {
           if (sessionId === undefined) return undefined
           let cancelled = false
@@ -2235,8 +2230,8 @@ window.__ModuleLoader__.load({
         /** Apply one manual model selection to a member of this Team only. */
         const applyModel = async (member) => {
           if (saving || sessionId === undefined) return
-          const separator = draft.route.indexOf('\u0000')
-          if (draft.route === '' || separator < 0) {
+          const chosen = Array.isArray(member.routes) ? member.routes[Number(draft)] : undefined
+          if (chosen === undefined) {
             setNote(t('modelPick'))
             return
           }
@@ -2249,9 +2244,9 @@ window.__ModuleLoader__.load({
               body: JSON.stringify({
                 rootId: sessionId,
                 member: member.name,
-                provider: draft.route.slice(0, separator),
-                model: draft.route.slice(separator + 1),
-                reasoningEffort: draft.effort,
+                provider: chosen.provider,
+                model: chosen.model,
+                reasoningEffort: chosen.reasoningEffort ?? '',
               }),
             })
             const data = await response.json().catch(() => ({}))
@@ -2347,7 +2342,9 @@ window.__ModuleLoader__.load({
                               return
                             }
                             setEditing(member.name)
-                            setDraft({ route: member.provider === '' ? '' : `${member.provider}\u0000${member.model}`, effort: member.reasoningEffort ?? '' })
+                            const routes = Array.isArray(member.routes) ? member.routes : []
+                            const current = routes.findIndex((route) => route.provider === member.provider && route.model === member.model)
+                            setDraft(current >= 0 ? String(current) : '')
                           },
                         }, editing === member.name ? t('modelCancel') : t('modelSwitch')),
                   ]),
@@ -2356,37 +2353,24 @@ window.__ModuleLoader__.load({
                   key: 'editor',
                   style: { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', padding: '6px 8px', border: '1px dashed var(--dsw-alias-border-l2)', borderRadius: 8 },
                 }, [
-                  h('select', {
-                    key: 'model',
-                    'aria-label': t('modelPick'),
-                    style: { ...input, flex: '1 1 220px' },
-                    value: draft.route,
-                    onChange: (event) => setDraft(current => ({ ...current, route: event.target.value })),
-                  }, [
-                    h('option', { key: 'none', value: '' }, t('modelPick')),
-                    ...catalog.map((route) => h('option', {
-                      key: `${route.provider}\u0000${route.id}`,
-                      value: `${route.provider}\u0000${route.id}`,
-                    }, `${route.provider}/${route.id}`)),
-                  ]),
-                  h('select', {
-                    key: 'effort',
-                    'aria-label': t('membersModelEffort'),
-                    style: { ...input, flex: '0 0 140px' },
-                    value: draft.effort,
-                    onChange: (event) => setDraft(current => ({ ...current, effort: event.target.value })),
-                  }, [
-                    h('option', { key: 'default', value: '' }, t('effortDefault')),
-                    ...(Array.isArray(catalog.efforts) ? catalog.efforts : []).map((effort) => h('option', {
-                      key: effort.id,
-                      value: effort.id,
-                    }, effort.name ?? effort.id)),
-                  ]),
+                  (Array.isArray(member.routes) ? member.routes : []).length === 0
+                    ? h('span', { key: 'no-routes', style: small }, t('modelNoRoutes'))
+                    : h('select', {
+                        key: 'model',
+                        'aria-label': t('modelPick'),
+                        style: { ...input, flex: '1 1 240px' },
+                        value: draft,
+                        onChange: (event) => setDraft(event.target.value),
+                      }, [
+                        h('option', { key: 'none', value: '' }, t('modelPick')),
+                        ...member.routes.map((route, index) => h('option', { key: String(index), value: String(index) },
+                          `${route.kind === 'primary' ? t('modelRoutePrimary') : `${t('modelRouteFallback')} ${route.index + 1}`} · ${route.provider}/${route.model}${route.reasoningEffort === '' ? '' : ` · ${route.reasoningEffort}`}`)),
+                      ]),
                   h('button', {
                     key: 'apply',
                     type: 'button',
                     style: primaryButton,
-                    disabled: saving,
+                    disabled: saving || (Array.isArray(member.routes) ? member.routes : []).length === 0,
                     onClick: () => { void applyModel(member) },
                   }, saving ? t('saving') : t('modelApply')),
                 ]),
