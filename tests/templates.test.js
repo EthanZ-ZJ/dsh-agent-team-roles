@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   copyTemplateSkills,
   discoverTemplates,
@@ -21,6 +22,36 @@ const validTemplate = {
     { id: 'cr', name: 'CR', toolMode: 'custom', tools: ['read'] },
   ],
 }
+
+test('bundled software team requires local verification before release coordination', async () => {
+  const { template, error } = await readTemplate(fileURLToPath(new URL('../templates/software-dev/', import.meta.url)))
+  assert.equal(error, undefined)
+  const tse = template.roles.find(role => role.id === 'tse')
+  assert.match(tse.description, /全权负责测试设计、执行、回归和发布前本地验收/)
+  assert.match(tse.persona, /用本地浏览器测试或桌面工具验证关键交互/)
+  assert.match(tse.persona, /向 Lead 上报报错、影响和所需协助/)
+  assert.match(tse.persona, /生产发布、部署及回退由 CI\/CD 负责/)
+  const cicd = template.roles.find(role => role.id === 'cicd')
+  assert.equal(cicd.toolMode, 'custom')
+  const patch = await fs.readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
+  const tseDefaults = patch.split('          - id: tse\n')[1].split('            denyCommands:')[0]
+  assert.equal(tse.toolMode, 'custom')
+  assert.deepEqual(tse.tools, [...tseDefaults.matchAll(/^              - (.+)$/gm)].map(match => match[1]))
+  for (const name of ['pwsh', 'bash', ...['skills_get', 'permissions', 'launch', 'snapshot', 'click', 'type', 'wait'].map(action => `mcp__agent-desktop__desktop_${action}`)]) {
+    assert.ok(tse.tools.includes(name), `TSE requires ${name} for local verification`)
+  }
+  assert.ok(tse.denyCommands.some(pattern => new RegExp(pattern, 'i').test('git push origin main')))
+  const defaults = patch.split('          - id: cicd\n')[1].split('        rules: []')[0]
+  assert.deepEqual(cicd.tools, [...defaults.matchAll(/^              - (.+)$/gm)].map(match => match[1]))
+  for (const name of ['pwsh', 'bash', ...['skills_get', 'status', 'permissions', 'list_windows', 'launch', 'snapshot', 'find', 'click', 'type', 'press'].map(action => `mcp__agent-desktop__desktop_${action}`)]) {
+    assert.ok(cicd.tools.includes(name), `CI/CD requires ${name}`)
+  }
+  assert.match(template.leadPlaybook, /本地验证未完成不进入发布/)
+  assert.match(cicd.persona, /先找项目发布手册或仓库内流水线配置/)
+  assert.match(cicd.persona, /回退到上一个已验证版本/)
+  assert.match(cicd.persona, /缺少关键步骤、执行工具或权限时/)
+  assert.match(template.leadPlaybook, /用户明确批准版本和环境后，由 CI\/CD 按项目手册负责发布、部署和上线验证/)
+})
 
 async function makeRoot() {
   return fs.mkdtemp(path.join(os.tmpdir(), 'dsh-templates-'))

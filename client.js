@@ -165,6 +165,16 @@ window.__ModuleLoader__.load({
       membersEmpty: '本群还没有成员。',
       membersNoTeam: '当前会话尚未加入团队。',
       membersRefreshFailed: '刷新失败：',
+      applySettings: '应用设置',
+      appliedMembers: '已应用到',
+      appliedMembersUnit: '个在线成员',
+      applyFailed: '应用失败：',
+      teamLog: '日志',
+      logHint: '记录角色配置（含模型）的变更；设置页保存显示为 settings。',
+      logEmpty: '还没有变更记录。',
+      logLoadFailed: '加载失败：',
+      logRemoved: '已删除',
+      logAdded: '已新增',
       membersNoModel: '（未指定，跟随环境）',
       modelSourceSession: '跟随会话',
       modelSourcePrimary: '主模型',
@@ -354,6 +364,16 @@ window.__ModuleLoader__.load({
       membersEmpty: 'No members in this Team yet.',
       membersNoTeam: 'This session is not in a Team yet.',
       membersRefreshFailed: 'Refresh failed: ',
+      applySettings: 'Apply settings',
+      appliedMembers: 'Applied to',
+      appliedMembersUnit: 'live members',
+      applyFailed: 'Apply failed: ',
+      teamLog: 'Log',
+      logHint: 'Records role configuration changes, including model routes; saves from Settings show as "settings".',
+      logEmpty: 'No changes recorded yet.',
+      logLoadFailed: 'Load failed: ',
+      logRemoved: 'removed',
+      logAdded: 'added',
       membersNoModel: '(unset, follows environment)',
       modelSourceSession: 'session',
       modelSourcePrimary: 'primary',
@@ -754,6 +774,18 @@ window.__ModuleLoader__.load({
         const error = new Error(response?.error?.message ?? 'settings-mutate-failed')
         if (typeof response?.error?.code === 'string') error.code = response.error.code
         throw error
+      }
+      // This Settings write bypasses the plugin's own stores, so announce it:
+      // the host change log attributes the next observed diff to the settings
+      // page instead of guessing.
+      try {
+        void fetch('/agent-team-roles/settings-log-note', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ actor: 'settings-ui' }),
+        }).catch(() => undefined)
+      } catch {
+        // A missing fetch (unit sandbox) must not fail a successful save.
       }
       return readNamespace(ctx)
     }
@@ -2332,9 +2364,68 @@ window.__ModuleLoader__.load({
         ])
       }
 
+      function LogPage({ refresh }) {
+        const [entries, setEntries] = React.useState(null)
+        const [error, setError] = React.useState('')
+        React.useEffect(() => {
+          let cancelled = false
+          fetch('/agent-team-roles/settings-log?limit=50')
+            .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
+            .then((data) => {
+              if (cancelled) return
+              setEntries(Array.isArray(data.entries) ? data.entries : [])
+              setError('')
+            })
+            .catch((caught) => {
+              if (!cancelled) setError(`${t('logLoadFailed')}${caught.message}`)
+            })
+          return () => {
+            cancelled = true
+          }
+        }, [refresh])
+        const fieldsOf = (change) => {
+          if (change.removed === true) return t('logRemoved')
+          if (change.added === true) return t('logAdded')
+          return (change.fields ?? []).map((field) => field.field).join(', ')
+        }
+        const rows = (entries ?? []).map((entry, index) => h('div', {
+          key: `${entry.at}-${index}`,
+          style: {
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2,
+            padding: '6px 8px',
+            border: '1px solid var(--dsw-alias-border-l1)',
+            borderRadius: 8,
+            background: 'var(--dsw-alias-bg-layer-1)',
+          },
+        }, [
+          h('span', { key: 'meta', style: { ...small, fontFamily: 'monospace', fontSize: 11 } },
+            `${new Date(entry.at).toLocaleString()} · ${entry.actor}`),
+          ...(entry.changes ?? []).map((change, changeIndex) => h('span', {
+            key: `change-${changeIndex}`,
+            style: { fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+          }, `${change.roleId}: ${fieldsOf(change)}`)),
+        ]))
+        return h(React.Fragment, null, [
+          h('span', { key: 'hint', style: small }, t('logHint')),
+          error === '' ? null : h('div', { key: 'error', style: banner('state-error') }, error),
+          h('div', {
+            key: 'list',
+            style: { display: 'flex', flexDirection: 'column', gap: 4, overflowY: 'auto', minHeight: 0 },
+          }, entries === null
+            ? [h('span', { key: 'loading', style: small }, t('loading'))]
+            : rows.length === 0
+              ? [h('span', { key: 'empty', style: small }, t('logEmpty'))]
+              : rows),
+        ])
+      }
+
       function TeamButton({ sessionId }) {
         const [page, setPage] = React.useState(null)
         const [refresh, setRefresh] = React.useState(0)
+        const [applying, setApplying] = React.useState(false)
+        const [notice, setNotice] = React.useState('')
         const [position, setPosition] = React.useState({})
         const trigger = React.useRef(null)
         const popup = React.useRef(null)
@@ -2345,6 +2436,29 @@ window.__ModuleLoader__.load({
           setPosition({ width, left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)), bottom: window.innerHeight - rect.top + 6, maxHeight: Math.max(40, rect.top - 14) })
         }
         const close = () => { setPage(null); trigger.current?.focus() }
+        // One click = apply the current Settings to live members, then reload the
+        // view. Personas and tool policy already read the live role; this covers
+        // the captured model route and private skills.
+        const applySettings = async () => {
+          if (applying) return
+          setApplying(true)
+          setNotice('')
+          try {
+            const response = await fetch('/agent-team-roles/apply-settings', { method: 'POST' })
+            if (!response.ok) {
+              const body = await response.json().catch(() => ({}))
+              throw new Error(body.error ?? `HTTP ${response.status}`)
+            }
+            const data = await response.json()
+            const count = Array.isArray(data.members) ? data.members.length : 0
+            setNotice(`${t('appliedMembers')} ${count} ${t('appliedMembersUnit')}`)
+            setRefresh(current => current + 1)
+          } catch (caught) {
+            setNotice(`${t('applyFailed')}${caught.message}`)
+          } finally {
+            setApplying(false)
+          }
+        }
         React.useEffect(() => {
           if (!open) return
           popup.current?.focus()
@@ -2372,15 +2486,16 @@ window.__ModuleLoader__.load({
         }, [
           h('div', { key: 'header', style: { ...row, gap: 6 } }, [
             h('strong', { key: 'title', style: { flex: 1 } }, t('teamTitle')),
-            page !== 'pull' && action('refresh', t('membersRefresh'), '↻', () => setRefresh(n => n + 1)),
+            page !== 'pull' && action('refresh', t('applySettings'), '↻', () => { void applySettings() }, { disabled: applying }),
             action('close', t('teamClose'), '×', close),
           ]),
-          h('div', { key: 'pages', style: row }, ['members', 'gates'].map(id => {
+          notice === '' ? null : h('div', { key: 'notice', style: small }, notice),
+          h('div', { key: 'pages', style: row }, ['members', 'gates', 'log'].map(id => {
             const selected = page === id || (page === 'pull' && id === 'members')
-            const label = t(id === 'members' ? 'teamMembers' : 'gatesModel')
+            const label = t(id === 'members' ? 'teamMembers' : id === 'gates' ? 'gatesModel' : 'teamLog')
             return action(id, label, label, () => setPage(id), { 'aria-pressed': selected, style: selected ? primaryButton : button })
           })),
-          page === 'pull' ? h(PullPage, { key: 'pull', sessionId, onPulled: () => setRefresh(n => n + 1) }) : page === 'gates' ? h(GatesPage, { key: 'gates', sessionId, refresh }) : h(MembersPage, { key: 'members', sessionId, reloadKey: refresh }),
+          page === 'pull' ? h(PullPage, { key: 'pull', sessionId, onPulled: () => setRefresh(n => n + 1) }) : page === 'gates' ? h(GatesPage, { key: 'gates', sessionId, refresh }) : page === 'log' ? h(LogPage, { key: 'log', refresh }) : h(MembersPage, { key: 'members', sessionId, reloadKey: refresh }),
           page === 'members' && action('add', t('pullMembers'), `＋ ${t('pullMembers')}`, () => setPage('pull'), { style: { ...button, alignSelf: 'flex-start' } }),
         ])
         return h(React.Fragment, null, [action('team', t('teamPanel'), [h(TeamRolesIcon, { key: 'icon', size: 15 }), t('teamPanel')], () => {

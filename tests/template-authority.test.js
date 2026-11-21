@@ -57,7 +57,7 @@ test('the shipped software-dev template is valid JSON with the expected roles', 
   assert.ok(Array.isArray(template.roles) && template.roles.length > 0)
   assert.deepEqual(
     template.roles.map((role) => role.id).sort(),
-    ['cr', 'dev', 'general', 'pm', 'se', 'tse'],
+    ['cicd', 'cr', 'dev', 'general', 'pm', 'se', 'tse'],
   )
 })
 

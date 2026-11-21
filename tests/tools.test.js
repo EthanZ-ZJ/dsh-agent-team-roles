@@ -365,6 +365,23 @@ test('every tool parameter schema is valid JSON Schema with only array-typed req
   assert.deepEqual(fallbacks.items.required, ['provider', 'model'])
 })
 
+test('project memory lookup is implicit but memory mutations are not', async () => {
+  const { IMPLICIT_MEMBER_TOOLS } = await import('../src/plugin.js')
+  for (const name of ['memory_recall', 'wiki_search', 'wiki_read']) {
+    assert.ok(IMPLICIT_MEMBER_TOOLS.includes(name), `${name} must pass custom role guards`)
+  }
+  for (const name of ['memory_capture', 'memory_correct', 'memory_forget', 'wiki_write', 'wiki_restore']) {
+    assert.ok(!IMPLICIT_MEMBER_TOOLS.includes(name), `${name} must not be granted implicitly`)
+  }
+})
+
+test('web search and fetch are implicit member tools', async () => {
+  const { IMPLICIT_MEMBER_TOOLS } = await import('../src/plugin.js')
+  for (const name of ['web_search', 'web_fetch']) {
+    assert.ok(IMPLICIT_MEMBER_TOOLS.includes(name), `${name} must pass custom role guards`)
+  }
+})
+
 test('read_image stays available to members under any role policy', async () => {
   const { IMPLICIT_MEMBER_TOOLS } = await import('../src/plugin.js')
   assert.ok(IMPLICIT_MEMBER_TOOLS.includes('read_image'), 'shared images require read_image')

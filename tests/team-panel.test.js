@@ -82,8 +82,18 @@ async function mount() {
   const window = { ...clock, document: doc, innerHeight: 800, innerWidth: 1200, addEventListener() {}, removeEventListener() {}, __ModuleLoader__: {
     load({ factory }) { plugin = factory(name => name === 'react' ? view.React : { createPortal: node => node }) },
   } }
-  vm.runInNewContext(bundle, { window, document: doc, ...clock, fetch: async url => {
+  vm.runInNewContext(bundle, { window, document: doc, ...clock, fetch: async (url, options = {}) => {
     urls.push(url)
+    const method = options.method ?? 'GET'
+    if (url === '/agent-team-roles/apply-settings') {
+      assert.equal(method, 'POST')
+      return { ok: true, json: async () => ({ members: [{ member: 'dev', role: 'dev', applied: ['model'] }] }) }
+    }
+    if (url.startsWith('/agent-team-roles/settings-log')) {
+      return { ok: true, json: async () => ({ entries: [
+        { at: 1700000000000, actor: 'settings', changes: [{ roleId: 'dev', fields: [{ field: 'model', from: 'a', to: 'b' }] }] },
+      ] }) }
+    }
     const data = url === members ? { roots: [{ rootId: 'root', lead: { provider: 'test', model: pulled ? 'after-pull' : 'original', reasoningEffort: '' }, members: [] }] } : { gates: [], reason: 'gate list loaded' }
     return { ok: true, json: async () => data }
   } })
@@ -121,10 +131,21 @@ test('single composer trigger opens members directly; gates load only when selec
   await panel.click(/^gates$/i)
   assert.match(panel.text(), /gate list loaded/)
   assert.deepEqual(panel.urls, [members, gates])
-  await panel.click(/refresh/i)
-  assert.deepEqual(panel.urls, [members, gates, gates])
+  await panel.click(/apply settings/i)
+  assert.deepEqual(panel.urls, [members, gates, '/agent-team-roles/apply-settings', gates],
+    'applying settings re-reads the gates view for this session')
+  assert.match(panel.text(), /Applied to 1 live members/)
   assert.equal(panel.roleReads(), 0)
   assert.equal(panel.timers.length, 0, 'idle pages must not schedule polling')
+})
+
+test('the log tab shows recorded settings changes with actor and fields', async () => {
+  const panel = await mount()
+  await panel.click(/team/i)
+  await panel.click(/^log$/i)
+  assert.deepEqual(panel.urls, [members, '/agent-team-roles/settings-log?limit=50'])
+  assert.match(panel.text(), /settings/)
+  assert.match(panel.text(), /dev: model/)
 })
 
 test('pull selects presets inline and stays open for consecutive pulls', async () => {

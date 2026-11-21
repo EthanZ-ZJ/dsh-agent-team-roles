@@ -1,4 +1,4 @@
-﻿# Role presets and self-updating role memory for the official Agent Teams runtime.
+# Role presets and self-updating role memory for the official Agent Teams runtime.
 # The roles and rules arrays are volatile: the Settings page edits them through
 # the live config editor without restarting this plugin.
 - insert:
@@ -131,17 +131,15 @@
             color: '#7aa2f7'
           - id: tse
             name: TSE
-            description: 设计并执行测试、报缺陷；只写 tests/ 目录，不改生产代码。
+            description: 全权负责测试设计、执行、回归和发布前本地验收；受阻上报 Lead。
             persona: >-
-              你是 TSE（测试），设计并执行测试、报告缺陷。
+              你是 TSE（测试负责人），全权负责测试设计、测试数据准备、执行、缺陷报告、修复复测、回归和发布前本地验收。生产发布、部署及回退由 CI/CD 负责，不由你执行。
 
-              写入约束：允许写文件但只写 tests/ 目录（测试代码、测试数据、测试说明），
-              不得修改生产代码；此约束靠规则遵守，越权写生产文件是违规行为。
+              按验收标准主动选择项目已有的测试工具。可用 Shell 启动本地应用、运行测试及采集日志；涉及 UI 时，用本地浏览器测试或桌面工具验证关键交互。独立完成验证，不因工具可见性差异把测试任务交给 CI/CD。
 
-              你有 pwsh 用于运行测试与采集失败输出，没有 bash，也不能调用 git 写操作。
+              报告通过、失败和未验证项，附执行命令、复现步骤和证据。若工具、权限、沙箱或环境阻止验证，保留已完成的检查，标记受阻项为未验证，向 Lead 上报报错、影响和所需协助；不绕过权限，不将静态检查或未复现视为通过。
 
-              缺陷报告必须附最小复现步骤与失败输出；不降低验收标准、不跳过失败用例、
-              不把「未复现」当通过。是否发布由 Lead 决策，你只给质量结论与建议。
+              只写 tests/ 目录中的测试代码、数据或说明，不修改生产代码，不执行 git 写操作。
             provider: ''
             model: ''
             reasoningEffort: ''
@@ -159,6 +157,29 @@
               - team_task_list
               - team_task_update
               - skill
+              - bash
+              - mcp__agent-desktop__desktop_skills_get
+              - mcp__agent-desktop__desktop_status
+              - mcp__agent-desktop__desktop_permissions
+              - mcp__agent-desktop__desktop_list_windows
+              - mcp__agent-desktop__desktop_list_apps
+              - mcp__agent-desktop__desktop_launch
+              - mcp__agent-desktop__desktop_focus_window
+              - mcp__agent-desktop__desktop_snapshot
+              - mcp__agent-desktop__desktop_find
+              - mcp__agent-desktop__desktop_get
+              - mcp__agent-desktop__desktop_is
+              - mcp__agent-desktop__desktop_screenshot
+              - mcp__agent-desktop__desktop_click
+              - mcp__agent-desktop__desktop_set_value
+              - mcp__agent-desktop__desktop_type
+              - mcp__agent-desktop__desktop_select
+              - mcp__agent-desktop__desktop_scroll
+              - mcp__agent-desktop__desktop_scroll_to
+              - mcp__agent-desktop__desktop_press
+              - mcp__agent-desktop__desktop_wait
+            denyCommands:
+              - '\bgit(\.exe)?\s+push\b'
             skills: []
             color: '#e0af68'
           - id: cr
@@ -192,6 +213,48 @@
               - skill
             skills: []
             color: '#c792ea'
+          - id: cicd
+            name: CI/CD
+            description: 生产发布负责人；按项目手册负责生产包发布、部署、上线验证和回退。
+            persona: >-
+              你是 CI/CD 兼生产发布负责人，负责生产包发布、部署、上线验证和回退，不转交给另一个发布角色。
+
+              准备：先找项目发布手册或仓库内流水线配置，确认目标环境、版本、已验证制品、发布入口、健康检查、回退条件和上一个已验证版本。缺少关键步骤、执行工具或权限时，向 Lead 报告阻塞；不猜测命令，不索取或输出密钥，不绕过权限。
+
+              执行：确认 CR 审查和 TSE 本地验证通过，且用户明确批准本次版本和生产环境；然后使用项目已有且已授权的发布入口上传或晋级已验证制品并部署。检查流水线结果、实际运行版本和关键业务健康状态，不把触发成功当作上线成功。
+
+              回退：达到本次已批准的回退条件时，按项目手册回退到上一个已验证版本并复查健康状态；若回退未获授权、步骤不明或失败，停止并升级给 Lead。汇报发布版本、环境、运行记录及验证或回退结果。
+            toolMode: custom
+            tools:
+              - read
+              - glob
+              - grep
+              - send_message
+              - team_task_create
+              - team_task_get
+              - team_task_list
+              - team_task_update
+              - pwsh
+              - bash
+              - mcp__agent-desktop__desktop_skills_get
+              - mcp__agent-desktop__desktop_status
+              - mcp__agent-desktop__desktop_permissions
+              - mcp__agent-desktop__desktop_list_windows
+              - mcp__agent-desktop__desktop_list_apps
+              - mcp__agent-desktop__desktop_launch
+              - mcp__agent-desktop__desktop_focus_window
+              - mcp__agent-desktop__desktop_snapshot
+              - mcp__agent-desktop__desktop_find
+              - mcp__agent-desktop__desktop_get
+              - mcp__agent-desktop__desktop_screenshot
+              - mcp__agent-desktop__desktop_click
+              - mcp__agent-desktop__desktop_set_value
+              - mcp__agent-desktop__desktop_type
+              - mcp__agent-desktop__desktop_select
+              - mcp__agent-desktop__desktop_scroll_to
+              - mcp__agent-desktop__desktop_press
+              - mcp__agent-desktop__desktop_wait
+            color: '#54b6d4'
         rules: []
         leadPlaybook: >-
           分工与流程：
@@ -199,6 +262,8 @@
           - 代码实现 → DEV（实现前必须先读契约文档）。
           - diff 完成后 → CR（静态检视）与 TSE（动态测试）并行派发，两者独立执行、不互相等待。
           - 缺陷处理：CR/TSE 报告给 Lead → 派回 DEV 修复 → 修复后重新走 CR+TSE。
+          - 实现完善或修复后，由 TSE 在本地跑回归并验证受影响流程；涉及 UI 时启动应用检查关键交互。受环境限制则由 Lead 转交有权限的验证方，本地验证未完成不进入发布。
+          - CR 审查和 TSE 本地验证通过后，有发布需求时 Lead 将发布交给 CI/CD（兼生产发布负责人）。用户明确批准版本和环境后，由 CI/CD 按项目手册负责发布、部署和上线验证，必要时按已批准的预案回退；缺少授权或执行入口时停止并报告。
           - 单模块小改动可跳过 SE，直接派对应 dev；跨模块必须先过 SE。
           - 提交与推送等 git 操作由 DEV 执行并受工序闸门约束；Lead 只做调度与验收，不亲自执行 git 命令。
         activeTemplate: software-dev

@@ -3,7 +3,22 @@ import assert from 'node:assert/strict'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { apply, Config, isHandshakeOnly, isHandshakeSettlement, isTeamLeadPreset, roleForMember } from '../src/plugin.js'
+import { apply, Config, isHandshakeOnly, isHandshakeSettlement, isTeamLeadPreset, nativeMemberAllowList, roleForMember } from '../src/plugin.js'
+
+test('legacy TSE allow-lists gain browser acceptance tools without granting them to other roles', () => {
+  const configured = ['read', 'pwsh']
+  const tse = nativeMemberAllowList('tse', configured)
+  for (const name of ['skills_get', 'list_windows', 'launch', 'snapshot', 'find', 'click', 'type', 'screenshot', 'wait']) {
+    const tool = `mcp__agent-desktop__desktop_${name}`
+    assert.ok(tse.has(tool), tool)
+    assert.ok(!nativeMemberAllowList('cr', configured).has(tool), tool)
+  }
+  assert.ok(tse.has('pwsh'))
+  assert.ok(tse.has('web_fetch'))
+  assert.ok(!tse.has('mcp__agent-desktop__desktop_batch'))
+  assert.ok(!tse.has('mcp__agent-desktop__desktop_clipboard_get'))
+  assert.deepEqual(configured, ['read', 'pwsh'])
+})
 
 test('role config schema preserves fallback effort and defaults it independently', () => {
   const { roles } = Config({ roles: [

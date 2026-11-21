@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Host plugin: role catalog, role-based spawning, runtime injection, and
  * self-learning rules for the official Agent Teams runtime.
  *
@@ -42,6 +42,7 @@ import { buildRootView, memberModelsRoute, modelSelection } from './member-model
 import { CodexThreadStore } from './codex-store.js'
 import { modelCatalogRoute } from './model-catalog.js'
 import { skillRevealRoute, skillRoute } from './skill-routes.js'
+import { SettingsLog, settingsLogNoteRoute, settingsLogRoute, applySettingsRoute } from './settings-log.js'
 import { copyTemplateSkills, discoverTemplates, mergeTemplateGates, seedTemplates, templatesRoot, upsertRoles } from './templates.js'
 import { MemberSnapshots, RoleStore, RuleStore, stateDir } from './store.js'
 import { spawnRoleMember } from './spawn.js'
@@ -54,8 +55,36 @@ export const name = 'agent-team-roles'
 /** Services the plugin needs before it can install scoped contributions. */
 export const inject = ['agentTeams', 'agents', 'tools', 'commands', 'subagents']
 
+/** Permit lookup only; memory writes still require the role's explicit policy. */
+const MEMORY_LOOKUP_TOOLS = ['memory_recall', 'wiki_search', 'wiki_read']
+const WEB_LOOKUP_TOOLS = ['web_search', 'web_fetch']
+
+/** Native browser acceptance uses the existing desktop MCP, not a new transport. */
+const TSE_BROWSER_TOOLS = [
+  'skills_get', 'status', 'permissions', 'list_windows', 'list_apps', 'launch',
+  'focus_window', 'snapshot', 'find', 'get', 'is', 'screenshot', 'click',
+  'set_value', 'type', 'select', 'scroll', 'scroll_to', 'press', 'wait',
+].map((action) => `mcp__agent-desktop__desktop_${action}`)
+
+/** Policy for native members with a custom role allow-list, including old saved roles. */
+export function nativeMemberAllowList(roleId, configuredTools) {
+  return new Set([
+    ...configuredTools,
+    ...IMPLICIT_MEMBER_TOOLS,
+    ...(roleId === 'tse' ? TSE_BROWSER_TOOLS : []),
+  ])
+}
+
+const TSE_BROWSER_GUIDANCE = [
+  '### Web 验收（TSE）',
+  '网页交互验收用 agent-desktop，不用 web_fetch 的内容代替实际操作。先用 desktop_skills_get 阅读 desktop 与 platform；仅打开任务指定的本地、预发或获准测试页面，用测试账号和数据。用 list_windows、snapshot、find 定位浏览器及控件，操作后重新读取页面，记录实际结果与证据。',
+  '如果没有测试 URL、MCP 工具不可见、宿主拒绝操作，或页面无法验证，标记未验证并向 Lead 报告阻塞；不绕过权限，不操作生产数据。',
+].join('\n')
+
 /** Tool names a managed member always keeps, even under a custom policy. */
 export const IMPLICIT_MEMBER_TOOLS = [
+  ...MEMORY_LOOKUP_TOOLS,
+  ...WEB_LOOKUP_TOOLS,
   // Shared-image tasks promise the member can look at the picture; read_image
   // is read-only and cannot widen what a member may change.
   'read_image',
@@ -73,9 +102,11 @@ export const IMPLICIT_MEMBER_TOOLS = [
 
 /**
  * Codex members are external Agent relays and are explicitly exempt from DSH
- * gates (D7). They keep only the relay tool and the collaboration tools.
+ * gates (D7). The DSH-side relay can also look up project memory and web content.
  */
 const CODEX_MEMBER_TOOLS = [
+  ...MEMORY_LOOKUP_TOOLS,
+  ...WEB_LOOKUP_TOOLS,
   'codex_exec',
   'send_message',
   'team_task_create',
@@ -192,7 +223,17 @@ export function apply(ctx, config) {
     editor: ctx.get('configEditor'),
     entry: ctx.fiber.entry,
   })
-  const rolesReader = { read: () => readConfig(config, 'roles') ?? [] }
+  const settingsLog = new SettingsLog({ dir: stateDir() })
+  const rolesReader = {
+    // Every role read is also an observation: a change that arrives from the
+    // Settings page or a raw profile edit is logged with its field diff, so an
+    // unexpected model switch has a trace with a timestamp.
+    read: () => {
+      const roles = readConfig(config, 'roles') ?? []
+      settingsLog.observe(roles)
+      return roles
+    },
+  }
   // Gate events are process-local: a restart empties every bucket, which is the
   // deliberate safe default (no stale approval survives a restart).
   const gateLedger = new GateLedger()
@@ -201,6 +242,9 @@ export function apply(ctx, config) {
   // switch_member_model uses it to re-select a member's model without touching
   // its session, so primary/fallback share the same conversation context.
   const memberAgents = new Map()
+  // Skill disposers of the same live members, so applying settings can swap a
+  // role's private skills without re-creating the member.
+  const memberSkills = new Map()
   // Model-route overrides keyed by "<root>:<member>". A member Agent is
   // disposed after its turn, so switching a dormant member cannot touch a live
   // Agent; the override is applied by installMember on the next activation,
@@ -477,9 +521,18 @@ export function apply(ctx, config) {
   ctx.provide('agentTeamRoles', {
     list: () => roleStore.list(),
     get: (id) => roleStore.get(id),
-    create: (role) => roleStore.create(role),
-    update: (id, patch) => roleStore.update(id, patch),
-    remove: (id) => roleStore.remove(id),
+    create: (role) => {
+      settingsLog.note('role-service:create')
+      return roleStore.create(role)
+    },
+    update: (id, patch) => {
+      settingsLog.note('role-service:update')
+      return roleStore.update(id, patch)
+    },
+    remove: (id) => {
+      settingsLog.note('role-service:remove')
+      return roleStore.remove(id)
+    },
   })
 
   /** One disposer per installed Agent scope. */
@@ -538,6 +591,7 @@ export function apply(ctx, config) {
           roles: rolesReader,
           ctx,
           memberAgents,
+          memberSkills,
           memberRouteOverrides,
         })
       }
@@ -703,6 +757,7 @@ export function apply(ctx, config) {
         if (merged.error !== undefined) {
           return { kind: 'error', text: `template "${template.id}": ${merged.error}` }
         }
+        settingsLog.note(`team-template apply: ${template.id}`)
         const applied = await upsertRoles(roleStore, template.roles)
         await editor.edit(ctx.fiber.entry, (current) => ({
           ...current,
@@ -917,6 +972,53 @@ export function apply(ctx, config) {
     return roots
   }
 
+  /**
+   * Re-apply Settings changes to every live member.
+   *
+   * Personas, tool policy, and denyCommands already read the live role per step;
+   * this handles the two things captured when a member Agent was created: its
+   * model route and its private skills. A member with an explicit Lead route
+   * override (a manual or automatic fallback switch) keeps that route.
+   */
+  function applyLiveSettings() {
+    const catalog = mergeRoles(rolesReader.read())
+    const applied = []
+    for (const [handleKey, agent] of memberAgents) {
+      const separator = handleKey.indexOf(':')
+      if (separator < 0) continue
+      const rootId = handleKey.slice(0, separator)
+      const name = handleKey.slice(separator + 1)
+      const snapshot = snapshots.get(rootId, name)
+      const roleId = snapshot?.roleId ?? roleForTarget(catalog, name)?.id
+      const role = roleId === undefined ? undefined : findRole(catalog, roleId)
+      if (role === undefined) continue
+      const appliedFields = []
+      if (memberRouteOverrides.get(handleKey) === undefined && role.provider !== '' && role.model !== '') {
+        try {
+          agent.model?.select(modelSelection(role))
+          appliedFields.push('model')
+        } catch (error) {
+          ctxWarn(agent, `cannot apply the role route for "${name}": ${error.message}`)
+        }
+      }
+      const previous = memberSkills.get(handleKey)
+      if (previous !== undefined) {
+        try {
+          previous()
+          memberSkills.delete(handleKey)
+          const next = installRoleSkills(agent, role)
+          if (next !== undefined) memberSkills.set(handleKey, next)
+          appliedFields.push('skills')
+        } catch (error) {
+          ctxWarn(agent, `cannot reinstall private skills for "${name}": ${error.message}`)
+        }
+      }
+      applied.push({ member: name, role: role.id, applied: appliedFields })
+    }
+    settingsLog.note('apply settings')
+    return applied
+  }
+
   // Read-only HTTP routes for the Settings page (same origin): installed role
   // skills, the host model catalog that backs the role model dropdown, and the
   // live member-model view shown next to the pull control.
@@ -927,6 +1029,12 @@ export function apply(ctx, config) {
     scope.effect(() => scope.webServer.register(modelCatalogRoute(scope.llm)), 'agent-team-roles:model-catalog-route')
     scope.effect(() => scope.webServer.register(memberModelsRoute(listMemberRoots)), 'agent-team-roles:member-models-route')
     scope.effect(() => scope.webServer.register(gatesRoute(listGateView)), 'agent-team-roles:gates-view-route')
+    scope.effect(() => scope.webServer.register(settingsLogRoute(settingsLog)), 'agent-team-roles:settings-log-route')
+    scope.effect(() => scope.webServer.register(settingsLogNoteRoute(settingsLog)), 'agent-team-roles:settings-log-note-route')
+    scope.effect(() => scope.webServer.register(applySettingsRoute(async () => ({
+      members: applyLiveSettings(),
+      roles: roleStore.list().length,
+    }))), 'agent-team-roles:apply-settings-route')
   })
 }
 
@@ -1030,7 +1138,7 @@ export function roleForMember(snapshot, catalog, name) {
 }
 
 /** Install one member's role prompt, model route, tool policy, and skills. */
-function installMember({ agent, membership, scoped, register, tools, snapshots, ruleStore, roles, ctx, memberAgents, memberRouteOverrides }) {
+function installMember({ agent, membership, scoped, register, tools, snapshots, ruleStore, roles, ctx, memberAgents, memberSkills, memberRouteOverrides }) {
   const snapshot = snapshots.get(membership.root.id, membership.name)
   // D7: Codex members are relay Agents for an external process. They keep only
   // codex_exec + collaboration tools, get the relay persona, and never register
@@ -1069,30 +1177,31 @@ function installMember({ agent, membership, scoped, register, tools, snapshots, 
   register(scoped.systemPrompt.section({
     name: 'agent-team-roles:member-persona',
     order: scoped.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 100,
-    text: () => memberPersona({
-      // Prefer the live role definition so editing a role updates an existing
-      // member's persona on the next model step; the frozen snapshot stays the
-      // fallback if the role was removed.
-      frozen: findRole(mergeRoles(roles.read()), roleId) ?? frozen,
-      rulesText: ruleStore.render(roleId, membership.root.id),
-      target: membership.name,
-    }),
+    text: () => {
+      // Prefer the live definition, with the frozen snapshot as a fallback.
+      const persona = memberPersona({
+        frozen: findRole(mergeRoles(roles.read()), roleId) ?? frozen,
+        rulesText: ruleStore.render(roleId, membership.root.id),
+        target: membership.name,
+      })
+      return roleId === 'tse' ? `${persona}\n\n${TSE_BROWSER_GUIDANCE}` : persona
+    },
   }))
 
-  const liveRole = findRole(mergeRoles(roles.read()), roleId) ?? frozen
-  // denyCommands sits at the front of the guard chain and applies to both tool
-  // modes: it is a command-level policy, independent of the tool whitelist.
-  register(scoped.tools.guard((exec) => evaluateDeny(liveRole, exec.name, exec.arguments)))
-  if (liveRole.toolMode === 'custom') {
-    // Preset tools can register after agent/created. A visibility mask computed
-    // here would permanently hide later-registered tools, so visibility is left
-    // to the preset and the per-call guard enforces the role allow-list.
-    const allowed = new Set([...liveRole.tools, ...IMPLICIT_MEMBER_TOOLS])
-    register(scoped.tools.guard((exec) => {
-      if (allowed.has(exec.name)) return undefined
-      return `Tool "${exec.name}" is not allowed by role "${roleId}".`
-    }))
-  }
+  // Both guards resolve the role per call: a tool-policy or denyCommands edit in
+  // Settings therefore applies to this member on its very next tool call, with
+  // no re-spawn and no refresh.
+  const liveRoleOf = () => findRole(mergeRoles(roles.read()), roleId) ?? frozen
+  register(scoped.tools.guard((exec) => evaluateDeny(liveRoleOf(), exec.name, exec.arguments)))
+  // Preset tools can register after agent/created. A visibility mask computed
+  // here would permanently hide later-registered tools, so visibility is left
+  // to the preset and the per-call guard enforces the role allow-list.
+  register(scoped.tools.guard((exec) => {
+    const liveRole = liveRoleOf()
+    if (liveRole.toolMode !== 'custom') return undefined
+    if (nativeMemberAllowList(roleId, liveRole.tools).has(exec.name)) return undefined
+    return `Tool "${exec.name}" is not allowed by role "${roleId}".`
+  }))
 
   for (const definition of tools.member) register(scoped.tools.register(definition))
   register(scoped.tools.guard((exec) => {
@@ -1101,8 +1210,16 @@ function installMember({ agent, membership, scoped, register, tools, snapshots, 
   }))
 
   try {
-    const disposeSkills = installRoleSkills(agent, role)
-    register(disposeSkills)
+    const disposeSkills = installRoleSkills(agent, liveRoleOf())
+    if (disposeSkills !== undefined && memberSkills !== undefined) {
+      memberSkills.set(handleKey, disposeSkills)
+      register(() => {
+        memberSkills.delete(handleKey)
+        disposeSkills()
+      })
+    } else if (disposeSkills !== undefined) {
+      register(disposeSkills)
+    }
   } catch (error) {
     ctxWarn(agent, `cannot install private skills for role "${roleId}": ${error.message}`)
   }
@@ -1111,8 +1228,8 @@ function installMember({ agent, membership, scoped, register, tools, snapshots, 
 /**
  * Install a Codex-backed relay member (D7).
  *
- * Codex members get the relay persona, only the `codex_exec` + collaboration
- * tools, and **no** gate participation: no `report_gate_event`, no role tool
+ * Codex members get the relay persona, `codex_exec`, collaboration and
+ * read-only memory and web lookup, and **no** gate participation: no `report_gate_event`, no role tool
  * whitelist, no denyCommands guard, no private skills.
  */
 function installCodexMember({ agent, membership, scoped, register, tools, snapshots, roles }) {

@@ -115,7 +115,7 @@ function parseRoles() {
 test('every built-in role passes validateRole', () => {
   const roles = parseRoles().map(normalizeRole)
   const ids = roles.map((role) => role.id).sort()
-  assert.deepEqual(ids, ['cr', 'dev', 'general', 'pm', 'se', 'tse'])
+  assert.deepEqual(ids, ['cicd', 'cr', 'dev', 'general', 'pm', 'se', 'tse'])
   for (const role of roles) {
     assert.equal(validateRole(role), undefined, `role "${role.id}" must validate`)
   }

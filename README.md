@@ -73,7 +73,8 @@ The bundle patch ships these roles (all editable or removable):
 | Product manager | `pm` | Read-only + reporting | Requirements analysis, user scenarios, experience tradeoffs; produces requirement-document text, does not define technical solutions. |
 | SE | `se` | Read-only + documentation writes | Architecture/contract owner: maintains `docs/architecture.md`, interface contracts and ADRs; may write docs/ and interface/type definition files, has no shell. |
 | DEV | `dev` | Read/write + terminal | Implements against the SE contract; reads the contract before starting and reports changes and checks afterwards. DEV performs `git push`, constrained by workflow gates (rejected when checks fail). |
-| TSE | `tse` | Read/write + pwsh | Designs and runs tests, reports defects; writes only under `tests/`, never changes production code. |
+| TSE | `tse` | Read/write + pwsh | Designs tests and verifies the affected flows locally after implementation or fixes; writes only under `tests/`. |
+| CI/CD | `cicd` | Shell + selected desktop tools + reporting | Owns production releases, deployment verification, and rollback. Follows the project's runbook after explicit approval; execution requires an existing authorized project tool. No deployment access is bundled. |
 | CR | `cr` | Read-only + reporting | Code reviewer: checks the diff item by item against the contract and produces a defect report; spawned fresh, changes no files. |
 
 Review flow: once a diff exists, the Lead **dispatches CR (static review) and TSE (dynamic testing) in parallel**; they run independently without waiting for each other. Defects go back to DEV through the Lead, and the fix goes through CR + TSE again.
@@ -138,7 +139,7 @@ $DSH_HOME/agent-team-roles/templates/<template id>/
 
 ### Built-in template
 
-On activation the plugin **seeds** the packaged `templates/software-dev/` into the state directory (missing directories only; user changes are never overwritten). Later updates to the built-in template (for example new gates) therefore do not reach an existing state directory; delete `<stateDir>/templates/<id>/` and reload the plugin to seed it again. `software-dev` is the software-development department template: PM/SE/DEV/TSE/CR roles + a parallel-review playbook + two pre-commit gates; DEV and TSE carry `denyCommands` blocking `git push`.
+On activation the plugin **seeds** the packaged `templates/software-dev/` into the state directory (missing directories only; user changes are never overwritten). Later updates to the built-in template (for example new gates) therefore do not reach an existing state directory; delete `<stateDir>/templates/<id>/` and reload the plugin to seed it again. `software-dev` is the software-development department template: PM, SE, DEV, TSE, CR, CI/CD roles + a parallel-review playbook + two pre-commit gates; DEV and TSE carry `denyCommands` blocking `git push`.
 
 ### Applying a template
 
@@ -243,6 +244,10 @@ Available to the Team Lead (and only in a Team Lead preset session):
 
 Even under a custom tool policy, managed members keep an implicit set of capabilities: `remember_role_rule`, `list_my_rules`, `list_team_roles`, `create_team_role`, and `skill`. Members cannot update or delete roles. A new role is available on the next `spawn_team_member`.
 
+When the memory plugin exposes them, `memory_recall`, `wiki_search`, and `wiki_read` pass the member role guard without per-role configuration. Memory writes are not implicitly allowed. The role guard likewise allows `web_search` and `web_fetch` when the host provides them; existing network policies still apply. For Codex-backed members, these permissions apply to the DSH relay, not the external Codex CLI.
+
+Native `tse` members can use the installed `agent-desktop` MCP to run browser acceptance checks on authorized test URLs. The role guard supplies the browser-testing tools even for older saved TSE allow-lists. The host's desktop policy still applies; report blocked checks to the Lead rather than treating a fetched page as interaction evidence.
+
 ## For other plugins: `agentTeamRoles`
 
 The Host exposes a trusted in-process service:
@@ -286,7 +291,7 @@ Two design-related skills ship with DEV and CR (installed under the role skill f
 - `frontend-design` — from [anthropics/skills](https://github.com/anthropics/skills) (Apache-2.0, license included). Design-direction guidance: distinctive typography, palette, layout, and anti-"AI slop" checks for building or reshaping UI.
 - `web-interface-guidelines` — from [vercel-labs/web-interface-guidelines](https://github.com/vercel-labs/web-interface-guidelines) (MIT, license included). The full Vercel Web Interface Guidelines copied locally: accessibility, focus, forms, animation, typography, performance, interaction. DEV self-checks against it before reporting; CR uses the same rules when reviewing frontend changes with `file:line` findings.
 
-## Private skills
+### Role skill folders
 
 Role skills live in:
 
@@ -309,6 +314,14 @@ Review this diff...
 ```
 
 Skills are registered only in that member's Agent scope; global skills still come from the deployment's own skill provider. An empty role `skills` list exposes the whole role folder; a non-empty list matches the skill frontmatter `name` (or the file name without frontmatter) and exposes only the listed skills.
+
+## Settings change log and live apply
+
+Role configuration can be edited from the Settings page, the Lead tools, and the role service other plugins use. Two mechanisms make those edits observable and immediate:
+
+**Change log.** `$DSH_HOME/agent-team-roles/settings.log` is a JSONL file with one line per observed catalog change: timestamp, actor, and per-role field diffs (`provider`, `model`, `reasoningEffort`, `fallbacks`, `tools`, `toolMode`, `denyCommands`, `skills`, `persona`, …). Writers are attributed explicitly — `settings-ui` for a Settings save, `role-service:update|create|remove` for agent and plugin writes, `team-template apply: <id>`, and `apply settings`. Any change it cannot attribute (for example a hand-edited profile) is recorded as `settings`. The file keeps the newest 400 entries. The Team panel's **Log** tab lists the recent entries, and `GET /agent-team-roles/settings-log?limit=<n>` returns the same data as JSON, so an unexplained model-route change has a timestamp and an actor.
+
+**Live apply.** Role prompts, tool policy, and `denyCommands` are resolved from the live role on every step and every tool call, so those edits apply to existing members immediately. The two things captured when a member's Agent was created — its model route and its private skills — are refreshed by **↻ (Apply settings)** in the Team panel: it posts to `/agent-team-roles/apply-settings`, re-selects each live member's role route (unless that member has an explicit fallback override) and reinstalls its private skills, then reloads the panel. Members that are not running pick the change up when they next activate.
 
 ## Known limitations
 

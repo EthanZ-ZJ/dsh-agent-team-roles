@@ -73,7 +73,8 @@ bundle patch 预置以下角色（均可编辑或删除）：
 | 产品经理 | `pm` | 只读 + 汇报 | 需求分析、用户场景、体验取舍；产出需求文档文本，不定义技术方案。 |
 | SE | `se` | 只读 + 文档写入 | 架构/契约负责人：维护 `docs/architecture.md`、接口契约与 ADR；可写 docs/ 与接口/类型定义文件，无 shell。 |
 | DEV | `dev` | 读写 + 终端 | 按 SE 契约实现；动手前先读契约，完成后报告改动与检查结果。git push 由 DEV 执行，但受工序闸门约束（检查不通过则被拒）。 |
-| TSE | `tse` | 读写 + pwsh | 设计并执行测试、报缺陷；只写 `tests/` 目录，不改生产代码。 |
+| TSE | `tse` | 读写 + pwsh | 设计测试，完善或修复后在本地验证受影响流程；只写 `tests/` 目录。 |
+| CI/CD | `cicd` | 终端 + 指定桌面工具 + 汇报 | 兼生产发布负责人；批准后按项目手册负责发布、部署、上线验证和回退。执行依赖项目已有的授权入口；插件不附带生产权限。 |
 | CR | `cr` | 只读 + 汇报 | 代码检视人：对照契约逐项核对 diff，产出缺陷报告；fresh 召唤、不改任何文件。 |
 
 检视流程：diff 完成后由 Lead **并行派发 CR（静态检视）与 TSE（动态测试）**，两者独立执行、互不等待；缺陷由 Lead 派回 DEV 修复，修复后重新走 CR + TSE。
@@ -138,7 +139,7 @@ $DSH_HOME/agent-team-roles/templates/<模板 id>/
 
 ### 内置模板
 
-插件激活时把包内 `templates/software-dev/` **播种**到状态目录（只创建缺失目录，永不覆盖用户改动）。因此内置模板后续更新（例如新增 gates）不会自动写入已有状态目录；需要删除 `<stateDir>/templates/<id>/` 后重载插件重新播种。`software-dev` 是软件开发部模板：PM/SE/DEV/TSE/CR 五角色 + 并行检视 playbook + 两条提交前闸门；DEV 与 TSE 带 `denyCommands` 禁止 `git push`。
+插件激活时把包内 `templates/software-dev/` **播种**到状态目录（只创建缺失目录，永不覆盖用户改动）。因此内置模板后续更新（例如新增 gates）不会自动写入已有状态目录；需要删除 `<stateDir>/templates/<id>/` 后重载插件重新播种。`software-dev` 是软件开发部模板：PM、SE、DEV、TSE、CR、CI/CD 六个专业角色 + 并行检视 playbook + 两条提交前闸门；DEV 与 TSE 带 `denyCommands` 禁止 `git push`。
 
 ### 应用模板
 
@@ -239,6 +240,10 @@ Team Lead（且 Team Lead 预设会话）可用：
 
 受管成员即使处于自定义工具策略下也能保留一组隐式能力：`remember_role_rule`、`list_my_rules`、`list_team_roles`、`create_team_role` 与 `skill`。成员不能更新或删除角色。新建角色在下一次 `spawn_team_member` 时可用。
 
+记忆插件提供 `memory_recall`、`wiki_search` 和 `wiki_read` 时，成员无需逐角色配置即可通过本插件的角色守卫。写入类记忆工具不会被隐式放行。宿主提供 `web_search` 和 `web_fetch` 时，角色守卫也默认放行，但原有网络策略仍然生效。使用 Codex 后端时，这些权限仅限 DSH 中继层，不会把工具直接注入外部 Codex CLI。
+
+原生 `tse` 成员可以使用已安装的 `agent-desktop` MCP 在获准的测试 URL 上做浏览器交互验收。即使当前 TSE 白名单保存于旧版本，角色守卫也会放行所需工具。桌面宿主策略仍然有效；受阻时向 Lead 报告，不能用抓取网页替代交互证据。
+
 ## 给其他插件：`agentTeamRoles`
 
 Host 暴露一个受信任的进程内服务：
@@ -298,6 +303,14 @@ whenToUse: 改动准备进入审查时。
 ```
 
 技能只会注册到该成员的 Agent 作用域；全局技能仍由部署自身的 skill provider 提供。角色 `skills` 列表为空时暴露整个角色目录；非空时按技能 frontmatter 的 `name` 匹配（没有 frontmatter 时用文件名），只暴露列出的技能。
+
+## 设置变更日志与即时生效
+
+角色配置有三个入口：设置页、Lead 工具，以及其他插件使用的角色服务。下面两点让这些改动可追溯、而且马上生效。
+
+**变更日志。** `$DSH_HOME/agent-team-roles/settings.log` 是 JSONL 文件，每次观察到角色目录变化写一行：时间、操作者，以及每个角色的字段差异（`provider`、`model`、`reasoningEffort`、`fallbacks`、`tools`、`toolMode`、`denyCommands`、`skills`、`persona` 等）。操作者按来源标注：设置页保存是 `settings-ui`，Agent 与插件写入是 `role-service:update|create|remove`，模板应用是 `team-template apply: <id>`，面板刷新是 `apply settings`；无法归属的改动（例如手工编辑 profile）记为 `settings`。文件只保留最近 400 条。团队面板的「日志」页展示最近的记录，`GET /agent-team-roles/settings-log?limit=<n>` 返回同样的 JSON。模型路由若在没有明显原因时被改，能查到时间与来源。
+
+**即时生效。** 角色提示词、工具策略与 `denyCommands` 在每一步、每次工具调用时读取当前角色定义，因此改完立即作用于已存在的成员。成员 Agent 创建时被固化的两项——模型路由与私有技能——由团队面板的 **↻（应用设置）** 刷新：它 POST 到 `/agent-team-roles/apply-settings`，对每个在线成员重新选择角色路由（有显式备用切换的成员保持其覆盖），并重新安装私有技能，然后重载面板。未运行的成员在下次激活时使用新配置。
 
 ## 已知限制
 
