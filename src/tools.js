@@ -161,6 +161,7 @@ const MEMBER_VIEW = {
     model: { type: 'string', required: true },
     reused: { type: 'boolean', required: true },
     taskSent: { type: 'boolean', required: true },
+    images: { type: 'array', required: true, items: { type: 'string' } },
     executor: { type: 'string', required: true },
     sandbox: { type: 'string', required: true },
     threadId: { type: 'string', required: true },
@@ -437,6 +438,12 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
         required: true,
         description: 'Complete initial task for the teammate, or the task sent to an existing member of that role.',
       },
+      images: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          'Absolute paths (at most 8) of image files inside the session working directory to share with the member. The member reads them with its read tool; paths outside the working directory are rejected.',
+      },
       name: {
         type: 'string',
         description:
@@ -474,6 +481,7 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
         caller: exec.agent,
         roleId: args.role,
         prompt: args.prompt,
+        images: args.images,
         name: args.name,
         description: args.description,
         context: args.context,

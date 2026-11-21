@@ -224,6 +224,10 @@ Available to the Team Lead (and only in a Team Lead preset session):
 - **Zero behavior when empty**: with no gates configured the pre/post-execute listeners return immediately and add no perceptible cost.
 - **Read-side self-check**: when the configuration contains gates the evaluator would silently skip (invalid fields, duplicate ids), the host warns once per id per process on the pre/post-execute read side without blocking the call (fail-open).
 
+### Sharing images with a member
+
+`spawn_team_member` accepts an optional `images` array of absolute file paths (at most 8). Every path must be inside the session working directory — paths outside are rejected, so the feature is a workspace passthrough, not an arbitrary host read. The member's task text gains a "Shared images" list, and the member reads each image with its regular `read` tool. A reused member receives the list with its task; a fresh member gets it in the spawn prompt. The tool result echoes the verified paths in `member.images`.
+
 ## Agent-facing tools
 
 | Tool | Callers | Purpose |

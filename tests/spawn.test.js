@@ -1,5 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { join } from 'node:path'
 import { spawnRoleMember } from '../src/spawn.js'
 import { normalizeRole } from '../src/config.js'
 
@@ -175,4 +179,76 @@ test('a handshake spawn asks for caller delivery and restores the service', asyn
   assert.equal(specs[0].delivery, 'caller')
   assert.equal(specs[0].request.agentPreset, 'standard')
   assert.equal(subagents.startActivation, original)
+})
+
+test('shared workspace images are appended to a reused member task', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'team-roles-images-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const image = join(dir, 'mock.png')
+  writeFileSync(image, 'png')
+  const harness = build({ existing: ['dev'] })
+  const caller = { id: 'lead-session', session: { header: { cwd: dir } } }
+  const member = await spawnRoleMember({
+    ctx: harness.ctx,
+    config: {},
+    snapshots: harness.snapshots,
+    roles: [{ ...role, id: 'dev' }],
+    caller,
+    roleId: 'dev',
+    prompt: 'Check this screenshot.',
+    images: [image],
+  })
+  assert.deepEqual(member.images, [image.split(path.sep).join('/')])
+  assert.equal(harness.sent.length, 1)
+  const text = harness.sent[0].content[0].text
+  assert.match(text, /Check this screenshot\./)
+  assert.match(text, /Shared images/)
+  assert.ok(text.includes(image.split(path.sep).join('/')))
+})
+
+test('shared images outside the session cwd are rejected before any send', async (t) => {
+  const outside = mkdtempSync(join(tmpdir(), 'team-roles-outside-'))
+  t.after(() => rmSync(outside, { recursive: true, force: true }))
+  const image = join(outside, 'secret.png')
+  writeFileSync(image, 'png')
+  const harness = build({ existing: ['dev'] })
+  const caller = { id: 'lead-session', session: { header: { cwd: join(outside, 'workspace') } } }
+  await assert.rejects(
+    () => spawnRoleMember({
+      ctx: harness.ctx,
+      config: {},
+      snapshots: harness.snapshots,
+      roles: [{ ...role, id: 'dev' }],
+      caller,
+      roleId: 'dev',
+      prompt: 'Check.',
+      images: [image],
+    }),
+    /outside the session working directory/,
+  )
+  assert.equal(harness.sent.length, 0)
+})
+
+test('a fresh spawn embeds the image list in the member prompt', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'team-roles-fresh-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const image = join(dir, 'mock.jpg')
+  writeFileSync(image, 'jpg')
+  const harness = build({ existing: [] })
+  const caller = { id: 'lead-session', session: { header: { cwd: dir } } }
+  const member = await spawnRoleMember({
+    ctx: harness.ctx,
+    config: {},
+    snapshots: harness.snapshots,
+    roles: [{ ...role, id: 'dev' }],
+    caller,
+    roleId: 'dev',
+    prompt: 'Read the mock.',
+    images: [image],
+  })
+  assert.deepEqual(member.images, [image.split(path.sep).join('/')])
+  assert.equal(harness.spawned.length, 1)
+  const promptText = harness.spawned[0].prompt[0].text
+  assert.match(promptText, /Read the mock\./)
+  assert.ok(promptText.includes(image.split(path.sep).join('/')))
 })

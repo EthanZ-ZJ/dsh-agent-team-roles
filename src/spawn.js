@@ -7,6 +7,7 @@
  */
 
 import fs from 'node:fs/promises'
+import path from 'node:path'
 import {
   DESCRIPTION_LIMIT,
   ROLE_ID,
@@ -62,6 +63,45 @@ function validateTarget(name) {
   if (name === 'lead') throw new Error('teammate target "lead" is reserved for the Team Lead')
 }
 
+/**
+ * Validate shared image paths for one member task.
+ *
+ * Only absolute paths inside the caller's session cwd are accepted: this keeps
+ * the feature a workspace passthrough and blocks arbitrary host reads. Each
+ * path must exist as a file; the returned list is normalized with forward
+ * slashes so the member can read it directly.
+ */
+export async function resolveSharedImages(caller, images) {
+  const list = Array.isArray(images) ? images : []
+  if (list.length === 0) return []
+  if (list.length > 8) throw new Error('at most 8 images can be shared with one member')
+  const cwd = typeof caller?.session?.header?.cwd === 'string' && caller.session.header.cwd.trim() !== ''
+    ? caller.session.header.cwd
+    : undefined
+  if (cwd === undefined) throw new Error('sharing images requires a session working directory')
+  const root = path.resolve(cwd)
+  const resolved = []
+  for (const raw of list) {
+    if (typeof raw !== 'string' || raw.trim() === '') throw new Error('image entries must be non-empty paths')
+    const full = path.resolve(raw.trim())
+    const relative = path.relative(root, full)
+    if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) {
+      throw new Error(`image "${raw}" is outside the session working directory`)
+    }
+    const stat = await fs.stat(full).catch(() => undefined)
+    if (stat === undefined || !stat.isFile()) throw new Error(`image "${raw}" does not exist`)
+    resolved.push(full.split(path.sep).join('/'))
+  }
+  return resolved
+}
+
+/** Append the shared-image reading instructions to one member prompt. */
+function withImageNote(prompt, images) {
+  if (images.length === 0) return prompt
+  const list = images.map((image) => '- ' + image).join('\n')
+  return prompt + '\n\nShared images (read each one with the read tool to see it):\n' + list
+}
+
 /** Pick a free target, appending a numeric suffix when the base is taken. */
 function freeTarget(base, used) {
   if (!used.has(base)) return base
@@ -108,8 +148,9 @@ function existingRoleMember({ ctx, snapshots, roles, caller, roleId, executor })
  * Create one teammate from a role preset.
  *
  * @param options - plugin context, live Config, snapshot store, catalog source,
- *   exact Lead caller, role id, initial prompt, optional target/description/
- *   context override, and cancellation.
+ *   exact Lead caller, role id, initial prompt, optional workspace image
+ *   paths shared with the member, optional target/description/context
+ *   override, and cancellation.
  * @returns the created member's model-facing summary.
  */
 export async function spawnRoleMember({
@@ -120,6 +161,7 @@ export async function spawnRoleMember({
   caller,
   roleId,
   prompt,
+  images,
   name,
   description,
   context,
@@ -146,10 +188,12 @@ export async function spawnRoleMember({
   })
   if (existing !== undefined) {
     const handshake = prompt.includes('[[TEAM_HANDSHAKE]]')
+    const shared = await resolveSharedImages(caller, images)
+    const taskText = withImageNote(prompt, shared)
     if (!handshake) {
       await ctx.agentTeams.sendMessage(caller, {
         target: existing.member.name,
-        content: [{ type: 'text', text: prompt }],
+        content: [{ type: 'text', text: taskText }],
         signal: signal ?? new AbortController().signal,
       })
     }
@@ -166,6 +210,7 @@ export async function spawnRoleMember({
       threadId: '',
       reused: true,
       taskSent: !handshake,
+      images: shared,
     }
   }
 
@@ -198,6 +243,8 @@ export async function spawnRoleMember({
   // what that member may call. A handshake spawn additionally uses caller
   // delivery so its READY settlement is not injected into the Lead.
   const handshake = prompt.includes('[[TEAM_HANDSHAKE]]')
+  const shared = handshake ? [] : await resolveSharedImages(caller, images)
+  const spawnPrompt = withImageNote(prompt, shared)
   const subagents = ctx.get('subagents')
   const originalStart = subagents?.startActivation
   let restoreStart = false
@@ -222,7 +269,7 @@ export async function spawnRoleMember({
     result = await ctx.agentTeams.spawnTeammate(caller, {
       name: target,
       description: label,
-      prompt: [{ type: 'text', text: prompt }],
+      prompt: [{ type: 'text', text: spawnPrompt }],
       context: kind,
       provider: readConfig(config, `${kind}Provider`) ?? (kind === 'fork' ? 'fork' : 'spawn'),
       signal,
@@ -252,5 +299,6 @@ export async function spawnRoleMember({
     threadId: '',
     reused: false,
     taskSent: false,
+    images: shared,
   }
 }
