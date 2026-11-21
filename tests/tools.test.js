@@ -90,6 +90,50 @@ test('report_gate_event validates the event name and records into the ledger', a
   )
 })
 
+test('the Lead can remember and list rules about how the Lead itself works', async () => {
+  const added = []
+  const tools = createTools({
+    ctx: {
+      agentTeams: {
+        tryMembership: () => ({ role: 'lead', root: { id: 'team-1' } }),
+      },
+    },
+    config: {},
+    snapshots: { get: () => undefined },
+    rules: {
+      add: async (input) => {
+        added.push(input)
+        return { rule: { ...input, id: 'rule-lead', status: 'active', evidence: 1, createdAt: 1, updatedAt: 1 }, scope: input.scope, promoted: false }
+      },
+      list: () => [],
+    },
+    roles: { read: () => [GENERAL_ROLE] },
+  })
+  const remember = tools.member.find((tool) => tool.name === 'remember_role_rule')
+  const result = await remember.execute(
+    { text: 'Ask before deleting another agent\'s files', scope: 'permanent' },
+    { agent: { id: 'lead-session' } },
+  )
+  assert.equal(result.rule.roleId, 'lead')
+  assert.equal(added[0].roleId, 'lead')
+  assert.equal(added[0].rootSessionId, 'team-1')
+
+  const list = tools.member.find((tool) => tool.name === 'list_my_rules')
+  assert.deepEqual(await list.execute({}, { agent: { id: 'lead-session' } }), { role: 'lead', rules: [] })
+
+  // The Lead may also record feedback for its own bucket by name.
+  const feedback = tools.lead.find((tool) => tool.name === 'record_role_feedback')
+  const recorded = await feedback.execute(
+    { role: 'lead', text: 'Report progress every third dispatch', scope: 'permanent' },
+    { agent: { id: 'lead-session' } },
+  )
+  assert.equal(recorded.rule.roleId, 'lead')
+  await assert.rejects(
+    () => feedback.execute({ role: 'not-a-role', text: 'x' }, { agent: { id: 'lead-session' } }),
+    /unknown role/,
+  )
+})
+
 test('list_role_rules returns rule views through the registered execute', async () => {
   const tools = createTools({
     ctx: {},

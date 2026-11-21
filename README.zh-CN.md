@@ -261,6 +261,8 @@ await roles.remove('reviewer')
 
 ## 学到的规则
 
+Team Lead 有自己的规则桶，id 为 `lead`。对 Lead 说「以后都 X」时，它会用 `remember_role_rule`（或 `record_role_feedback`，`role: "lead"`）记录；规则在下一步就渲染进 Lead 自己的提示词，并可在设置页「规则」标签中查看、确认或退役——那里 `lead` 与可召唤角色并列显示。它与角色规则分开：Lead 规则约束 Lead 自己的工作方式，不会作用于任何成员。
+
 两个工具负责写入：
 
 - `remember_role_rule`：成员记录与自己角色相关的长期要求。

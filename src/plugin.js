@@ -17,7 +17,7 @@
 import z from '@deepseek-ai/schemastery'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { findRole, mergeRoles, readConfig, roleFallbacks, roleForTarget } from './config.js'
+import { LEAD_ROLE_ID, findRole, mergeRoles, readConfig, roleFallbacks, roleForTarget } from './config.js'
 import { activeMembers, leadCatalog, memberPersona } from './prompts.js'
 import { evaluateDeny } from './policy.js'
 import {
@@ -568,7 +568,7 @@ export function apply(ctx, config) {
 
     try {
       if (membership.role === 'lead') {
-        const applied = installLead({ scoped, register, tools, ctx, snapshots, roles: rolesReader, agent, playbook: leadPlaybook, gateSummary: gateSummaryFor })
+        const applied = installLead({ scoped, register, tools, ctx, snapshots, roles: rolesReader, ruleStore, agent, playbook: leadPlaybook, gateSummary: gateSummaryFor })
         // A Lead whose session preset is not resolved yet (early `agent/created`)
         // installs nothing; do not mark it installed, so the pre-step backstop
         // retries once the session context is complete.
@@ -1153,10 +1153,25 @@ export function isTeamLeadPreset(agent, ctx) {
 }
 
 /** Install the Lead's role catalog, tools, and the official-spawn guard. */
-function installLead({ scoped, register, tools, ctx, snapshots, roles, agent, playbook, gateSummary }) {
+function installLead({ scoped, register, tools, ctx, snapshots, roles, ruleStore, agent, playbook, gateSummary }) {
   // Manual pulls and the team description are Team-Lead-preset features; other
   // presets run plain sessions and must not carry the roster catalog.
   if (!isTeamLeadPreset(agent, ctx)) return false
+  // Standing rules the user taught the Lead itself ("from now on, ask before
+  // deleting"): rendered per step so a new rule applies immediately.
+  if (ruleStore !== undefined) {
+    register(scoped.systemPrompt.section({
+      name: 'agent-team-roles:lead-rules',
+      order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY') + 9,
+      text: () => {
+        try {
+          return ruleStore.render(LEAD_ROLE_ID, agent.id)
+        } catch {
+          return ''
+        }
+      },
+    }))
+  }
   register(scoped.systemPrompt.section({
     name: 'agent-team-roles:lead-catalog',
     order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY') + 10,

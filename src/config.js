@@ -10,6 +10,14 @@
 /** Role identity grammar for a teammate target. */
 export const ROLE_ID = /^[a-z][a-z0-9-]{0,63}$/
 
+/**
+ * Rule bucket for the Team Lead itself.
+ *
+ * The Lead is not a spawnable role, so `validateRole` keeps the id reserved for
+ * it; learned rules about the Lead's own working style live under this id.
+ */
+export const LEAD_ROLE_ID = 'lead'
+
 /** Longest role description the official teammate roster accepts. */
 export const DESCRIPTION_LIMIT = 200
 

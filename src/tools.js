@@ -7,7 +7,7 @@
  * learned rule applies to the next call without restarting the plugin.
  */
 
-import { findRole, mergeRoles, roleFallbacks, roleForTarget } from './config.js'
+import { LEAD_ROLE_ID, findRole, mergeRoles, roleFallbacks, roleForTarget } from './config.js'
 import { modelSelection } from './member-models.js'
 import { ruleView } from './rules.js'
 import { spawnRoleMember } from './spawn.js'
@@ -496,9 +496,9 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
   const recordRoleFeedback = defineTool({
     name: 'record_role_feedback',
     description:
-      'Record one lasting requirement about how a role works after the user states it. Use this for "from now on", "always", and "never" requirements; use session scope for a task-local correction. Never record project-specific facts (brand names, domains, schemas, environment, versions, file paths) here — put those in the project memory vault with memory_capture. Only the Team Lead may call this tool.',
+      'Record one lasting requirement about how a role - or the Lead itself (role "lead") - works, after the user states it. Use this for "from now on", "always", and "never" requirements; use session scope for a task-local correction. Never record project-specific facts (brand names, domains, schemas, environment, versions, file paths) here — put those in the project memory vault with memory_capture. Only the Team Lead may call this tool.',
     parameters: {
-      role: { type: 'string', required: true, description: 'Configured role id.' },
+      role: { type: 'string', required: true, description: 'Configured role id, or "lead" for the Team Lead itself.' },
       text: {
         type: 'string',
         required: true,
@@ -527,7 +527,9 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
     }),
     async execute(args, exec) {
       if (exec.agent === undefined) throw new Error('record_role_feedback requires a calling Agent')
-      requireRole(catalog(), args.role)
+      // 'lead' is not a spawnable role but is a valid rule bucket: it records a
+      // lasting requirement about how the Lead itself should work.
+      if (args.role !== LEAD_ROLE_ID) requireRole(catalog(), args.role)
       const scope = ['permanent', 'candidate', 'session'].includes(args.scope)
         ? args.scope
         : 'permanent'
@@ -697,8 +699,10 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
     },
   })
 
-  /** Read the member's own role identity. */
+  /** Read the caller's own rule bucket: its role id, or 'lead' for the Lead. */
   const ownRole = (agent) => {
+    const membership = ctx.agentTeams.tryMembership(agent)
+    if (membership?.role === 'lead') return LEAD_ROLE_ID
     const roleId = roleIdForAgent(ctx, snapshots, catalog(), agent)
     if (roleId === undefined) throw new Error('this member has no managed role')
     return roleId
@@ -708,7 +712,7 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
   const rememberRoleRule = defineTool({
     name: 'remember_role_rule',
     description:
-      'Record one lasting requirement about your own role after the user states it, so future turns and instances follow it. Use permanent only for "from now on", "always", or "never"; use session for a task-local correction; use candidate when unsure. Never record project-specific facts (brand names, domains, schemas, environment, versions, file paths) here — put those in the project memory vault instead.',
+      'Record one lasting requirement about your own role - for the Team Lead, about how the Lead itself works - so future turns and instances follow it. Use permanent only for "from now on", "always", or "never"; use session for a task-local correction; use candidate when unsure. Never record project-specific facts (brand names, domains, schemas, environment, versions, file paths) here — put those in the project memory vault instead.',
     parameters: {
       text: {
         type: 'string',

@@ -14,6 +14,7 @@ window.__ModuleLoader__.load({
 
     const zh = {
       nav: 'Agent 团队角色',
+      leadRole: 'Lead（团队领导）',
       title: 'Agent 团队角色',
       subtitle: '为子 Agent 预设提示词、模型、工具与私有技能；成员在运行中学会的长期要求会出现在这里。',
       loading: '正在读取角色配置…',
@@ -225,6 +226,7 @@ window.__ModuleLoader__.load({
 
     const en = {
       nav: 'Agent team roles',
+      leadRole: 'Lead (team lead)',
       title: 'Agent team roles',
       subtitle: 'Preset a sub-agent prompt, model, tools, and private skills. Lasting requirements learned during a run appear here.',
       loading: 'Reading role configuration…',
@@ -1261,7 +1263,9 @@ window.__ModuleLoader__.load({
                 : h(RulesPanel, {
                   key: 'rules',
                   t,
-                  roles,
+                  // 'lead' is a rule bucket, not a spawnable role: the Rules tab
+                  // lists it so instructions aimed at the Lead are visible here.
+                  roles: [{ id: 'lead', name: t('leadRole') }, ...roles],
                   rules,
                   busy,
                   setRules: (updater) => { setDirty(true); setRules(updater) },
