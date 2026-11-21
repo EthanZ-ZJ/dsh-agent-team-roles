@@ -862,14 +862,20 @@ window.__ModuleLoader__.load({
           }
         }
 
+        // Our own save also broadcasts settings/document-updated; a notice for
+        // that would be self-noise on top of "已保存", so a recent write is
+        // treated as ours and only refreshes the revision.
+        const lastWriteAt = React.useRef(0)
+
         /** React to the configuration changing in another page or mount. */
         const onExternalUpdate = async () => {
           try {
             const stateView = await readSettingsState(ctx)
             setRevision(stateView.view.revision)
+            const selfWrite = Date.now() - lastWriteAt.current < 2000
             if (!dirtyRef.current && !busyRef.current) {
               applyView(stateView.view)
-            } else {
+            } else if (!selfWrite) {
               setNotice(t('settingsUpdated'))
             }
           } catch {
@@ -962,6 +968,7 @@ window.__ModuleLoader__.load({
             setRevision(view.revision)
             setRoles(Array.isArray(view.value?.roles) ? view.value.roles : roles)
             setDirty(false)
+            lastWriteAt.current = Date.now()
             setNotice(t('saved'))
             return true
           } catch (caught) {
@@ -981,6 +988,7 @@ window.__ModuleLoader__.load({
             setRevision(view.revision)
             setRules(Array.isArray(view.value?.rules) ? view.value.rules : rules)
             setDirty(false)
+            lastWriteAt.current = Date.now()
             setNotice(t('saved'))
             return true
           } catch (caught) {
@@ -1058,6 +1066,7 @@ window.__ModuleLoader__.load({
             setEngine((current) => ({ ...current, gates: savedGates, gatesDisabled: savedDisabled }))
             setDirty(false)
             gatesBaselineRef.current = JSON.stringify(savedGates)
+            lastWriteAt.current = Date.now()
             setNotice(legacyWarning === '' ? t('saved') : `${t('saved')} · ${legacyWarning}`)
             return true
           } catch (caught) {
@@ -1137,7 +1146,6 @@ window.__ModuleLoader__.load({
             h('button', { key: 'cancel', type: 'button', style: button, onClick: () => setLeaving(null) }, t('keepEditing')),
           ]),
           error !== '' ? h('div', { key: 'error', style: banner('state-error') }, error) : null,
-          notice !== '' ? h('div', { key: 'notice', style: banner('state-success') }, notice) : null,
           notice !== '' ? h('div', { key: 'notice', style: banner('state-success') }, notice) : null,
           tab === 'roles'
             ? h(RolesPanel, {

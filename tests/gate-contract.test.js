@@ -62,6 +62,15 @@ test('zh and en dictionaries are paired key-for-key', () => {
   const enKeys = Object.keys(enDict).sort()
   assert.deepEqual(zhKeys, enKeys, 'every locale key must exist in both dictionaries')
 })
+test('a settings save shows one notice and is not reported as an external change', () => {
+  const settingsPart = clientSrc.slice(0, clientSrc.indexOf('function PullPage'))
+  const banners = settingsPart.match(/key: 'notice', style: banner\('state-success'\)/g) ?? []
+  assert.equal(banners.length, 1, 'the settings success banner must render once')
+  assert.match(clientSrc, /const lastWriteAt = React\.useRef\(0\)/)
+  assert.match(clientSrc, /const selfWrite = Date\.now\(\) - lastWriteAt\.current < 2000/)
+  const stamps = clientSrc.match(/lastWriteAt\.current = Date\.now\(\)/g) ?? []
+  assert.ok(stamps.length >= 3, 'roles, rules, and engine saves all stamp their write')
+})
 test('the client writes the gates field only from saveEngine', () => {
   const writes = [...clientSrc.matchAll(/field:\s*'gates'/g)].map((match) => match.index)
   assert.equal(writes.length, 1, 'exactly one write site for gates')
