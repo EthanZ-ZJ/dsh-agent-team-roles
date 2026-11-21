@@ -343,6 +343,29 @@ async function openEngineTab(mounted) {
   return { tree, engine, panel }
 }
 
+test('the settings page has a change-log tab that lists recorded diffs', async (t) => {
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    if (url.startsWith('/agent-team-roles/settings-log')) {
+      return { ok: true, json: async () => ({ entries: [
+        { at: 1700000000000, actor: 'settings-ui', changes: [{ roleId: 'dev', fields: [{ field: 'model', from: 'a', to: 'b' }] }] },
+        { at: 1700000001000, actor: 'team-template apply: software-dev', changes: [{ roleId: 'pm', added: true, fields: [] }] },
+      ] }) }
+    }
+    return { ok: true, json: async () => ({ routes: [] }) }
+  })
+  const harness = createReactHarness()
+  const mounted = await mountSection(harness, { describe: () => namespaceView(baseValue(), 3), mutate: () => namespaceView(baseValue(), 4) })
+  findButton(mounted.tree, 'logTab').props.onClick()
+  const tree = await mounted.harness.render(mounted.page)
+  const panel = findComponent(tree, 'SettingsLogPanel')
+  const rendered = await mounted.harness.render(panel.type, panel.props)
+  const text = textOf(rendered)
+  assert.match(text, /settings-ui/)
+  assert.match(text, /dev: model/)
+  assert.match(text, /pm: logAdded/)
+  assert.match(text, /team-template apply: software-dev/)
+})
+
 // ---------------------------------------------------------------------------
 // cr #11: revision refresh and conflict-code recognition
 // ---------------------------------------------------------------------------

@@ -153,15 +153,6 @@ test('single composer trigger opens members directly; gates load only when selec
   assert.equal(panel.timers.length, 0, 'idle pages must not schedule polling')
 })
 
-test('the log tab shows recorded settings changes with actor and fields', async () => {
-  const panel = await mount()
-  await panel.click(/team/i)
-  await panel.click(/^log$/i)
-  assert.deepEqual(panel.urls, [members, '/agent-team-roles/settings-log?limit=50'])
-  assert.match(panel.text(), /settings/)
-  assert.match(panel.text(), /dev: model/)
-})
-
 test('the members page switches one member model for this Team only', async () => {
   const panel = await mount({ members: [{
     name: 'dev', roleId: 'dev', roleName: 'DEV', status: 'inactive',
@@ -177,8 +168,9 @@ test('the members page switches one member model for this Team only', async () =
   const selects = panel.view.nodes.filter(node => node.type === 'select')
   const picker = selects.find(node => node.props['aria-label'] === 'Choose a configured model')
   assert.ok(picker, 'the picker renders inside the member row')
-  assert.deepEqual(picker.children.filter(child => child.type === 'option').map(option => option.props.value), ['', '0', '1'],
+  assert.deepEqual(picker.children.filter(child => child.type === 'option').map(option => option.props.value), ['0', '1'],
     'only the role primary and its fallbacks are offered')
+  assert.equal(picker.props.value, '0', 'opening the picker preselects the route in use')
   assert.match(panel.text(), /primary · zai\/glm-5\.3-flash/)
   assert.match(panel.text(), /fallback 1 · deepseek-official\/deepseek-flash/)
   picker.props.onChange({ target: { value: '1' } })
@@ -186,6 +178,22 @@ test('the members page switches one member model for this Team only', async () =
   await panel.click(/^apply$/i)
   assert.ok(panel.urls.includes('/agent-team-roles/member-model'))
   assert.match(panel.text(), /Switched dev → deepseek-official\/deepseek-flash/)
+})
+
+test('the model picker preselects the primary route when the current model is not in the role routes', async () => {
+  const panel = await mount({ members: [{
+    name: 'dev', roleId: 'dev', roleName: 'DEV', status: 'inactive',
+    provider: 'outside', model: 'unlisted', reasoningEffort: '', source: 'manual', pending: false,
+    routes: [
+      { provider: 'zai', model: 'glm-5.3-flash', reasoningEffort: 'high', kind: 'primary', index: -1 },
+      { provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: '', kind: 'fallback', index: 0 },
+    ],
+  }] })
+  await panel.click(/team/i)
+  await panel.click(/switch model/i)
+  const picker = panel.view.nodes.find(node => node.type === 'select' && node.props['aria-label'] === 'Choose a configured model')
+  assert.ok(picker, 'the picker renders inside the member row')
+  assert.equal(picker.props.value, '0', 'a current model outside the role routes falls back to the primary route')
 })
 
 test('pull selects presets inline and stays open for consecutive pulls', async () => {

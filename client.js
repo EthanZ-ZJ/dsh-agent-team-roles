@@ -9,6 +9,7 @@ window.__ModuleLoader__.load({
       { id: 'roles', label: 'roles' },
       { id: 'rules', label: 'rules' },
       { id: 'engine', label: 'engine' },
+      { id: 'log', label: 'logTab' },
     ]
 
     const zh = {
@@ -169,8 +170,8 @@ window.__ModuleLoader__.load({
       appliedMembers: '已应用到',
       appliedMembersUnit: '个成员（含待命）',
       applyFailed: '应用失败：',
-      teamLog: '日志',
-      logHint: '记录角色配置（含模型）的变更；设置页保存显示为 settings。',
+      logTab: '变更日志',
+      logHint: '记录角色配置（含模型）的变更：时间、操作者、改了哪些字段（含前后值见接口）。设置页保存显示为 settings-ui。',
       logEmpty: '还没有变更记录。',
       logLoadFailed: '加载失败：',
       logRemoved: '已删除',
@@ -380,8 +381,8 @@ window.__ModuleLoader__.load({
       appliedMembers: 'Applied to',
       appliedMembersUnit: 'members (busy + idle)',
       applyFailed: 'Apply failed: ',
-      teamLog: 'Log',
-      logHint: 'Records role configuration changes, including model routes; saves from Settings show as "settings".',
+      logTab: 'Change log',
+      logHint: 'Records role configuration changes, including model routes: when, by whom, and which fields. Saves from this page show as settings-ui.',
       logEmpty: 'No changes recorded yet.',
       logLoadFailed: 'Load failed: ',
       logRemoved: 'removed',
@@ -814,6 +815,62 @@ window.__ModuleLoader__.load({
       return readNamespace(ctx)
     }
 
+    /** Settings change log: what changed, when, and by whom. */
+    function SettingsLogPanel({ t, version }) {
+      const [entries, setEntries] = React.useState(null)
+      const [error, setError] = React.useState('')
+      React.useEffect(() => {
+        let cancelled = false
+        fetch('/agent-team-roles/settings-log?limit=100')
+          .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
+          .then((data) => {
+            if (cancelled) return
+            setEntries(Array.isArray(data.entries) ? data.entries : [])
+            setError('')
+          })
+          .catch((caught) => {
+            if (!cancelled) setError(`${t('logLoadFailed')}${caught.message}`)
+          })
+        return () => {
+          cancelled = true
+        }
+      }, [version])
+      const fieldsOf = (change) => {
+        if (change.removed === true) return t('logRemoved')
+        if (change.added === true) return t('logAdded')
+        return (change.fields ?? []).map((field) => field.field).join(', ')
+      }
+      const rows = (entries ?? []).map((entry, index) => h('div', {
+        key: `${entry.at}-${index}`,
+        style: {
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 3,
+          padding: '8px 10px',
+          border: '1px solid var(--dsw-alias-border-l1)',
+          borderRadius: 8,
+          background: 'var(--dsw-alias-bg-layer-1)',
+        },
+      }, [
+        h('span', { key: 'meta', style: { ...small, fontFamily: 'monospace', fontSize: 11 } },
+          `${new Date(entry.at).toLocaleString()} · ${entry.actor}`),
+        ...(entry.changes ?? []).map((change, changeIndex) => h('span', {
+          key: `change-${changeIndex}`,
+          style: { fontSize: 12 },
+        }, `${change.roleId}: ${fieldsOf(change)}`)),
+      ]))
+      return h(React.Fragment, null, [
+        h('span', { key: 'hint', style: { ...small, margin: 0 } }, t('logHint')),
+        error === '' ? null : h('div', { key: 'error', style: banner('state-error') }, error),
+        h('div', { key: 'list', style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+          entries === null
+            ? [h('span', { key: 'loading', style: small }, t('loading'))]
+            : rows.length === 0
+              ? [h('span', { key: 'empty', style: small }, t('logEmpty'))]
+              : rows),
+      ])
+    }
+
     function createSection(ctx, t) {
       return function SettingsSection({ close } = {}) {
         const [leaving, setLeaving] = React.useState(null)
@@ -822,6 +879,7 @@ window.__ModuleLoader__.load({
         const [busy, setBusy] = React.useState(false)
         const [error, setError] = React.useState('')
         const [notice, setNotice] = React.useState('')
+        const [logVersion, setLogVersion] = React.useState(0)
         const [revision, setRevision] = React.useState(0)
         const [roles, setRoles] = React.useState([])
         const [rules, setRules] = React.useState([])
@@ -1159,8 +1217,8 @@ window.__ModuleLoader__.load({
           h('div', { key: 'tabs', style: { ...row, position: 'sticky', top: 0, zIndex: 2, background: 'var(--dsw-alias-bg-base)', padding: '8px 0', flexWrap: 'wrap' } }, [
             ...TABS.map(entry => h('button', { key: entry.id, type: 'button', style: tabStyle(tab === entry.id), onClick: () => { if (entry.id !== tab) navigate(() => setTab(entry.id)) } }, t(entry.label))),
             h('span', { key: 'spacer', style: { flex: 1 } }),
-            h('button', { key: 'refresh', type: 'button', style: button, disabled: busy, onClick: () => navigate(load) }, t('refresh')),
-            h('button', { key: 'save', type: 'button', style: primaryButton, disabled: busy, onClick: save }, busy ? t('saving') : t('save')),
+            h('button', { key: 'refresh', type: 'button', style: button, disabled: busy, onClick: () => navigate(() => { setLogVersion(current => current + 1); load() }) }, t('refresh')),
+            tab === 'log' ? null : h('button', { key: 'save', type: 'button', style: primaryButton, disabled: busy, onClick: save }, busy ? t('saving') : t('save')),
             close && h('button', { key: 'close', type: 'button', style: button, disabled: busy, onClick: () => navigate(close) }, t('closeSettings')),
           ]),
           leaving && h('div', { key: 'unsaved', role: 'alertdialog', 'aria-label': t('unsaved'), style: { ...card, ...row, flexWrap: 'wrap' } }, [
@@ -1198,7 +1256,9 @@ window.__ModuleLoader__.load({
                   onSave: saveEngine,
                   onRefresh: load,
                 })
-              : h(RulesPanel, {
+              : tab === 'log'
+                ? h(SettingsLogPanel, { key: 'log', t, version: logVersion })
+                : h(RulesPanel, {
                   key: 'rules',
                   t,
                   roles,
@@ -2234,7 +2294,8 @@ window.__ModuleLoader__.load({
         /** Apply one manual model selection to a member of this Team only. */
         const applyModel = async (member) => {
           if (saving || sessionId === undefined) return
-          const chosen = Array.isArray(member.routes) ? member.routes[Number(draft)] : undefined
+          const index = draft === '' ? -1 : Number(draft)
+          const chosen = index >= 0 && Array.isArray(member.routes) ? member.routes[index] : undefined
           if (chosen === undefined) {
             setNote(t('modelPick'))
             return
@@ -2370,7 +2431,7 @@ window.__ModuleLoader__.load({
                             setEditing(member.name)
                             const routes = Array.isArray(member.routes) ? member.routes : []
                             const current = routes.findIndex((route) => route.provider === member.provider && route.model === member.model)
-                            setDraft(current >= 0 ? String(current) : '')
+                            setDraft(routes.length === 0 ? '' : String(current >= 0 ? current : 0))
                           },
                         }, editing === member.name ? t('modelCancel') : t('modelSwitch')),
                   ]),
@@ -2388,7 +2449,6 @@ window.__ModuleLoader__.load({
                         value: draft,
                         onChange: (event) => setDraft(event.target.value),
                       }, [
-                        h('option', { key: 'none', value: '' }, t('modelPick')),
                         ...member.routes.map((route, index) => h('option', { key: String(index), value: String(index) },
                           `${route.kind === 'primary' ? t('modelRoutePrimary') : `${t('modelRouteFallback')} ${route.index + 1}`} · ${route.provider}/${route.model}${route.reasoningEffort === '' ? '' : ` · ${route.reasoningEffort}`}`)),
                       ]),
@@ -2513,63 +2573,6 @@ window.__ModuleLoader__.load({
         ])
       }
 
-      function LogPage({ refresh }) {
-        const [entries, setEntries] = React.useState(null)
-        const [error, setError] = React.useState('')
-        React.useEffect(() => {
-          let cancelled = false
-          fetch('/agent-team-roles/settings-log?limit=50')
-            .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
-            .then((data) => {
-              if (cancelled) return
-              setEntries(Array.isArray(data.entries) ? data.entries : [])
-              setError('')
-            })
-            .catch((caught) => {
-              if (!cancelled) setError(`${t('logLoadFailed')}${caught.message}`)
-            })
-          return () => {
-            cancelled = true
-          }
-        }, [refresh])
-        const fieldsOf = (change) => {
-          if (change.removed === true) return t('logRemoved')
-          if (change.added === true) return t('logAdded')
-          return (change.fields ?? []).map((field) => field.field).join(', ')
-        }
-        const rows = (entries ?? []).map((entry, index) => h('div', {
-          key: `${entry.at}-${index}`,
-          style: {
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 2,
-            padding: '6px 8px',
-            border: '1px solid var(--dsw-alias-border-l1)',
-            borderRadius: 8,
-            background: 'var(--dsw-alias-bg-layer-1)',
-          },
-        }, [
-          h('span', { key: 'meta', style: { ...small, fontFamily: 'monospace', fontSize: 11 } },
-            `${new Date(entry.at).toLocaleString()} · ${entry.actor}`),
-          ...(entry.changes ?? []).map((change, changeIndex) => h('span', {
-            key: `change-${changeIndex}`,
-            style: { fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-          }, `${change.roleId}: ${fieldsOf(change)}`)),
-        ]))
-        return h(React.Fragment, null, [
-          h('span', { key: 'hint', style: small }, t('logHint')),
-          error === '' ? null : h('div', { key: 'error', style: banner('state-error') }, error),
-          h('div', {
-            key: 'list',
-            style: { display: 'flex', flexDirection: 'column', gap: 4, overflowY: 'auto', minHeight: 0 },
-          }, entries === null
-            ? [h('span', { key: 'loading', style: small }, t('loading'))]
-            : rows.length === 0
-              ? [h('span', { key: 'empty', style: small }, t('logEmpty'))]
-              : rows),
-        ])
-      }
-
       function TeamButton({ sessionId }) {
         const [page, setPage] = React.useState(null)
         const [refresh, setRefresh] = React.useState(0)
@@ -2643,12 +2646,12 @@ window.__ModuleLoader__.load({
             action('close', t('teamClose'), '×', close),
           ]),
           notice === '' ? null : h('div', { key: 'notice', style: small }, notice),
-          h('div', { key: 'pages', style: row }, ['members', 'gates', 'log'].map(id => {
+          h('div', { key: 'pages', style: row }, ['members', 'gates'].map(id => {
             const selected = page === id || (page === 'pull' && id === 'members')
-            const label = t(id === 'members' ? 'teamMembers' : id === 'gates' ? 'gatesModel' : 'teamLog')
+            const label = t(id === 'members' ? 'teamMembers' : 'gatesModel')
             return action(id, label, label, () => setPage(id), { 'aria-pressed': selected, style: selected ? primaryButton : button })
           })),
-          page === 'pull' ? h(PullPage, { key: 'pull', sessionId, onPulled: () => setRefresh(n => n + 1) }) : page === 'gates' ? h(GatesPage, { key: 'gates', sessionId, refresh }) : page === 'log' ? h(LogPage, { key: 'log', refresh }) : h(MembersPage, { key: 'members', sessionId, reloadKey: refresh }),
+          page === 'pull' ? h(PullPage, { key: 'pull', sessionId, onPulled: () => setRefresh(n => n + 1) }) : page === 'gates' ? h(GatesPage, { key: 'gates', sessionId, refresh }) : h(MembersPage, { key: 'members', sessionId, reloadKey: refresh }),
           page === 'members' && action('add', t('pullMembers'), `＋ ${t('pullMembers')}`, () => setPage('pull'), { style: { ...button, alignSelf: 'flex-start' } }),
         ])
         return h(React.Fragment, null, [action('team', t('teamPanel'), [h(TeamRolesIcon, { key: 'icon', size: 15 }), t('teamPanel')], () => {
