@@ -277,6 +277,13 @@ Learned rules **cannot** change a role's tool policy or model route, and members
 
 ## Private skills
 
+Two design-related skills ship with DEV and CR (installed under the role skill folders, all offline):
+
+- `frontend-design` — from [anthropics/skills](https://github.com/anthropics/skills) (Apache-2.0, license included). Design-direction guidance: distinctive typography, palette, layout, and anti-"AI slop" checks for building or reshaping UI.
+- `web-interface-guidelines` — from [vercel-labs/web-interface-guidelines](https://github.com/vercel-labs/web-interface-guidelines) (MIT, license included). The full Vercel Web Interface Guidelines copied locally: accessibility, focus, forms, animation, typography, performance, interaction. DEV self-checks against it before reporting; CR uses the same rules when reviewing frontend changes with `file:line` findings.
+
+## Private skills
+
 Role skills live in:
 
 ```text
