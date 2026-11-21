@@ -1106,6 +1106,7 @@ window.__ModuleLoader__.load({
           ]),
           error !== '' ? h('div', { key: 'error', style: banner('state-error') }, error) : null,
           notice !== '' ? h('div', { key: 'notice', style: banner('state-success') }, notice) : null,
+          notice !== '' ? h('div', { key: 'notice', style: banner('state-success') }, notice) : null,
           tab === 'roles'
             ? h(RolesPanel, {
                 key: 'roles',
@@ -2033,12 +2034,13 @@ window.__ModuleLoader__.load({
     }
 
     function createTeamPanel(ctx, t) {
-      function PullPage({ sessionId, onDone }) {
+      function PullPage({ sessionId, onPulled }) {
         const [roles, setRoles] = React.useState([])
         const [task, setTask] = React.useState('')
         const [loading, setLoading] = React.useState(false)
         const [busy, setBusy] = React.useState('')
         const [error, setError] = React.useState('')
+        const [notice, setNotice] = React.useState('')
         React.useEffect(() => {
           let mounted = true
           setLoading(true)
@@ -2062,7 +2064,9 @@ window.__ModuleLoader__.load({
             } catch {
               // The Team projection also refreshes from its own event push.
             }
-            onDone()
+            setNotice(t('pullSuccess') + ' ' + role.name)
+            setTask('')
+            onPulled()
           } catch (caught) {
             setError(`${t('pullFailed')}${caught.message}`)
           } finally {
@@ -2078,6 +2082,7 @@ window.__ModuleLoader__.load({
             onChange: (event) => setTask(event.target.value),
           }),
           error !== '' ? h('div', { key: 'error', style: banner('state-error') }, error) : null,
+          notice !== '' ? h('div', { key: 'notice', style: banner('state-success') }, notice) : null,
           h('div', {
             key: 'list',
             style: { display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto', minHeight: 0 },
@@ -2375,7 +2380,7 @@ window.__ModuleLoader__.load({
             const label = t(id === 'members' ? 'teamMembers' : 'gatesModel')
             return action(id, label, label, () => setPage(id), { 'aria-pressed': selected, style: selected ? primaryButton : button })
           })),
-          page === 'pull' ? h(PullPage, { key: 'pull', sessionId, onDone: () => setPage(current => current === 'pull' ? 'members' : current) }) : page === 'gates' ? h(GatesPage, { key: 'gates', sessionId, refresh }) : h(MembersPage, { key: 'members', sessionId, reloadKey: refresh }),
+          page === 'pull' ? h(PullPage, { key: 'pull', sessionId, onPulled: () => setRefresh(n => n + 1) }) : page === 'gates' ? h(GatesPage, { key: 'gates', sessionId, refresh }) : h(MembersPage, { key: 'members', sessionId, reloadKey: refresh }),
           page === 'members' && action('add', t('pullMembers'), `＋ ${t('pullMembers')}`, () => setPage('pull'), { style: { ...button, alignSelf: 'flex-start' } }),
         ])
         return h(React.Fragment, null, [action('team', t('teamPanel'), [h(TeamRolesIcon, { key: 'icon', size: 15 }), t('teamPanel')], () => {
