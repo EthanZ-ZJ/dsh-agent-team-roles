@@ -208,14 +208,20 @@ window.__ModuleLoader__.load({
       fallbackEmpty: '还没有备用模型；主模型不可用时可切到这里。',
       fallbackHint: '按顺序尝试：主模型失败后先试备用 1，再试备用 2；每轮最多自动切换 2 次，切换后模型面板会标注序号。',
       modelChainTemplates: '模型链模板',
-      modelChainTemplateHint: '新建或直接编辑模板：主模型、推理强度、有序备用链。主模型留空表示跟随会话；保存模板后勾选角色一次套用。只改模型路由，不改提示词、工具、技能或 Codex 配置。',
-      modelChainTemplateEmpty: '还没有模型链模板。点「新建模板」填写主模型/备用链，保存后可勾选角色套用。',
+      modelChainTemplateHint: '选择模板可只读浏览；点「编辑」或「新建模板」进入编辑，保存后回到只读。只改模型路由，不改提示词、工具、技能或 Codex 配置。',
+      modelChainTemplateEmpty: '还没有模型链模板。点「新建模板」创建，保存后可勾选角色应用。',
       modelChainTemplateNew: '新建模板',
+      modelChainTemplateEdit: '编辑',
+      modelChainTemplateCancel: '取消',
+      modelChainTemplateReadOnly: '只读',
+      modelChainTemplateEditingHint: '编辑中：模板选择与「新建模板」已禁用，保存后回到只读；「取消」丢弃未保存修改。',
       modelChainTemplateName: '模板名称',
       modelChainTemplateNamePlaceholder: '例如：主力链',
       modelChainTemplateSelect: '选择模板',
       modelChainTemplateSave: '保存模板',
       modelChainTemplateDelete: '删除模板',
+      modelChainTemplateDeleteConfirm: '删除模板「{name}」？只删除模板库，已应用的角色不受影响。',
+      modelChainTemplateDeleteAction: '确认删除',
       modelChainTemplateTargets: '应用到的角色',
       matchingTemplates: '匹配模板',
       noMatchingTemplate: '无匹配模板',
@@ -225,6 +231,7 @@ window.__ModuleLoader__.load({
       modelChainTemplateRoute: '主模型：{route}',
       modelChainTemplateInherit: '跟随会话',
       modelChainTemplateFallbacksOrdered: '备用：{list}',
+      modelChainTemplateFallbackOrder: '备用顺序（按尝试顺序）',
       modelChainTemplateEmptyChain: '模板既没有主模型也没有备用链，无法保存。',
       modelChainTemplatePartialRoute: '提供方和主模型必须同时填写或同时留空。',
       modelChainTemplateNameRequired: '请先填写模板名称。',
@@ -232,7 +239,6 @@ window.__ModuleLoader__.load({
       modelChainTemplateNameExists: '已存在同名模板「{name}」，请换一个名称。',
       modelChainTemplateLimit: '模板数量已达上限 {max}。',
       modelChainTemplatePick: '请先选择一个模板。',
-      modelChainTemplateSaveFirst: '模板有未保存修改，请先点「保存模板」再应用到角色。',
       modelChainTemplateCheckedNone: '请至少勾选一个角色。',
       modelChainTemplateApplied: '已把模板应用到 {count} 个角色；点上方「保存」后写入配置。',
       ruleHint: 'permanent 会立即进入提示词；candidate 需要重复或在这里确认；session 只在当前会话生效，不会出现在这里。',
@@ -448,14 +454,20 @@ window.__ModuleLoader__.load({
       fallbackEmpty: 'No fallback routes yet; a failing primary route cannot fall back.',
       fallbackHint: 'Tried in order: fallback 1, then fallback 2. The plugin switches at most twice per turn and the member panel shows the position.',
       modelChainTemplates: 'Model chain templates',
-      modelChainTemplateHint: 'Create a template here, or open an existing one and edit it directly: primary model, reasoning effort, and an ordered fallback chain. An empty primary means "inherit session"; after saving, check roles to apply it. Only the model route changes; prompts, tools, skills, and Codex settings stay untouched.',
-      modelChainTemplateEmpty: 'No model chain templates yet. Click "New template", fill in a primary model and/or fallback chain, then save it and check the roles to apply it to.',
+      modelChainTemplateHint: 'Select a template to browse it read-only, or click "Edit" / "New template" to change it; saving returns to the read-only view. Only the model route changes; prompts, tools, skills, and Codex settings stay untouched.',
+      modelChainTemplateEmpty: 'No model chain templates yet. Click "New template", save it, then check roles to apply it.',
       modelChainTemplateNew: 'New template',
+      modelChainTemplateEdit: 'Edit',
+      modelChainTemplateCancel: 'Cancel',
+      modelChainTemplateReadOnly: 'read-only',
+      modelChainTemplateEditingHint: 'Editing: the template picker and "New template" are disabled; save to return to read-only, or cancel to discard unsaved changes.',
       modelChainTemplateName: 'Template name',
       modelChainTemplateNamePlaceholder: 'For example: primary chain',
       modelChainTemplateSelect: 'Select template',
       modelChainTemplateSave: 'Save template',
       modelChainTemplateDelete: 'Delete template',
+      modelChainTemplateDeleteConfirm: 'Delete the template "{name}"? Only the template library is removed; roles that already used it are unchanged.',
+      modelChainTemplateDeleteAction: 'Delete',
       modelChainTemplateTargets: 'Apply to roles',
       matchingTemplates: 'Matches',
       noMatchingTemplate: 'No matching template',
@@ -465,6 +477,7 @@ window.__ModuleLoader__.load({
       modelChainTemplateRoute: 'Primary: {route}',
       modelChainTemplateInherit: 'inherit session',
       modelChainTemplateFallbacksOrdered: 'Fallbacks: {list}',
+      modelChainTemplateFallbackOrder: 'Fallback order (tried in order)',
       modelChainTemplateEmptyChain: 'The template has neither a primary model nor a fallback chain; it cannot be saved.',
       modelChainTemplatePartialRoute: 'Configure the provider and model together, or leave both empty.',
       modelChainTemplateNameRequired: 'Enter a template name first.',
@@ -472,7 +485,6 @@ window.__ModuleLoader__.load({
       modelChainTemplateNameExists: 'A template named "{name}" already exists; choose another name.',
       modelChainTemplateLimit: 'The template limit of {max} has been reached.',
       modelChainTemplatePick: 'Select a template first.',
-      modelChainTemplateSaveFirst: 'The template has unsaved changes; save it before applying it to roles.',
       modelChainTemplateCheckedNone: 'Check at least one role.',
       modelChainTemplateApplied: 'Applied the template to {count} roles; click Save above to write the configuration.',
       ruleHint: 'permanent reaches the prompt immediately; candidate waits for a repeat or confirmation here; session rules only live in the current Session and do not appear here.',
@@ -1869,21 +1881,24 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Named model-chain templates, editable without touching any role.
+     * Named model-chain templates with an explicit read/edit state.
      *
-     * The editor owns a local draft (name, primary route, ordered fallbacks) so
-     * a template can be created from nothing or loaded from the saved library
-     * and edited in place. `onChange` persists only the `modelChainTemplates`
-     * Config field. Applying a template is a local, route-only edit of the
-     * checked roles; the page's Save button writes those role routes, so an
-     * unrelated unsaved role draft is never published by this panel.
+     * A saved template is browsed read-only by default. The chain changes only
+     * through an explicit Edit / New template action, and the picker plus New
+     * are disabled while editing so a draft can never be replaced silently.
+     * Template CRUD persists through `onChange`, which writes only the
+     * `modelChainTemplates` Config field; applying a template is a local,
+     * route-only edit of the checked roles whose page Save writes the roles.
      */
     function ModelChainTemplatesPanel({ t, roles, templates, catalogPairs, effortLevels, busy, onChange, onRolesChange }) {
+      const [mode, setMode] = React.useState('view')
+      const [selectedName, setSelectedName] = React.useState('')
       const [draft, setDraft] = React.useState(emptyTemplateDraft)
       const [editingName, setEditingName] = React.useState('')
       const [checkedRoles, setCheckedRoles] = React.useState([])
       const [localError, setLocalError] = React.useState('')
       const [localNotice, setLocalNotice] = React.useState('')
+      const [deleteConfirm, setDeleteConfirm] = React.useState(false)
 
       const checkableRoles = Array.isArray(roles) ? roles : []
       const checkedSet = new Set(checkedRoles.filter(id => checkableRoles.some(role => role.id === id)))
@@ -1901,13 +1916,31 @@ window.__ModuleLoader__.load({
       const levels = Array.isArray(effortLevels) && effortLevels.length > 0
         ? effortLevels
         : ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
-      // A stale identity (deleted or renamed elsewhere) shows the empty picker
-      // entry instead of resetting the editor: the draft survives until New.
-      const pickerName = templates.some(item => item.name === editingName) ? editingName : ''
+      const selected = templates.find(item => item.name === selectedName) ?? null
+      const editing = mode === 'edit'
+      // While creating a new template the picker is locked and shows no name;
+      // editing an existing template keeps its identity visible but locked.
+      const pickerValue = editingName === '' ? (editing ? '' : (selected?.name ?? '')) : (selected?.name ?? '')
+
+      // Browse defaults to the first available saved template. While editing the
+      // draft is never touched by library changes, so a picker refresh cannot
+      // overwrite in-progress work.
+      React.useEffect(() => {
+        if (mode !== 'view') return
+        if (templates.some(item => item.name === selectedName)) return
+        setSelectedName(templates[0]?.name ?? '')
+      }, [mode, selectedName, templates])
 
       const fail = (message) => { setLocalNotice(''); setLocalError(message) }
       const done = (message) => { setLocalError(''); setLocalNotice(message) }
+      const clearMessages = () => { setLocalError(''); setLocalNotice('') }
       const patchDraft = (patch) => setDraft(current => ({ ...current, ...patch }))
+
+      /** Human-readable route used by the picker options and the read-only view. */
+      const routeLabelOf = (chain) => {
+        if (chain.provider === '' || chain.model === '') return t('modelChainTemplateInherit')
+        return `${chain.provider}/${chain.model}${chain.reasoningEffort === '' ? '' : ` · ${chain.reasoningEffort}`}`
+      }
 
       /** Normalize the draft the same way the persisted field is normalized. */
       const normalizeDraft = () => {
@@ -1926,20 +1959,26 @@ window.__ModuleLoader__.load({
       const startNew = () => {
         setDraft(emptyTemplateDraft())
         setEditingName('')
-        setLocalError('')
-        setLocalNotice('')
+        setDeleteConfirm(false)
+        setMode('edit')
+        clearMessages()
       }
 
-      const openTemplate = (name) => {
-        const found = templates.find(item => item.name === name)
-        if (found === undefined) {
-          startNew()
-          return
-        }
-        setDraft(templateDraftOf(found))
-        setEditingName(found.name)
-        setLocalError('')
-        setLocalNotice('')
+      const startEdit = () => {
+        if (selected === null) return
+        setDraft(templateDraftOf(selected))
+        setEditingName(selected.name)
+        setDeleteConfirm(false)
+        setMode('edit')
+        clearMessages()
+      }
+
+      const cancelEdit = () => {
+        setDraft(emptyTemplateDraft())
+        setEditingName('')
+        setDeleteConfirm(false)
+        setMode('view')
+        clearMessages()
       }
 
       /**
@@ -1948,6 +1987,7 @@ window.__ModuleLoader__.load({
        * A blank primary route is legal: it means "inherit the session route" and
        * is only rejected when the template also has no fallback chain. Renaming
        * an open template changes its identity; the new name must still be free.
+       * A successful save always returns to the read-only view.
        */
       const saveTemplate = async () => {
         const template = normalizeDraft()
@@ -1974,19 +2014,42 @@ window.__ModuleLoader__.load({
           ? [...templates, template]
           : templates.map(item => (item.name === openName ? template : item))
         if (await onChange(next) === false) return
-        setDraft(templateDraftOf(template))
-        setEditingName(template.name)
+        setDraft(emptyTemplateDraft())
+        setEditingName('')
+        setSelectedName(template.name)
+        setDeleteConfirm(false)
+        setMode('view')
         // The page-level "saved" banner reports the successful write.
         done('')
       }
 
+      const askDelete = () => {
+        if (selected === null) return fail(t('modelChainTemplatePick'))
+        setDeleteConfirm(true)
+        clearMessages()
+      }
+
+      const cancelDelete = () => setDeleteConfirm(false)
+
+      /**
+       * Delete the browsed template only after the named confirmation.
+       *
+       * A failed write keeps both the template and the browse selection. A
+       * successful write selects the next template, then the previous one, and
+       * leaves the empty state when the library becomes empty.
+       */
       const deleteTemplate = async () => {
-        if (editingName === '') return fail(t('modelChainTemplatePick'))
-        if (!templates.some(item => item.name === editingName)) return fail(t('modelChainTemplatePick'))
-        const next = templates.filter(item => item.name !== editingName)
-        if (await onChange(next) === false) return
-        setDraft(emptyTemplateDraft())
-        setEditingName('')
+        if (selected === null) return fail(t('modelChainTemplatePick'))
+        const index = templates.findIndex(item => item.name === selected.name)
+        const next = templates.filter(item => item.name !== selected.name)
+        if (await onChange(next) === false) {
+          setDeleteConfirm(false)
+          return
+        }
+        const neighbor = next[Math.min(index, next.length - 1)] ?? null
+        setDeleteConfirm(false)
+        setSelectedName(neighbor?.name ?? '')
+        setMode('view')
         done('')
       }
 
@@ -2025,26 +2088,38 @@ window.__ModuleLoader__.load({
       }
 
       /**
-       * Apply the saved template — never an unsaved draft — to checked roles.
+       * Apply the browsed (already saved) template to the checked roles.
        *
-       * This matches the documented flow: save first, then apply. The draft
-       * comparison also prevents a half-edited template from silently applying
-       * values the user has not stored yet.
+       * Browsing only shows persisted data, so there is no unsaved draft to
+       * apply. The edit state hides/disabled this action; saving is required
+       * before an edited chain can be applied.
        */
       const applyTemplate = () => {
-        if (editingName === '') return fail(t('modelChainTemplatePick'))
-        const saved = templates.find(item => item.name === editingName)
-        if (saved === undefined) return fail(t('modelChainTemplatePick'))
-        if (JSON.stringify(normalizeDraft()) !== JSON.stringify(saved)) {
-          return fail(t('modelChainTemplateSaveFirst'))
-        }
+        if (editing || selected === null) return fail(t('modelChainTemplatePick'))
         const targets = [...checkedSet]
         if (targets.length === 0) return fail(t('modelChainTemplateCheckedNone'))
-        const patch = chainPatchOf(saved)
+        const patch = chainPatchOf(selected)
         onRolesChange(current => current.map(role => (
           targets.includes(role.id) ? { ...role, ...patch } : role
         )))
         done(fill(t('modelChainTemplateApplied'), { count: targets.length }))
+      }
+
+      /** Group model options by provider so long catalogs stay readable. */
+      const groupedPairs = (list) => {
+        const groups = new Map()
+        for (const pair of list) {
+          const provider = String(pair.provider ?? '')
+          if (!groups.has(provider)) groups.set(provider, [])
+          groups.get(provider).push(pair)
+        }
+        return [...groups.entries()].map(([provider, routes]) => h('optgroup', {
+          key: provider,
+          label: provider,
+        }, routes.map(pair => h('option', {
+          key: pair.provider + '::' + pair.id,
+          value: pair.provider + '::' + pair.id,
+        }, pair.provider + '/' + pair.id + (pair.name ? ' — ' + pair.name : '')))))
       }
 
       /** One row of the ordered fallback editor. */
@@ -2078,10 +2153,7 @@ window.__ModuleLoader__.load({
               },
             }, [
               h('option', { key: 'none', value: '' }, t('fallbackNone')),
-              ...rowPairs.map(pair => h('option', {
-                key: pair.provider + '::' + pair.id,
-                value: pair.provider + '::' + pair.id,
-              }, pair.provider + '/' + pair.id + (pair.name ? ' — ' + pair.name : ''))),
+              ...groupedPairs(rowPairs),
             ]),
           ]),
           h('label', { key: 'effort', style: label }, [
@@ -2132,10 +2204,16 @@ window.__ModuleLoader__.load({
         primaryOptions.push({ id: draft.reasoningEffort, name: draft.reasoningEffort })
       }
 
+      const applyDisabled = busy || editing || selected === null || checkedSet.size === 0
+
       return h('div', { style: { ...panel, ...card } }, [
         h('div', { key: 'head', style: { ...row, flexWrap: 'wrap', gap: 8, justifyContent: 'space-between' } }, [
           h('strong', { key: 'title', style: { fontSize: 13 } }, t('modelChainTemplates')),
-          h('button', { key: 'new', type: 'button', style: button, disabled: busy, onClick: startNew }, t('modelChainTemplateNew')),
+          h('button', {
+            key: 'new', type: 'button', style: button,
+            disabled: busy || editing,
+            onClick: startNew,
+          }, t('modelChainTemplateNew')),
         ]),
         h('span', { key: 'hint', style: small }, t('modelChainTemplateHint')),
         templates.length === 0 ? h('span', { key: 'empty', style: small }, t('modelChainTemplateEmpty')) : null,
@@ -2145,85 +2223,116 @@ window.__ModuleLoader__.load({
             h('select', {
               key: 's',
               style: input,
-              value: pickerName,
+              value: pickerValue,
+              disabled: busy || editing || templates.length === 0,
               'aria-label': t('modelChainTemplateSelect'),
-              onChange: event => openTemplate(event.target.value),
+              onChange: event => {
+                if (editing) return
+                setSelectedName(event.target.value)
+                setDeleteConfirm(false)
+                clearMessages()
+              },
             }, [
               h('option', { key: 'none', value: '' }, t('modelChainTemplateNone')),
-              ...templates.map(item => h('option', { key: item.name, value: item.name }, item.name)),
+              ...templates.map(item => h('option', {
+                key: item.name,
+                value: item.name,
+              }, `${item.name} — ${routeLabelOf(item)}`)),
             ]),
           ]),
           h('button', {
-            key: 'delete', type: 'button', style: button,
-            disabled: busy || editingName === '',
-            onClick: deleteTemplate,
-          }, t('modelChainTemplateDelete')),
+            key: 'edit', type: 'button', style: primaryButton,
+            disabled: busy || editing || selected === null,
+            onClick: startEdit,
+          }, t('modelChainTemplateEdit')),
         ]),
-        h('div', { key: 'editor', style: { ...panel, gap: 10, paddingTop: 6, borderTop: '1px solid var(--dsw-alias-border-l1)' } }, [
-          h('div', { key: 'name-row', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 8, alignItems: 'end' } }, [
-            h('label', { key: 'name', style: label }, [
-              h('span', { key: 'l' }, t('modelChainTemplateName')),
-              h('input', {
-                key: 'i',
-                style: input,
-                value: draft.name,
-                placeholder: t('modelChainTemplateNamePlaceholder'),
-                'aria-label': t('modelChainTemplateName'),
-                onChange: event => patchDraft({ name: event.target.value }),
-              }),
-            ]),
-            h('button', {
-              key: 'save', type: 'button', style: primaryButton, disabled: busy,
-              onClick: saveTemplate,
-            }, t('modelChainTemplateSave')),
-          ]),
-          h('div', { key: 'primary', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1.4fr) minmax(0,1fr)', gap: 10 } }, [
-            h('label', { key: 'model', style: label }, [
-              h('span', { key: 'label' }, t('primaryModel')),
-              h('select', {
-                key: 'select',
-                style: input,
-                value: primaryValue,
-                'aria-label': t('primaryModel'),
-                onChange: event => {
-                  const [nextProvider = '', nextModel = ''] = event.target.value.split('::')
-                  patchDraft({ provider: nextProvider, model: nextModel, reasoningEffort: '' })
-                },
-              }, [
-                h('option', { key: 'inherit', value: '' }, t('modelChainTemplateInherit')),
-                ...primaryPairs.map(pair => h('option', {
-                  key: pair.provider + '::' + pair.id,
-                  value: pair.provider + '::' + pair.id,
-                }, pair.provider + '/' + pair.id + (pair.name ? ' — ' + pair.name : ''))),
+        editing
+          ? h('div', { key: 'editor', style: { ...panel, gap: 10, paddingTop: 6, borderTop: '1px solid var(--dsw-alias-border-l1)' } }, [
+              h('span', { key: 'editing-hint', style: small }, t('modelChainTemplateEditingHint')),
+              h('div', { key: 'name-row', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto', gap: 8, alignItems: 'end' } }, [
+                h('label', { key: 'name', style: label }, [
+                  h('span', { key: 'l' }, t('modelChainTemplateName')),
+                  h('input', {
+                    key: 'i',
+                    style: input,
+                    value: draft.name,
+                    placeholder: t('modelChainTemplateNamePlaceholder'),
+                    'aria-label': t('modelChainTemplateName'),
+                    onChange: event => patchDraft({ name: event.target.value }),
+                  }),
+                ]),
+                h('button', {
+                  key: 'save', type: 'button', style: primaryButton, disabled: busy,
+                  onClick: saveTemplate,
+                }, t('modelChainTemplateSave')),
+                h('button', {
+                  key: 'cancel', type: 'button', style: button, disabled: busy,
+                  onClick: cancelEdit,
+                }, t('modelChainTemplateCancel')),
               ]),
-            ]),
-            h('label', { key: 'effort', style: label }, [
-              h('span', { key: 'label' }, t('effort')),
-              h('select', {
-                key: 'select',
-                style: input,
-                value: draft.reasoningEffort ?? '',
-                disabled: primaryValue === '',
-                'aria-label': t('effort'),
-                onChange: event => patchDraft({ reasoningEffort: event.target.value }),
-              }, primaryOptions.map(option => h('option', { key: option.id, value: option.id }, option.name))),
-            ]),
-          ]),
-          h('div', { key: 'fallbacks', style: { ...panel, gap: 8 } }, [
-            h('div', { key: 'head', style: { ...row, justifyContent: 'space-between' } }, [
-              h('span', { key: 'title', style: { ...small, fontWeight: 600, color: 'var(--dsw-alias-label-primary)' } }, t('fallbacks')),
-              h('button', {
-                key: 'add', type: 'button', style: button,
-                disabled: draft.fallbacks.length >= MAX_MODEL_CHAIN_FALLBACKS,
-                onClick: addFallback,
-              }, '＋ ' + t('addFallback')),
-            ]),
-            draft.fallbacks.length === 0
-              ? h('span', { key: 'empty', style: small }, t('fallbackEmpty'))
-              : draft.fallbacks.map((entry, index) => fallbackRow(entry, index)),
-          ]),
-          h('span', { key: 'preview', style: small }, chainSummary(normalizeDraft(), t)),
-        ]),
+              h('div', { key: 'primary', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1.4fr) minmax(0,1fr)', gap: 10 } }, [
+                h('label', { key: 'model', style: label }, [
+                  h('span', { key: 'label' }, t('primaryModel')),
+                  h('select', {
+                    key: 'select',
+                    style: input,
+                    value: primaryValue,
+                    'aria-label': t('primaryModel'),
+                    onChange: event => {
+                      const [nextProvider = '', nextModel = ''] = event.target.value.split('::')
+                      patchDraft({ provider: nextProvider, model: nextModel, reasoningEffort: '' })
+                    },
+                  }, [
+                    h('option', { key: 'inherit', value: '' }, t('modelChainTemplateInherit')),
+                    ...groupedPairs(primaryPairs),
+                  ]),
+                ]),
+                h('label', { key: 'effort', style: label }, [
+                  h('span', { key: 'label' }, t('effort')),
+                  h('select', {
+                    key: 'select',
+                    style: input,
+                    value: draft.reasoningEffort ?? '',
+                    disabled: primaryValue === '',
+                    'aria-label': t('effort'),
+                    onChange: event => patchDraft({ reasoningEffort: event.target.value }),
+                  }, primaryOptions.map(option => h('option', { key: option.id, value: option.id }, option.name))),
+                ]),
+              ]),
+              h('div', { key: 'fallbacks', style: { ...panel, gap: 8 } }, [
+                h('div', { key: 'head', style: { ...row, justifyContent: 'space-between' } }, [
+                  h('span', { key: 'title', style: { ...small, fontWeight: 600, color: 'var(--dsw-alias-label-primary)' } }, t('fallbacks')),
+                  h('button', {
+                    key: 'add', type: 'button', style: button,
+                    disabled: draft.fallbacks.length >= MAX_MODEL_CHAIN_FALLBACKS,
+                    onClick: addFallback,
+                  }, '＋ ' + t('addFallback')),
+                ]),
+                draft.fallbacks.length === 0
+                  ? h('span', { key: 'empty', style: small }, t('fallbackEmpty'))
+                  : draft.fallbacks.map((entry, index) => fallbackRow(entry, index)),
+              ]),
+              h('span', { key: 'preview', style: small }, chainSummary(normalizeDraft(), t)),
+            ])
+          : selected === null
+            ? null
+            : h('div', { key: 'view', style: { ...panel, gap: 6, paddingTop: 6, borderTop: '1px solid var(--dsw-alias-border-l1)' } }, [
+                h('div', { key: 'title-row', style: { ...row, flexWrap: 'wrap', gap: 8 } }, [
+                  h('strong', { key: 'name', style: { fontSize: 13 } }, selected.name),
+                  h('span', {
+                    key: 'readonly',
+                    style: { ...small, fontSize: 10, padding: '1px 7px', borderRadius: 999, background: 'var(--dsw-alias-bg-layer-2)' },
+                  }, t('modelChainTemplateReadOnly')),
+                ]),
+                h('span', { key: 'route', style: small }, fill(t('modelChainTemplateRoute'), { route: routeLabelOf(selected) })),
+                h('span', { key: 'order-title', style: { ...small, fontWeight: 600, color: 'var(--dsw-alias-label-primary)' } }, t('modelChainTemplateFallbackOrder')),
+                selected.fallbacks.length === 0
+                  ? h('span', { key: 'no-fallbacks', style: small }, t('fallbackEmpty'))
+                  : h('div', { key: 'order', style: { display: 'grid', gap: 2 } }, selected.fallbacks.map((route, index) => h('span', {
+                      key: index,
+                      style: small,
+                    }, `${index + 1}. ${route.provider}/${route.model}${route.reasoningEffort === '' ? '' : ` · ${route.reasoningEffort}`}`))),
+              ]),
         h('div', {
           key: 'targets',
           style: { ...panel, gap: 6, paddingTop: 6, borderTop: '1px solid var(--dsw-alias-border-l1)' },
@@ -2251,12 +2360,42 @@ window.__ModuleLoader__.load({
           ]))),
           h('div', { key: 'actions', style: { ...row, flexWrap: 'wrap', gap: 8 } }, [
             h('button', {
-              key: 'apply', type: 'button', style: primaryButton, disabled: busy,
+              key: 'apply', type: 'button', style: primaryButton, disabled: applyDisabled,
               onClick: applyTemplate,
             }, t('modelChainTemplateApply')),
             h('span', { key: 'count', style: small }, fill(t('modelChainTemplateCheckedCount'), { count: checkedSet.size })),
           ]),
         ]),
+        // Deletion is deliberately secondary: a quiet action at the bottom that
+        // always asks for the named template before writing the library.
+        !editing && selected !== null
+          ? h('div', { key: 'delete-zone', style: { ...row, justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, paddingTop: 6 } },
+              deleteConfirm
+                ? [
+                    h('span', {
+                      key: 'text',
+                      style: { ...small, color: 'var(--dsw-alias-state-error-primary)', maxWidth: 520 },
+                    }, fill(t('modelChainTemplateDeleteConfirm'), { name: selected.name })),
+                    h('button', {
+                      key: 'confirm', type: 'button',
+                      style: { ...button, color: 'var(--dsw-alias-state-error-primary)', borderColor: 'var(--dsw-alias-state-error-primary)' },
+                      disabled: busy,
+                      onClick: deleteTemplate,
+                    }, t('modelChainTemplateDeleteAction')),
+                    h('button', {
+                      key: 'cancel', type: 'button', style: button, disabled: busy,
+                      onClick: cancelDelete,
+                    }, t('modelChainTemplateCancel')),
+                  ]
+                : [
+                    h('button', {
+                      key: 'ask', type: 'button',
+                      style: { ...button, background: 'transparent', borderColor: 'transparent', color: 'var(--dsw-alias-label-secondary)', fontSize: 12, padding: '4px 6px' },
+                      disabled: busy,
+                      onClick: askDelete,
+                    }, t('modelChainTemplateDelete')),
+                  ])
+          : null,
         localError !== '' ? h('div', { key: 'error', style: banner('state-error') }, localError) : null,
         // Keep the page-level success banner as the only `banner('state-success')`
         // in this section; this line is panel-local feedback, not a save notice.
