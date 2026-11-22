@@ -933,6 +933,25 @@ test('an existing template is edited directly, renamed, and deleted', async (t) 
   assert.equal(templateNameInput(view.panelTree).props.value, '')
 })
 
+test('role rows show all exact chain matches, not just the primary model or selected template', async (t) => {
+  mockCatalog(t)
+  const a = { provider: 'p', model: 'a', reasoningEffort: 'high' }
+  const b = { provider: 'q', model: 'b', reasoningEffort: 'low' }
+  const data = baseValue({ roles: [
+    { id: 'dev', name: 'Dev', fallbacks: [a, b] },
+    { id: 'qa', name: 'QA', fallbacks: [b, a] },
+    { id: 'se', name: 'SE', fallbackProvider: 'p', fallbackModel: 'a', fallbackReasoningEffort: 'high' },
+    { id: 'pm', name: 'PM', fallbacks: [{ ...a, reasoningEffort: 'low' }] },
+  ], modelChainTemplates: [{ name: 'Daily', fallbacks: [a, b] }, { name: 'Twin', fallbacks: [a, b] }, { name: 'Single', fallbacks: [a] }] })
+  const mounted = await mountSection(createReactHarness(), { describe: () => namespaceView(data, 1) })
+  const { panelTree } = await renderTemplatesPanel(mounted)
+  const row = id => textOf(findOne(panelTree, el => el.type === 'label' && textOf(el).includes(`(${id})`), id))
+  assert.match(row('dev'), /matchingTemplates: Daily \/ Twin/)
+  assert.match(row('qa'), /noMatchingTemplate/)
+  assert.match(row('se'), /matchingTemplates: Single/)
+  assert.match(row('pm'), /noMatchingTemplate/)
+})
+
 test('applying a template keeps the save-first flow and only touches checked role routes', async (t) => {
   mockCatalog(t)
   const roles = [

@@ -217,6 +217,8 @@ window.__ModuleLoader__.load({
       modelChainTemplateSave: '保存模板',
       modelChainTemplateDelete: '删除模板',
       modelChainTemplateTargets: '应用到的角色',
+      matchingTemplates: '匹配模板',
+      noMatchingTemplate: '无匹配模板',
       modelChainTemplateApply: '应用到勾选角色',
       modelChainTemplateCheckedCount: '已选 {count} 个角色',
       modelChainTemplateNone: '未选择模板',
@@ -455,6 +457,8 @@ window.__ModuleLoader__.load({
       modelChainTemplateSave: 'Save template',
       modelChainTemplateDelete: 'Delete template',
       modelChainTemplateTargets: 'Apply to roles',
+      matchingTemplates: 'Matches',
+      noMatchingTemplate: 'No matching template',
       modelChainTemplateApply: 'Apply to checked roles',
       modelChainTemplateCheckedCount: '{count} roles checked',
       modelChainTemplateNone: 'No template selected',
@@ -621,6 +625,18 @@ window.__ModuleLoader__.load({
       return routes
     }
 
+    // Match configured routes, not application history: templates are copied, not bound.
+    function effectiveChainFallbacks(chain) {
+      const list = chainFallbacks(chain.fallbacks)
+      return list.length ? list : chainFallbacks([{
+        provider: chain.fallbackProvider, model: chain.fallbackModel, reasoningEffort: chain.fallbackReasoningEffort,
+      }])
+    }
+
+    function chainKey(chain) {
+      return JSON.stringify([chainText(chain.provider), chainText(chain.model), chainText(chain.reasoningEffort), effectiveChainFallbacks(chain)])
+    }
+
     /** Normalize the persisted `modelChainTemplates` field into the editor shape. */
     function normalizeModelChainTemplates(input) {
       const templates = []
@@ -637,22 +653,13 @@ window.__ModuleLoader__.load({
         const paired = provider !== '' && model !== ''
         // Older templates may still carry the single fallbackProvider/Model pair
         // with no ordered list; keep that route instead of dropping it.
-        const fallbacks = chainFallbacks(candidate.fallbacks)
-        const legacy = fallbacks.length === 0
-          && chainText(candidate.fallbackProvider) !== ''
-          && chainText(candidate.fallbackModel) !== ''
-          ? [{
-              provider: chainText(candidate.fallbackProvider),
-              model: chainText(candidate.fallbackModel),
-              reasoningEffort: chainText(candidate.fallbackReasoningEffort),
-            }]
-          : fallbacks
+        const fallbacks = effectiveChainFallbacks(candidate)
         templates.push({
           name,
           provider: paired ? provider : '',
           model: paired ? model : '',
           reasoningEffort: paired ? chainText(candidate.reasoningEffort) : '',
-          fallbacks: legacy,
+          fallbacks,
         })
         if (templates.length >= MAX_MODEL_CHAIN_TEMPLATES) break
       }
@@ -1880,6 +1887,16 @@ window.__ModuleLoader__.load({
 
       const checkableRoles = Array.isArray(roles) ? roles : []
       const checkedSet = new Set(checkedRoles.filter(id => checkableRoles.some(role => role.id === id)))
+      const matchingNames = new Map()
+      for (const template of templates) {
+        const key = chainKey(template)
+        if (!matchingNames.has(key)) matchingNames.set(key, [])
+        matchingNames.get(key).push(template.name)
+      }
+      const matchLabel = role => {
+        const names = matchingNames.get(chainKey(role))
+        return names ? `${t('matchingTemplates')}: ${names.join(' / ')}` : t('noMatchingTemplate')
+      }
       const pairs = Array.isArray(catalogPairs) ? catalogPairs : []
       const levels = Array.isArray(effortLevels) && effortLevels.length > 0
         ? effortLevels
@@ -2227,7 +2244,10 @@ window.__ModuleLoader__.load({
               'aria-label': role.id,
               onChange: () => toggleRole(role.id),
             }),
-            h('span', { key: 'text', style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, `${role.name || role.id} (${role.id})`),
+            h('span', { key: 'details', style: { display: 'grid', minWidth: 0, overflowWrap: 'anywhere' } }, [
+              h('span', { key: 'text' }, `${role.name || role.id} (${role.id})`),
+              h('small', { key: 'match', style: small }, matchLabel(role)),
+            ]),
           ]))),
           h('div', { key: 'actions', style: { ...row, flexWrap: 'wrap', gap: 8 } }, [
             h('button', {
