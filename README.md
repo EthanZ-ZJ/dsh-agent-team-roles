@@ -263,6 +263,16 @@ await roles.remove('reviewer')
 
 The service is deliberately a "trusted plugin API" and does not verify the calling Agent. Agent-side writes should go through the tools above, where scopes separate the Lead from members. Writes persist through the live config editor and show up in Settings.
 
+## Keeping the Lead out of implementation
+
+A Team Lead orchestrates; it must not edit files, run shells, or execute code itself. The plugin enforces this on the Lead's tool layer:
+
+- **hide** (default) — `write`, `edit`, `apply_patch`, `pwsh`, `bash`, `run_code`, `subagent`, and `subagent_fork` are removed from the Lead's visible tool list, so the model never reaches for them.
+- **deny** — the tools stay visible, but every call is refused with a message naming the teammates that can take the work and the routing tools (`spawn_team_member` / `send_message`).
+- **off** — no restriction.
+
+`run_code` and scoped tools cannot be hidden, so a guard covers them in both modes. The guard also reads the policy live: switching to `deny` or `off` in Settings applies on the next tool call, while the hidden list itself needs a plugin reload. Read-only tools (`read`, `grep`, `glob`) stay available for checking a report or diff. Extra tool names can be appended in Settings → Engine → Lead tool policy; non-Team sessions are unaffected.
+
 ## Learned rules
 
 The Team Lead has its own rule bucket, id `lead`. Say "from now on, X" to the Lead and it records that with `remember_role_rule` (or `record_role_feedback` with `role: "lead"`); the rule is rendered into the Lead's own prompt on the next step and can be reviewed, promoted, or retired in the **Rules** tab of Settings, where `lead` appears after the spawnable roles and a new rule still defaults to a real role. The Lead's rule tools and prompt section work in any session where the agent is the official Team Lead, even when the session preset is not `team-lead`; the role catalog and spawn tooling stay preset-gated. This is separate from a role's rules: a Lead rule governs how the Lead itself works, never a teammate.

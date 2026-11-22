@@ -443,7 +443,15 @@ test('manually adding and editing a gate stays local until engine save', async (
   await findButton(await mounted.harness.render(mounted.page), 'save').props.onClick()
   assert.equal(mounted.state.mutateCalls.length, 1)
   const ops = mounted.state.mutateCalls[0][1]
-  assert.deepEqual(ops.map((op) => op.path[0]), ['leadPlaybook', 'activeTemplate', 'freshProvider', 'forkProvider', 'gates', 'gatesDisabled'])
+  assert.deepEqual(ops.map((op) => op.path[0]), ['leadPlaybook', 'leadToolMode', 'leadToolDeny', 'activeTemplate', 'freshProvider', 'forkProvider', 'gates', 'gatesDisabled'])
+  const modeOp = ops.find((op) => op.path[0] === 'leadToolMode')
+  assert.equal(modeOp.value, 'hide', 'the Lead tool policy defaults to hiding implementation tools')
+  const denyOp = ops.find((op) => op.path[0] === 'leadToolDeny')
+  assert.deepEqual(denyOp.value, [], 'the extra deny list starts empty and is written as an array')
+  const modeSelect = findOne(panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'leadToolMode')
+  assert.deepEqual(modeSelect.children.map((option) => option.props.value), ['hide', 'deny', 'off'])
+  assert.equal(modeSelect.props.value, 'hide', 'the panel starts on the recommended policy')
+  assert.ok(findOne(panel, (element) => element.type === 'input' && element.props?.['aria-label'] === 'leadToolDeny'), 'extra denied tools are editable')
   assert.deepEqual(hostValue.gates, [VALID_GATE, VALID_GATE_2])
 })
 

@@ -18,7 +18,8 @@ import z from '@deepseek-ai/schemastery'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { LEAD_ROLE_ID, findRole, mergeRoles, readConfig, roleFallbacks, roleForTarget } from './config.js'
-import { activeMembers, leadCatalog, leadMemoryGuide, memberPersona } from './prompts.js'
+import { activeMembers, leadCatalog, leadMemoryGuide, leadRoutingGuide, memberPersona } from './prompts.js'
+import { leadDelegateReason, leadToolPolicy } from './lead-policy.js'
 import { evaluateDeny } from './policy.js'
 import {
   GateSchema,
@@ -187,6 +188,10 @@ export const Config = z.object({
   modelChainTemplates: z.array(ModelChainTemplateSchema).default([]).volatile()
     .description('Named model-chain templates saved from the Settings page; each bundles a primary route and ordered fallbacks for applying to roles.'),
   rules: z.array(RuleSchema).default([]).volatile().description('Learned standing rules.'),
+  leadToolMode: z.string().default('hide').volatile()
+    .description('Team Lead tool policy: hide (remove implementation tools), deny (keep them visible but refuse with a routing reminder), or off.'),
+  leadToolDeny: z.array(z.string()).default([]).volatile()
+    .description('Extra tool names the Team Lead may not call, appended to the built-in implementation list.'),
   freshProvider: z.string().default('spawn').volatile().description('Subagent backend for fresh teammates.'),
   forkProvider: z.string().default('fork').volatile().description('Subagent backend for forked teammates.'),
   leadPlaybook: z.string().default('').volatile()
@@ -589,7 +594,7 @@ export function apply(ctx, config) {
 
     try {
       if (membership.role === 'lead') {
-        const applied = installLead({ scoped, register, tools, ctx, snapshots, roles: rolesReader, ruleStore, agent, playbook: leadPlaybook, gateSummary: gateSummaryFor })
+        const applied = installLead({ scoped, register, tools, ctx, config, snapshots, roles: rolesReader, ruleStore, agent, playbook: leadPlaybook, gateSummary: gateSummaryFor })
         // A Lead whose session preset is not resolved yet (early `agent/created`)
         // installs nothing; do not mark it installed, so the pre-step backstop
         // retries once the session context is complete.
@@ -1193,8 +1198,55 @@ function hasResolvedPreset(agent, ctx) {
 /** Lead tools that record, list, and retire Lead memory; not Team-preset features. */
 const LEAD_MEMORY_TOOLS = ['record_role_feedback', 'list_role_rules', 'forget_role_rule']
 
+/**
+ * Keep the Lead out of implementation work.
+ *
+ * `hide` removes the global implementation tools from the Lead's visible tool
+ * list, so the model never sees them. Scoped tools and the reserved `run_code`
+ * transport cannot be restricted, so a guard turns every remaining call into a
+ * model-facing reminder to route the work to a role. The policy is read live, so
+ * switching it to `deny` or `off` in Settings applies on the next tool call.
+ */
+export function installLeadToolPolicy({ scoped, register, ctx, agent, config }) {
+  const live = () => leadToolPolicy({
+    mode: readConfig(config, 'leadToolMode'),
+    deny: readConfig(config, 'leadToolDeny'),
+  })
+  const initial = live()
+  if (initial.mode === 'off') return
+  if (initial.mode === 'hide') {
+    for (const name of initial.names) {
+      try {
+        // One name at a time: a tool this deployment does not mount, a scoped
+        // tool, or the reserved transport name throws and is left to the guard.
+        register(scoped.tools.restrict({ deny: [name] }))
+      } catch {
+        // Not a restrictable global tool here; the guard below still denies it.
+      }
+    }
+  }
+  register(scoped.tools.guard((exec) => {
+    const policy = live()
+    if (policy.mode === 'off' || !policy.names.has(exec.name)) return undefined
+    let teammates = []
+    try {
+      teammates = ctx.agentTeams.listMembers(agent)
+        .filter((member) => member.role === 'teammate')
+        .map((member) => member.name)
+    } catch {
+      teammates = []
+    }
+    return leadDelegateReason(exec.name, teammates)
+  }))
+  register(scoped.systemPrompt.section({
+    name: 'agent-team-roles:lead-routing',
+    order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY') + 7,
+    text: () => (live().mode === 'off' ? '' : leadRoutingGuide()),
+  }))
+}
+
 /** Install the Lead's role catalog, tools, and the official-spawn guard. */
-function installLead({ scoped, register, tools, ctx, snapshots, roles, ruleStore, agent, playbook, gateSummary }) {
+function installLead({ scoped, register, tools, ctx, config, snapshots, roles, ruleStore, agent, playbook, gateSummary }) {
   // Lead memory: standing rules about how the Lead itself works ("from now on,
   // ask before deleting"). They apply wherever this Agent is the official Team
   // Lead, even when the session preset is not `team-lead`: a resumed roster
@@ -1278,6 +1330,7 @@ function installLead({ scoped, register, tools, ctx, snapshots, roles, ruleStore
   for (const definition of tools.lead) {
     if (!LEAD_MEMORY_TOOLS.includes(definition.name)) register(scoped.tools.register(definition))
   }
+  installLeadToolPolicy({ scoped, register, ctx, agent, config })
   register(scoped.tools.guard((exec) => {
     if (exec.name !== 'spawn_teammate') return undefined
     return 'The official spawn_teammate tool is disabled in this Team. Use spawn_team_member with a configured role instead.'

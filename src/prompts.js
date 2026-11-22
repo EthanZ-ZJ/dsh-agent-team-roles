@@ -133,6 +133,26 @@ export function leadMemoryGuide() {
   ].join('\n')
 }
 
+/**
+ * Why the Lead has no implementation tools and where the work goes instead.
+ *
+ * A hidden tool cannot explain itself, so the routing rule has to be present
+ * before the model reaches for a workaround.
+ */
+export function leadRoutingGuide() {
+  return [
+    '## Do not implement — route to the role that owns it',
+    '',
+    'You have no file-write, shell, or code-execution tools: they are removed from your tool list on purpose. A missing tool is not a problem to work around.',
+    '',
+    '- Implementation and fixes → `spawn_team_member` with the role that owns it, or `send_message` to that existing member. The configured role list above names the actual ids.',
+    '- Tests, regression, and acceptance → the test role; review → the review role; requirements → the product role; architecture and contracts → the architecture role; release → the release role.',
+    '- `read`, `grep`, and `glob` are for checking a report or a diff, not for making changes.',
+    '',
+    'If you catch yourself looking for a way around this — `run_code`, `subagent`, a background job, a scheduled command, or another agent\'s tool — stop and delegate instead. Report what you dispatched, not what you changed.',
+  ].join('\n')
+}
+
 /** Render a compact rule list for tool results. */
 export function ruleSummary(roleId, rules) {
   if (rules.length === 0) return `role "${roleId}" has no learned rules`

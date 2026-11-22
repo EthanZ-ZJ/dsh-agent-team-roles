@@ -1,6 +1,17 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { activeMembers, leadCatalog, leadMemoryGuide, memberPersona } from '../src/prompts.js'
+import { activeMembers, leadCatalog, leadMemoryGuide, leadRoutingGuide, memberPersona } from '../src/prompts.js'
+
+test('the Lead routing guide forbids implementation and names the delegation path', () => {
+  const text = leadRoutingGuide()
+  assert.match(text, /Do not implement/)
+  assert.match(text, /spawn_team_member/)
+  assert.match(text, /send_message/)
+  assert.match(text, /test role/)
+  assert.match(text, /run_code/)
+  assert.match(text, /subagent/)
+  assert.match(text, /stop and delegate/)
+})
 
 test('the Lead memory guide routes rules to the profile and facts to project memory', () => {
   const text = leadMemoryGuide()

@@ -259,6 +259,16 @@ await roles.remove('reviewer')
 
 该服务刻意按“受信任插件 API”设计，不校验调用方 Agent 身份。Agent 侧写入应走上面的工具，由作用域区分 Lead 与成员。写入通过实时配置编辑器持久化，并会出现在设置页。
 
+## 让 Lead 不亲自干活
+
+Team Lead 只做编排，不应自己改文件、跑命令或执行代码。插件在 Lead 的工具层强制这一点：
+
+- **hide（默认）**——从 Lead 的可见工具清单里移除 `write`、`edit`、`apply_patch`、`pwsh`、`bash`、`run_code`、`subagent`、`subagent_fork`，模型根本看不到这些工具。
+- **deny**——工具仍可见，但每次调用都被拒绝，并在拒绝理由里点名可接手的成员和路由工具（`spawn_team_member` / `send_message`）。
+- **off**——不限制。
+
+`run_code` 和 scoped 工具无法隐藏，两种模式下都由 guard 兜住。guard 实时读取策略：在设置里切到 `deny` 或 `off` 下一次工具调用就生效，而隐藏清单本身需要重载插件。`read`、`grep`、`glob` 等只读工具保留，用于核对报告或 diff。可在 设置 → 引擎 → Lead 工具策略 里追加额外工具名；非 Team 会话不受影响。
+
 ## 学到的规则
 
 Team Lead 有自己的规则桶，id 为 `lead`。对 Lead 说「以后都 X」时，它会用 `remember_role_rule`（或 `record_role_feedback`，`role: "lead"`）记录；规则在下一步就渲染进 Lead 自己的提示词，并可在设置页「规则」标签中查看、确认或退役——`lead` 排在可召唤角色之后，新建规则默认仍选真实角色。只要该 Agent 是官方 Team Lead，记录工具与提示词段就生效，即使会话 preset 不是 `team-lead`（角色目录与拉取能力仍按 preset 门控）。它与角色规则分开：Lead 规则约束 Lead 自己的工作方式，不会作用于任何成员。

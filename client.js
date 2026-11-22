@@ -24,6 +24,13 @@ window.__ModuleLoader__.load({
       denyCommands: '命令拒绝策略',
       denyHint: '示例：\\bgit\\s+push\\b, \\bnpm\\s+publish\\b —— 该角色调用 bash/pwsh 且命令命中任一正则即被拒绝（≤20 条、单条 ≤200 字符）。',
       leadPlaybook: 'Lead 编排 playbook',
+      leadToolMode: 'Lead 工具策略',
+      leadToolModeHint: 'hide：从 Lead 的工具清单里移除实现类工具（write/edit/pwsh 等），模型看不到；deny：保留可见但调用时拒绝并提醒交给对应角色；off：不限制。改 hide/deny 需重载插件后完全生效。',
+      leadToolModeHide: '隐藏实现工具（推荐）',
+      leadToolModeDeny: '保留但拒绝并提醒',
+      leadToolModeOff: '不限制',
+      leadToolDeny: '额外禁止的工具',
+      leadToolDenyHint: '逗号分隔的工具名，追加到内置清单（write、edit、apply_patch、pwsh、bash、run_code、subagent、subagent_fork）。',
       playbookPlaceholder: '示例：\n分工与流程：\n- 需求与体验取舍 → pm\n- 跨模块改动 → 先出契约并评审，Lead 拍板\n- diff 完成后 → 静态检视与动态测试并行派发，不互相等待\n- 缺陷处理：报告给 Lead → 派回实现者修复 → 修复后重新检视',
       activeTemplate: '当前模板 ID',
       templateHint: '用 /team-template list 查看可用模板；apply 后此处自动填入。',
@@ -270,6 +277,13 @@ window.__ModuleLoader__.load({
       denyCommands: 'Denied commands',
       denyHint: 'Example: \\bgit\\s+push\\b, \\bnpm\\s+publish\\b — matching bash/pwsh commands are denied for this role (at most 20 patterns of 200 characters).',
       leadPlaybook: 'Lead orchestration playbook',
+      leadToolMode: 'Lead tool policy',
+      leadToolModeHint: 'hide removes implementation tools (write/edit/pwsh, ...) from the Lead\'s tool list; deny keeps them visible but refuses each call with a routing reminder; off disables the policy. Reload the plugin for hide/deny to take full effect.',
+      leadToolModeHide: 'Hide implementation tools (recommended)',
+      leadToolModeDeny: 'Keep but refuse with a reminder',
+      leadToolModeOff: 'Unrestricted',
+      leadToolDeny: 'Extra denied tools',
+      leadToolDenyHint: 'Comma-separated tool names appended to the built-in list (write, edit, apply_patch, pwsh, bash, run_code, subagent, subagent_fork).',
       playbookPlaceholder: 'Example:\nWorkflow:\n- requirements and UX trade-offs -> pm\n- cross-module changes -> draft a contract and review before the Lead decides\n- after the diff -> static review and dynamic testing in parallel, never waiting on each other\n- defects -> report to the Lead -> back to the implementer -> re-review',
       activeTemplate: 'Active template id',
       templateHint: 'Run /team-template list to see available ids; apply fills this automatically.',
@@ -1090,6 +1104,8 @@ window.__ModuleLoader__.load({
         const gatesBaselineRef = React.useRef('[]')
         const [engine, setEngine] = React.useState({
           leadPlaybook: '',
+          leadToolMode: 'hide',
+          leadToolDeny: '',
           activeTemplate: '',
           freshProvider: 'spawn',
           forkProvider: 'fork',
@@ -1111,6 +1127,8 @@ window.__ModuleLoader__.load({
           setTemplates(normalizeModelChainTemplates(view.value?.modelChainTemplates))
           setEngine({
             leadPlaybook: typeof view.value?.leadPlaybook === 'string' ? view.value.leadPlaybook : '',
+            leadToolMode: ['hide', 'deny', 'off'].includes(view.value?.leadToolMode) ? view.value.leadToolMode : 'hide',
+            leadToolDeny: Array.isArray(view.value?.leadToolDeny) ? view.value.leadToolDeny.join(', ') : '',
             activeTemplate: typeof view.value?.activeTemplate === 'string' ? view.value.activeTemplate : '',
             freshProvider: typeof view.value?.freshProvider === 'string' && view.value.freshProvider !== '' ? view.value.freshProvider : 'spawn',
             forkProvider: typeof view.value?.forkProvider === 'string' && view.value.forkProvider !== '' ? view.value.forkProvider : 'fork',
@@ -1367,6 +1385,8 @@ window.__ModuleLoader__.load({
               .filter((id) => gateIds.has(id))
             const fields = [
               { field: 'leadPlaybook', value: engine.leadPlaybook },
+              { field: 'leadToolMode', value: ['hide', 'deny', 'off'].includes(engine.leadToolMode) ? engine.leadToolMode : 'hide' },
+              { field: 'leadToolDeny', value: String(engine.leadToolDeny ?? '').split(',').map((name) => name.trim()).filter((name) => name !== '') },
               { field: 'activeTemplate', value: engine.activeTemplate },
               { field: 'freshProvider', value: engine.freshProvider.trim() || 'spawn' },
               { field: 'forkProvider', value: engine.forkProvider.trim() || 'fork' },
@@ -1544,6 +1564,35 @@ window.__ModuleLoader__.load({
             }),
             h('span', { key: 'hint', style: small }, t('templateHint')),
           ]),
+        ]),
+        h('div', { key: 'lead-tools', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 12 } }, [
+          h('label', { key: 'mode', style: label }, [
+            h('span', { key: 'l' }, t('leadToolMode')),
+            h('select', {
+              key: 'i',
+              style: input,
+              value: engine.leadToolMode,
+              'aria-label': t('leadToolMode'),
+              onChange: (event) => edit({ leadToolMode: event.target.value }),
+            }, [
+              h('option', { key: 'hide', value: 'hide' }, t('leadToolModeHide')),
+              h('option', { key: 'deny', value: 'deny' }, t('leadToolModeDeny')),
+              h('option', { key: 'off', value: 'off' }, t('leadToolModeOff')),
+            ]),
+          ]),
+          h('label', { key: 'deny', style: label }, [
+            h('span', { key: 'l' }, t('leadToolDeny')),
+            h('input', {
+              key: 'i',
+              style: input,
+              value: engine.leadToolDeny,
+              'aria-label': t('leadToolDeny'),
+              placeholder: 'desktop_click, schedule_create',
+              onChange: (event) => edit({ leadToolDeny: event.target.value }),
+            }),
+          ]),
+          h('span', { key: 'hint', style: { ...small, alignSelf: 'end', gridColumn: '1 / -1' } }, t('leadToolModeHint')),
+          h('span', { key: 'deny-hint', style: { ...small, gridColumn: '1 / -1' } }, t('leadToolDenyHint')),
         ]),
         h('div', { key: 'backends', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 12 } }, [
           h('label', { key: 'fresh', style: label }, [
