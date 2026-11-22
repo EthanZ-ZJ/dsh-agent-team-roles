@@ -688,9 +688,50 @@ test('skill preview reveals the selected skill through the host route only on cl
 })
 
 // ---------------------------------------------------------------------------
-// Model chain templates: named routes, saved separately, applied to checked
-// roles only (and only to routing fields).
+// Model chain templates: edited independently of any role, saved separately,
+// and applied to checked roles only (and only to routing fields).
 // ---------------------------------------------------------------------------
+
+/** Catalog routes/efforts behind the template editor's selects. */
+function templateCatalog() {
+  return [
+    { provider: 'p', id: 'main', name: 'Main', efforts: [{ id: 'high', name: 'High' }, { id: 'low', name: 'Low' }], defaultEffort: 'high' },
+    { provider: 'p', id: 'backup', name: 'Backup', efforts: [{ id: 'low', name: 'Low' }], defaultEffort: 'low' },
+    { provider: 'q', id: 'alt', name: 'Alt', efforts: [{ id: 'medium', name: 'Medium' }], defaultEffort: 'medium' },
+    { provider: 'x', id: 'chain', name: 'Chain', efforts: [{ id: 'max', name: 'Max' }], defaultEffort: 'max' },
+    ...Array.from({ length: 8 }, (_, index) => ({
+      provider: 'se-a',
+      id: `backup-${index + 1}`,
+      name: `SE backup ${index + 1}`,
+      efforts: [{ id: 'high', name: 'High' }],
+      defaultEffort: 'high',
+    })),
+  ]
+}
+
+/** Mock the role model catalog (and its non-essential routes) for one test. */
+function mockCatalog(t) {
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    if (url === '/agent-team-roles/model-catalog') {
+      return {
+        ok: true,
+        json: async () => ({
+          routes: templateCatalog(),
+          efforts: [
+            { id: 'high', name: 'High' },
+            { id: 'low', name: 'Low' },
+            { id: 'medium', name: 'Medium' },
+            { id: 'max', name: 'Max' },
+          ],
+        }),
+      }
+    }
+    if (String(url).startsWith('/agent-team-roles/role-skills')) {
+      return { ok: false, json: async () => ({}) }
+    }
+    return { ok: true, json: async () => ({ routes: templateCatalog() }) }
+  })
+}
 
 /** Re-render the Settings page down to the ModelChainTemplatesPanel. */
 async function renderTemplatesPanel(mounted) {
@@ -718,6 +759,15 @@ function templateSelect(tree) {
   )
 }
 
+/** Find one editor select by its aria-label (primary route, fallback row, ...). */
+function ariaSelect(tree, label) {
+  return findOne(
+    tree,
+    (element) => element.type === 'select' && element.props?.['aria-label'] === label,
+    `select "${label}" must render`,
+  )
+}
+
 /** Evaluate chainSummary alone with a readable English stub locale. */
 function chainSummaryFor(template) {
   const source = extractFunction('chainSummary')
@@ -733,26 +783,9 @@ function chainSummaryFor(template) {
   return factory(fill, t)(template, t)
 }
 
-test('model chain templates save, update, and delete only the templates field', async () => {
-  const roles = [
-    { id: 'general', name: 'General', description: '', provider: '', model: '', reasoningEffort: '' },
-    {
-      id: 'dev',
-      name: 'DEV',
-      description: 'builds',
-      persona: 'dev persona',
-      toolMode: 'custom',
-      tools: ['read'],
-      codexSandbox: 'read-only',
-      provider: 'p',
-      model: 'main',
-      reasoningEffort: 'high',
-      fallbackProvider: 'p',
-      fallbackModel: 'legacy',
-      fallbackReasoningEffort: '',
-    },
-    { id: 'qa', name: 'QA', provider: 'q', model: 'alt', reasoningEffort: 'medium', fallbacks: [] },
-  ]
+test('a template is created from scratch with no role selected', async (t) => {
+  mockCatalog(t)
+  const roles = [{ id: 'general', name: 'General', description: '', provider: '', model: '' }]
   let hostValue = baseValue({ roles, modelChainTemplates: [] })
   let revision = 1
   const nextRevision = () => { revision += 1; return revision }
@@ -765,59 +798,143 @@ test('model chain templates save, update, and delete only the templates field', 
       return namespaceView(hostValue, nextRevision())
     },
   })
-  const rolesBefore = JSON.parse(JSON.stringify(hostValue.roles))
 
-  // Save the current role's legacy fallback as a template.
   let view = await renderTemplatesPanel(mounted)
-  templateNameInput(view.panelTree).props.onChange({ target: { value: 'fast' } })
-  view = await renderTemplatesPanel(mounted)
-  await findButton(view.panelTree, 'modelChainTemplateSave').props.onClick()
+  assert.equal(view.rolesPanel.props.selected, undefined, 'the role editor has no selected role')
+  assert.equal(templateNameInput(view.panelTree).props.value, '', 'the editor starts empty')
 
+  templateNameInput(view.panelTree).props.onChange({ target: { value: 'daily' } })
+  view = await renderTemplatesPanel(mounted)
+  ariaSelect(view.panelTree, 'primaryModel').props.onChange({ target: { value: 'p::main' } })
+  view = await renderTemplatesPanel(mounted)
+  ariaSelect(view.panelTree, 'effort').props.onChange({ target: { value: 'high' } })
+
+  // Two ordered fallbacks, added through the standalone editor.
+  view = await renderTemplatesPanel(mounted)
+  findButton(view.panelTree, '＋ addFallback').props.onClick()
+  view = await renderTemplatesPanel(mounted)
+  ariaSelect(view.panelTree, 'fallbackModel #1').props.onChange({ target: { value: 'p::backup' } })
+  view = await renderTemplatesPanel(mounted)
+  ariaSelect(view.panelTree, 'effort #1').props.onChange({ target: { value: 'low' } })
+  view = await renderTemplatesPanel(mounted)
+  findButton(view.panelTree, '＋ addFallback').props.onClick()
+  view = await renderTemplatesPanel(mounted)
+  ariaSelect(view.panelTree, 'fallbackModel #2').props.onChange({ target: { value: 'q::alt' } })
+  view = await renderTemplatesPanel(mounted)
+  ariaSelect(view.panelTree, 'effort #2').props.onChange({ target: { value: 'medium' } })
+  view = await renderTemplatesPanel(mounted)
+
+  await findButton(view.panelTree, 'modelChainTemplateSave').props.onClick()
   assert.equal(mounted.state.mutateCalls.length, 1)
-  assert.deepEqual(
-    mounted.state.mutateCalls[0][1].map((op) => op.path[0]),
-    ['modelChainTemplates'],
-    'template CRUD writes only its own Config field',
-  )
+  assert.deepEqual(mounted.state.mutateCalls[0][1].map((op) => op.path[0]), ['modelChainTemplates'])
   assert.deepEqual(hostValue.modelChainTemplates, [{
-    name: 'fast',
+    name: 'daily',
     provider: 'p',
     model: 'main',
     reasoningEffort: 'high',
-    fallbacks: [{ provider: 'p', model: 'legacy', reasoningEffort: '' }],
-  }], 'the legacy single fallback is captured into the ordered chain')
-  assert.deepEqual(hostValue.roles, rolesBefore, 'saving a template must not rewrite roles')
-
-  // The saved template is selected and listed by name.
-  view = await renderTemplatesPanel(mounted)
-  assert.equal(templateSelect(view.panelTree).props.value, 'fast')
-  assert.deepEqual(
-    findAll(view.panelTree, (element) => element.type === 'option').map(textOf),
-    ['modelChainTemplateNone', 'fast'],
-  )
-
-  // Update the template from another role's chain.
-  view.rolesPanel.props.onSelect('qa')
-  view = await renderTemplatesPanel(mounted)
-  await findButton(view.panelTree, 'modelChainTemplateUpdate').props.onClick()
-  assert.equal(mounted.state.mutateCalls.length, 2)
-  assert.deepEqual(hostValue.modelChainTemplates, [{
-    name: 'fast', provider: 'q', model: 'alt', reasoningEffort: 'medium', fallbacks: [],
+    fallbacks: [
+      { provider: 'p', model: 'backup', reasoningEffort: 'low' },
+      { provider: 'q', model: 'alt', reasoningEffort: 'medium' },
+    ],
   }])
+  assert.deepEqual(hostValue.roles, roles, 'saving a template must not rewrite roles')
+  view = await renderTemplatesPanel(mounted)
+  assert.equal(templateSelect(view.panelTree).props.value, 'daily', 'the new template stays open')
+})
 
-  // Delete the selected template.
+test('an existing template is edited directly, renamed, and deleted', async (t) => {
+  mockCatalog(t)
+  const roles = [
+    { id: 'general', name: 'General', description: '', provider: '', model: '' },
+    { id: 'dev', name: 'DEV', description: 'builds', provider: 'p', model: 'main' },
+  ]
+  const stored = {
+    name: 'daily',
+    provider: 'p',
+    model: 'main',
+    reasoningEffort: 'high',
+    fallbacks: [
+      { provider: 'p', model: 'backup', reasoningEffort: 'low' },
+      { provider: 'q', model: 'alt', reasoningEffort: 'medium' },
+    ],
+  }
+  let hostValue = baseValue({ roles, modelChainTemplates: [stored] })
+  let revision = 1
+  const nextRevision = () => { revision += 1; return revision }
+  const harness = createReactHarness()
+  const mounted = await mountSection(harness, {
+    describe: () => namespaceView(hostValue, revision),
+    mutate: (namespace, ops) => {
+      assert.equal(namespace, NS)
+      for (const op of ops) hostValue = { ...hostValue, [op.path[0]]: op.value }
+      return namespaceView(hostValue, nextRevision())
+    },
+  })
+
+  // Opening a stored template populates the editor without consulting a role.
+  let view = await renderTemplatesPanel(mounted)
+  templateSelect(view.panelTree).props.onChange({ target: { value: 'daily' } })
+  view = await renderTemplatesPanel(mounted)
+  assert.equal(templateNameInput(view.panelTree).props.value, 'daily')
+  assert.equal(ariaSelect(view.panelTree, 'primaryModel').props.value, 'p::main')
+  assert.equal(ariaSelect(view.panelTree, 'effort').props.value, 'high')
+  assert.equal(ariaSelect(view.panelTree, 'fallbackModel #1').props.value, 'p::backup')
+  assert.equal(ariaSelect(view.panelTree, 'fallbackModel #2').props.value, 'q::alt')
+
+  // Direct edits: replace the primary route, reorder fallbacks, add another.
+  ariaSelect(view.panelTree, 'primaryModel').props.onChange({ target: { value: 'x::chain' } })
+  view = await renderTemplatesPanel(mounted)
+  ariaSelect(view.panelTree, 'effort').props.onChange({ target: { value: 'max' } })
+  view = await renderTemplatesPanel(mounted)
+  findOne(
+    view.panelTree,
+    (element) => element.type === 'button' && element.props?.['aria-label'] === 'moveDown',
+    'the first fallback must have a move-down control',
+  ).props.onClick()
+  view = await renderTemplatesPanel(mounted)
+  findButton(view.panelTree, '＋ addFallback').props.onClick()
+  view = await renderTemplatesPanel(mounted)
+  ariaSelect(view.panelTree, 'fallbackModel #3').props.onChange({ target: { value: 'se-a::backup-1' } })
+  view = await renderTemplatesPanel(mounted)
+  ariaSelect(view.panelTree, 'effort #3').props.onChange({ target: { value: 'high' } })
+  view = await renderTemplatesPanel(mounted)
+  assert.equal(mounted.state.mutateCalls.length, 0, 'editing is local until "Save template"')
+
+  await findButton(view.panelTree, 'modelChainTemplateSave').props.onClick()
+  assert.equal(mounted.state.mutateCalls.length, 1)
+  assert.deepEqual(hostValue.modelChainTemplates, [{
+    name: 'daily',
+    provider: 'x',
+    model: 'chain',
+    reasoningEffort: 'max',
+    fallbacks: [
+      { provider: 'q', model: 'alt', reasoningEffort: 'medium' },
+      { provider: 'p', model: 'backup', reasoningEffort: 'low' },
+      { provider: 'se-a', model: 'backup-1', reasoningEffort: 'high' },
+    ],
+  }])
+  assert.deepEqual(hostValue.roles, roles, 'editing a template leaves roles alone')
+
+  // Rename = save the same entry under a new identity.
+  view = await renderTemplatesPanel(mounted)
+  templateNameInput(view.panelTree).props.onChange({ target: { value: 'renamed' } })
+  view = await renderTemplatesPanel(mounted)
+  await findButton(view.panelTree, 'modelChainTemplateSave').props.onClick()
+  assert.equal(mounted.state.mutateCalls.length, 2)
+  assert.deepEqual(hostValue.modelChainTemplates.map((item) => item.name), ['renamed'])
+
+  // Delete the open template and reset the editor.
   view = await renderTemplatesPanel(mounted)
   await findButton(view.panelTree, 'modelChainTemplateDelete').props.onClick()
   assert.equal(mounted.state.mutateCalls.length, 3)
   assert.deepEqual(hostValue.modelChainTemplates, [])
-  assert.deepEqual(hostValue.roles, rolesBefore, 'update and delete also leave roles alone')
-  assert.deepEqual(
-    mounted.state.mutateCalls.map((call) => call[1].map((op) => op.path[0])),
-    [['modelChainTemplates'], ['modelChainTemplates'], ['modelChainTemplates']],
-  )
+  view = await renderTemplatesPanel(mounted)
+  assert.equal(templateSelect(view.panelTree).props.value, '')
+  assert.equal(templateNameInput(view.panelTree).props.value, '')
 })
 
-test('batch applying a chain template touches only checked roles and routing fields', async () => {
+test('applying a template keeps the save-first flow and only touches checked role routes', async (t) => {
+  mockCatalog(t)
   const roles = [
     { id: 'general', name: 'General', provider: 'g', model: 'gen' },
     {
@@ -864,26 +981,32 @@ test('batch applying a chain template touches only checked roles and routing fie
   let view = await renderTemplatesPanel(mounted)
   templateSelect(view.panelTree).props.onChange({ target: { value: 'shared' } })
   view = await renderTemplatesPanel(mounted)
-
-  // No checked role: the local apply refuses and nothing is persisted.
-  findButton(view.panelTree, 'modelChainTemplateApply').props.onClick()
-  view = await renderTemplatesPanel(mounted)
-  assert.match(textOf(view.panelTree), /modelChainTemplateCheckedNone/)
-  assert.equal(mounted.state.mutateCalls.length, 0, 'a refusal must not write settings')
-
-  // Check only dev, then apply.
-  const devCheckbox = findOne(
+  findOne(
     view.panelTree,
     (element) => element.type === 'input' && element.props?.type === 'checkbox' && element.props?.value === 'dev',
     'the dev checkbox must render',
+  ).props.onChange()
+  view = await renderTemplatesPanel(mounted)
+
+  // A local draft edit means the saved template is no longer what is open.
+  ariaSelect(view.panelTree, 'primaryModel').props.onChange({ target: { value: 'q::alt' } })
+  view = await renderTemplatesPanel(mounted)
+  findButton(view.panelTree, 'modelChainTemplateApply').props.onClick()
+  view = await renderTemplatesPanel(mounted)
+  assert.match(textOf(view.panelTree), /modelChainTemplateSaveFirst/)
+  assert.equal(mounted.state.mutateCalls.length, 0, 'a refused apply must not write settings')
+  assert.equal(
+    view.rolesPanel.props.roles.find((role) => role.id === 'dev').provider,
+    'p',
+    'a draft template is never applied',
   )
-  devCheckbox.props.onChange()
+
+  // Reopen the saved template, then apply to the checked role.
+  templateSelect(view.panelTree).props.onChange({ target: { value: 'shared' } })
   view = await renderTemplatesPanel(mounted)
   findButton(view.panelTree, 'modelChainTemplateApply').props.onClick()
   view = await renderTemplatesPanel(mounted)
   assert.match(textOf(view.panelTree), /modelChainTemplateApplied/)
-
-  // Applying is a local draft edit: no revision write yet.
   assert.equal(mounted.state.mutateCalls.length, 0, 'the apply waits for the page Save')
 
   const dev = view.rolesPanel.props.roles.find((role) => role.id === 'dev')
@@ -894,7 +1017,6 @@ test('batch applying a chain template touches only checked roles and routing fie
   assert.equal(dev.fallbackProvider, '', 'the legacy single fallback is retired')
   assert.equal(dev.fallbackModel, '')
   assert.equal(dev.fallbackReasoningEffort, '')
-  // Non-route fields and the unselected roles are untouched.
   assert.equal(dev.persona, 'dev persona')
   assert.equal(dev.toolMode, 'custom')
   assert.deepEqual(dev.tools, ['read', 'write'])
@@ -902,36 +1024,121 @@ test('batch applying a chain template touches only checked roles and routing fie
   assert.deepEqual(dev.denyCommands, ['\\bgit\\s+push\\b'])
   assert.equal(dev.codexSandbox, 'read-only', 'Codex configuration is never part of a chain')
   assert.equal(dev.color, '#abc')
-  assert.equal(dev.executor, undefined, 'no executor field is introduced by a route apply')
   assert.deepEqual(
     view.rolesPanel.props.roles.filter((role) => role.id !== 'dev'),
     rolesBefore.filter((role) => role.id !== 'dev'),
     'unchecked roles stay byte-identical',
   )
 
-  // The page Save writes the roles and nothing else.
   await findButton(view.page, 'save').props.onClick()
   assert.equal(mounted.state.mutateCalls.length, 1)
   assert.deepEqual(mounted.state.mutateCalls[0][1].map((op) => op.path[0]), ['roles'])
   const savedDev = hostValue.roles.find((role) => role.id === 'dev')
   assert.equal(savedDev.provider, 'x')
   assert.equal(savedDev.fallbackProvider, '')
-  assert.deepEqual(hostValue.modelChainTemplates, [template], 'the already-persisted template is untouched')
+  assert.deepEqual(hostValue.modelChainTemplates, [template], 'the applied template is untouched')
 })
 
-test('an empty chain is refused and loaded templates are normalized', async () => {
-  let hostValue = baseValue({
-    roles: [
-      { id: 'general', name: 'General', provider: '', model: '' },
-      { id: 'dev', name: 'DEV', provider: '', model: '' },
+test('a session-inherited template is created without a role and previews its ordered fallbacks', async (t) => {
+  mockCatalog(t)
+  const roles = [
+    { id: 'general', name: 'General', description: '', provider: 'g', model: 'gen' },
+  ]
+  let hostValue = baseValue({ roles, modelChainTemplates: [] })
+  let revision = 1
+  const nextRevision = () => { revision += 1; return revision }
+  const harness = createReactHarness()
+  const mounted = await mountSection(harness, {
+    describe: () => namespaceView(hostValue, revision),
+    mutate: (namespace, ops) => {
+      for (const op of ops) hostValue = { ...hostValue, [op.path[0]]: op.value }
+      return namespaceView(hostValue, nextRevision())
+    },
+  })
+
+  // The primary select stays at "inherit session"; two fallbacks are added.
+  let view = await renderTemplatesPanel(mounted)
+  templateNameInput(view.panelTree).props.onChange({ target: { value: 'inherit' } })
+  view = await renderTemplatesPanel(mounted)
+  findButton(view.panelTree, '＋ addFallback').props.onClick()
+  view = await renderTemplatesPanel(mounted)
+  ariaSelect(view.panelTree, 'fallbackModel #1').props.onChange({ target: { value: 'se-a::backup-1' } })
+  view = await renderTemplatesPanel(mounted)
+  ariaSelect(view.panelTree, 'effort #1').props.onChange({ target: { value: 'high' } })
+  view = await renderTemplatesPanel(mounted)
+  findButton(view.panelTree, '＋ addFallback').props.onClick()
+  view = await renderTemplatesPanel(mounted)
+  ariaSelect(view.panelTree, 'fallbackModel #2').props.onChange({ target: { value: 'se-a::backup-2' } })
+  view = await renderTemplatesPanel(mounted)
+  await findButton(view.panelTree, 'modelChainTemplateSave').props.onClick()
+
+  assert.deepEqual(hostValue.modelChainTemplates, [{
+    name: 'inherit',
+    provider: '',
+    model: '',
+    reasoningEffort: '',
+    fallbacks: [
+      { provider: 'se-a', model: 'backup-1', reasoningEffort: 'high' },
+      { provider: 'se-a', model: 'backup-2', reasoningEffort: '' },
     ],
-    // Trimmed, de-duplicated, and legacy entries without a usable name drop out.
+  }])
+  const saved = hostValue.modelChainTemplates[0]
+  const preview = chainSummaryFor(saved)
+  assert.match(preview, /^Primary: inherit session · Fallbacks: #1 se-a\/backup-1 · high → #2 se-a\/backup-2/)
+
+  // Applying it clears a role's primary route while installing the chain.
+  view = await renderTemplatesPanel(mounted)
+  findOne(
+    view.panelTree,
+    (element) => element.type === 'input' && element.props?.type === 'checkbox' && element.props?.value === 'general',
+    'the general checkbox must render',
+  ).props.onChange()
+  view = await renderTemplatesPanel(mounted)
+  findButton(view.panelTree, 'modelChainTemplateApply').props.onClick()
+  view = await renderTemplatesPanel(mounted)
+  const general = view.rolesPanel.props.roles.find((role) => role.id === 'general')
+  assert.equal(general.provider, '')
+  assert.equal(general.model, '')
+  assert.equal(general.reasoningEffort, '')
+  assert.deepEqual(general.fallbacks, saved.fallbacks)
+
+  await findButton(view.page, 'save').props.onClick()
+  const savedGeneral = hostValue.roles.find((role) => role.id === 'general')
+  assert.equal(savedGeneral.provider, '')
+  assert.equal(savedGeneral.model, '')
+  assert.deepEqual(savedGeneral.fallbacks, saved.fallbacks)
+})
+
+test('an empty chain is refused and loaded templates are normalized', async (t) => {
+  mockCatalog(t)
+  let hostValue = baseValue({
+    roles: [{ id: 'general', name: 'General', description: '', provider: '', model: '' }],
+    // Trimmed, de-duplicated, capped, and legacy entries without a usable name drop out.
     modelChainTemplates: [
       { name: ' keep ', provider: ' p ', model: 'm', reasoningEffort: 'high' },
       { name: 'keep', provider: 'dup', model: 'dup' },
       'broken',
       { name: '', provider: 'x', model: 'y' },
       { name: 'half', provider: 'p', model: '' },
+      {
+        name: 'many',
+        provider: '',
+        model: '',
+        fallbacks: Array.from({ length: 10 }, (_, index) => ({
+          provider: 'se-a',
+          model: `backup-${index + 1}`,
+          reasoningEffort: '',
+        })),
+      },
+      {
+        name: 'legacy',
+        provider: 'p',
+        model: 'm',
+        reasoningEffort: 'high',
+        fallbackProvider: 'p',
+        fallbackModel: 'old',
+        fallbackReasoningEffort: 'low',
+      },
     ],
   })
   let revision = 1
@@ -947,8 +1154,8 @@ test('an empty chain is refused and loaded templates are normalized', async () =
 
   let view = await renderTemplatesPanel(mounted)
   assert.deepEqual(
-    findAll(view.panelTree, (element) => element.type === 'option').map(textOf),
-    ['modelChainTemplateNone', 'keep', 'half'],
+    findAll(templateSelect(view.panelTree), (element) => element.type === 'option').map(textOf),
+    ['modelChainTemplateNone', 'keep', 'half', 'many', 'legacy'],
     'invalid and duplicate stored templates are dropped',
   )
   assert.deepEqual(view.panel.props.templates, [{
@@ -963,14 +1170,27 @@ test('an empty chain is refused and loaded templates are normalized', async () =
     model: '',
     reasoningEffort: '',
     fallbacks: [],
-  }], 'stored entries are trimmed and completed into the editor shape')
-  templateSelect(view.panelTree).props.onChange({ target: { value: 'keep' } })
-  view = await renderTemplatesPanel(mounted)
-  assert.match(textOf(view.panelTree), /modelChainTemplateRoute/, 'the selected template renders its preview')
+  }, {
+    name: 'many',
+    provider: '',
+    model: '',
+    reasoningEffort: '',
+    fallbacks: Array.from({ length: 8 }, (_, index) => ({
+      provider: 'se-a',
+      model: `backup-${index + 1}`,
+      reasoningEffort: '',
+    })),
+  }, {
+    name: 'legacy',
+    provider: 'p',
+    model: 'm',
+    reasoningEffort: 'high',
+    fallbacks: [{ provider: 'p', model: 'old', reasoningEffort: 'low' }],
+  }], 'stored entries are trimmed, paired, capped like role fallbacks, and older single-fallback shapes are kept')
 
-  // The selected role has neither a primary route nor a fallback chain, so
-  // saving a template is refused.
-  templateNameInput(view.panelTree).props.onChange({ target: { value: 'new' } })
+  // Opening the half-filled entry then saving it is refused: an empty primary
+  // route is legal, but only when the template carries a fallback chain.
+  templateSelect(view.panelTree).props.onChange({ target: { value: 'half' } })
   view = await renderTemplatesPanel(mounted)
   await findButton(view.panelTree, 'modelChainTemplateSave').props.onClick()
   view = await renderTemplatesPanel(mounted)
@@ -978,7 +1198,8 @@ test('an empty chain is refused and loaded templates are normalized', async () =
   assert.equal(mounted.state.mutateCalls.length, 0)
 })
 
-test('template CRUD never writes or discards an unsaved role draft', async () => {
+test('template CRUD never writes or discards an unsaved role draft', async (t) => {
+  mockCatalog(t)
   const roles = [
     { id: 'general', name: 'General', description: '', provider: '', model: '' },
     {
@@ -1006,10 +1227,9 @@ test('template CRUD never writes or discards an unsaved role draft', async () =>
   })
   const hostRolesBefore = JSON.parse(JSON.stringify(hostValue.roles))
 
-  // One unsaved role edit: it must stay local while a template is saved.
+  // One unsaved role edit: it must stay local while templates are created.
   const page = await harness.render(mounted.page)
-  const rolesPanel = findComponent(page, 'RolesPanel')
-  rolesPanel.props.onEdit({ persona: 'draft persona' })
+  findComponent(page, 'RolesPanel').props.onEdit({ persona: 'draft persona' })
   let view = await renderTemplatesPanel(mounted)
   assert.equal(
     view.rolesPanel.props.roles.find((role) => role.id === 'dev').persona,
@@ -1017,8 +1237,12 @@ test('template CRUD never writes or discards an unsaved role draft', async () =>
     'the draft edit is applied locally',
   )
 
-  // A conflicting template save keeps both the draft and the typed name.
+  // Build a template from scratch (no source role), then fail its first write.
   templateNameInput(view.panelTree).props.onChange({ target: { value: 'bundled' } })
+  view = await renderTemplatesPanel(mounted)
+  ariaSelect(view.panelTree, 'primaryModel').props.onChange({ target: { value: 'p::main' } })
+  view = await renderTemplatesPanel(mounted)
+  ariaSelect(view.panelTree, 'effort').props.onChange({ target: { value: 'high' } })
   view = await renderTemplatesPanel(mounted)
   failWrites = true
   await findButton(view.panelTree, 'modelChainTemplateSave').props.onClick()
@@ -1059,118 +1283,4 @@ test('template CRUD never writes or discards an unsaved role draft', async () =>
   assert.equal(mounted.state.mutateCalls.length, 3)
   assert.deepEqual(mounted.state.mutateCalls.at(-1)[1].map((op) => op.path[0]), ['roles'])
   assert.equal(hostValue.roles.find((role) => role.id === 'dev').persona, 'draft persona')
-})
-
-test('a session-inherited route with a fallback chain is a legal template and previews its ordered routes', async () => {
-  // The user's SE role: no primary model (the member follows the session
-  // route), but an ordered fallback chain. Duplicates and extras test both
-  // de-duplication and the host's eight-route fallback cap.
-  const fallbacks = [
-    { provider: 'se-a', model: 'backup-1', reasoningEffort: 'high' },
-    { provider: 'se-a', model: 'backup-1', reasoningEffort: 'high' },
-    ...Array.from({ length: 10 }, (_, index) => ({
-      provider: 'se-a',
-      model: `backup-${index + 1}`,
-      reasoningEffort: '',
-    })),
-  ]
-  const roles = [
-    { id: 'general', name: 'General', description: '', provider: '', model: '' },
-    {
-      id: 'se',
-      name: 'SE',
-      description: 'contract owner',
-      persona: 'se persona',
-      provider: '',
-      model: '',
-      reasoningEffort: '',
-      fallbackProvider: '',
-      fallbackModel: '',
-      fallbacks,
-      codexSandbox: 'workspace-write',
-    },
-    {
-      id: 'dev',
-      name: 'DEV',
-      description: 'builds',
-      persona: 'dev persona',
-      provider: 'p',
-      model: 'main',
-      reasoningEffort: 'high',
-      fallbackProvider: 'p',
-      fallbackModel: 'old',
-      fallbackReasoningEffort: 'low',
-    },
-  ]
-  let hostValue = baseValue({ roles, modelChainTemplates: [] })
-  let revision = 1
-  const nextRevision = () => { revision += 1; return revision }
-  const harness = createReactHarness()
-  const mounted = await mountSection(harness, {
-    describe: () => namespaceView(hostValue, revision),
-    mutate: (namespace, ops) => {
-      for (const op of ops) hostValue = { ...hostValue, [op.path[0]]: op.value }
-      return namespaceView(hostValue, nextRevision())
-    },
-  })
-  const hostRolesBefore = JSON.parse(JSON.stringify(hostValue.roles))
-
-  // SE is selected by default (the first non-general role). Saving must accept
-  // the empty primary route because the fallback chain is present.
-  let view = await renderTemplatesPanel(mounted)
-  templateNameInput(view.panelTree).props.onChange({ target: { value: 'inherit-se' } })
-  view = await renderTemplatesPanel(mounted)
-  await findButton(view.panelTree, 'modelChainTemplateSave').props.onClick()
-
-  assert.equal(mounted.state.mutateCalls.length, 1)
-  const saved = hostValue.modelChainTemplates[0]
-  assert.equal(saved.name, 'inherit-se')
-  assert.equal(saved.provider, '')
-  assert.equal(saved.model, '')
-  assert.equal(saved.reasoningEffort, '')
-  assert.equal(saved.fallbacks.length, 8, 'the client mirrors the host fallback cap of eight')
-  assert.deepEqual(saved.fallbacks[0], { provider: 'se-a', model: 'backup-1', reasoningEffort: 'high' })
-  assert.deepEqual(saved.fallbacks[7], { provider: 'se-a', model: 'backup-8', reasoningEffort: '' })
-
-  // The preview lists the ordered fallback routes instead of only a count.
-  view = await renderTemplatesPanel(mounted)
-  const preview = chainSummaryFor(saved)
-  assert.match(preview, /^Primary: inherit session · Fallbacks: #1 se-a\/backup-1 · high → #2 se-a\/backup-2/)
-  assert.match(preview, /#8 se-a\/backup-8/)
-
-  // Applying the inherited-route template clears a role's primary route and
-  // installs the ordered fallback chain; the legacy single fallback retires.
-  view.rolesPanel.props.onSelect('dev')
-  view = await renderTemplatesPanel(mounted)
-  findOne(
-    view.panelTree,
-    (element) => element.type === 'input' && element.props?.type === 'checkbox' && element.props?.value === 'dev',
-    'the dev checkbox must render',
-  ).props.onChange()
-  view = await renderTemplatesPanel(mounted)
-  findButton(view.panelTree, 'modelChainTemplateApply').props.onClick()
-  view = await renderTemplatesPanel(mounted)
-
-  const dev = view.rolesPanel.props.roles.find((role) => role.id === 'dev')
-  assert.equal(dev.provider, '')
-  assert.equal(dev.model, '')
-  assert.equal(dev.reasoningEffort, '')
-  assert.equal(dev.fallbacks.length, 8)
-  assert.deepEqual(dev.fallbacks[0], { provider: 'se-a', model: 'backup-1', reasoningEffort: 'high' })
-  assert.equal(dev.fallbackProvider, '')
-  assert.equal(dev.fallbackModel, '')
-  assert.equal(dev.fallbackReasoningEffort, '')
-  assert.equal(dev.persona, 'dev persona')
-  assert.deepEqual(
-    view.rolesPanel.props.roles.filter((role) => role.id !== 'dev'),
-    hostRolesBefore.filter((role) => role.id !== 'dev'),
-    'the SE template apply leaves unselected roles alone',
-  )
-
-  await findButton(view.page, 'save').props.onClick()
-  const savedDev = hostValue.roles.find((role) => role.id === 'dev')
-  assert.equal(savedDev.provider, '')
-  assert.equal(savedDev.model, '')
-  assert.equal(savedDev.fallbacks.length, 8)
-  assert.deepEqual(hostValue.modelChainTemplates, [saved], 'the applied template itself is unchanged')
 })

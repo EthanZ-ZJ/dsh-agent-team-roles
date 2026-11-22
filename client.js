@@ -208,13 +208,13 @@ window.__ModuleLoader__.load({
       fallbackEmpty: '还没有备用模型；主模型不可用时可切到这里。',
       fallbackHint: '按顺序尝试：主模型失败后先试备用 1，再试备用 2；每轮最多自动切换 2 次，切换后模型面板会标注序号。',
       modelChainTemplates: '模型链模板',
-      modelChainTemplateHint: '把常用模型链存成命名模板，勾选多个角色后可一次套用。只改模型路由（主模型、推理强度、备用链），不改提示词、工具、技能或 Codex 配置。',
-      modelChainTemplateEmpty: '还没有模型链模板。先配置好当前角色的模型链，再保存为模板。',
+      modelChainTemplateHint: '新建或直接编辑模板：主模型、推理强度、有序备用链。主模型留空表示跟随会话；保存模板后勾选角色一次套用。只改模型路由，不改提示词、工具、技能或 Codex 配置。',
+      modelChainTemplateEmpty: '还没有模型链模板。点「新建模板」填写主模型/备用链，保存后可勾选角色套用。',
+      modelChainTemplateNew: '新建模板',
       modelChainTemplateName: '模板名称',
       modelChainTemplateNamePlaceholder: '例如：主力链',
       modelChainTemplateSelect: '选择模板',
-      modelChainTemplateSave: '保存为模板',
-      modelChainTemplateUpdate: '更新模板',
+      modelChainTemplateSave: '保存模板',
       modelChainTemplateDelete: '删除模板',
       modelChainTemplateTargets: '应用到的角色',
       modelChainTemplateApply: '应用到勾选角色',
@@ -223,13 +223,14 @@ window.__ModuleLoader__.load({
       modelChainTemplateRoute: '主模型：{route}',
       modelChainTemplateInherit: '跟随会话',
       modelChainTemplateFallbacksOrdered: '备用：{list}',
-      modelChainTemplateEmptyChain: '当前角色既没有主模型也没有备用链，无法保存为模板。',
+      modelChainTemplateEmptyChain: '模板既没有主模型也没有备用链，无法保存。',
       modelChainTemplatePartialRoute: '提供方和主模型必须同时填写或同时留空。',
       modelChainTemplateNameRequired: '请先填写模板名称。',
       modelChainTemplateNameLong: '模板名称过长（最多 {max} 个字符）。',
-      modelChainTemplateNameExists: '已存在同名模板「{name}」；如需覆盖请用「更新模板」。',
+      modelChainTemplateNameExists: '已存在同名模板「{name}」，请换一个名称。',
       modelChainTemplateLimit: '模板数量已达上限 {max}。',
       modelChainTemplatePick: '请先选择一个模板。',
+      modelChainTemplateSaveFirst: '模板有未保存修改，请先点「保存模板」再应用到角色。',
       modelChainTemplateCheckedNone: '请至少勾选一个角色。',
       modelChainTemplateApplied: '已把模板应用到 {count} 个角色；点上方「保存」后写入配置。',
       ruleHint: 'permanent 会立即进入提示词；candidate 需要重复或在这里确认；session 只在当前会话生效，不会出现在这里。',
@@ -445,13 +446,13 @@ window.__ModuleLoader__.load({
       fallbackEmpty: 'No fallback routes yet; a failing primary route cannot fall back.',
       fallbackHint: 'Tried in order: fallback 1, then fallback 2. The plugin switches at most twice per turn and the member panel shows the position.',
       modelChainTemplates: 'Model chain templates',
-      modelChainTemplateHint: 'Save a reusable model chain under a name, then apply it to several checked roles at once. Only the model route (primary model, reasoning effort, fallback chain) changes; prompts, tools, skills, and Codex settings stay untouched.',
-      modelChainTemplateEmpty: 'No model chain templates yet. Configure the current role\'s chain first, then save it as a template.',
+      modelChainTemplateHint: 'Create a template here, or open an existing one and edit it directly: primary model, reasoning effort, and an ordered fallback chain. An empty primary means "inherit session"; after saving, check roles to apply it. Only the model route changes; prompts, tools, skills, and Codex settings stay untouched.',
+      modelChainTemplateEmpty: 'No model chain templates yet. Click "New template", fill in a primary model and/or fallback chain, then save it and check the roles to apply it to.',
+      modelChainTemplateNew: 'New template',
       modelChainTemplateName: 'Template name',
       modelChainTemplateNamePlaceholder: 'For example: primary chain',
       modelChainTemplateSelect: 'Select template',
-      modelChainTemplateSave: 'Save as template',
-      modelChainTemplateUpdate: 'Update template',
+      modelChainTemplateSave: 'Save template',
       modelChainTemplateDelete: 'Delete template',
       modelChainTemplateTargets: 'Apply to roles',
       modelChainTemplateApply: 'Apply to checked roles',
@@ -460,13 +461,14 @@ window.__ModuleLoader__.load({
       modelChainTemplateRoute: 'Primary: {route}',
       modelChainTemplateInherit: 'inherit session',
       modelChainTemplateFallbacksOrdered: 'Fallbacks: {list}',
-      modelChainTemplateEmptyChain: 'The current role has neither a primary model nor a fallback chain; it cannot be saved as a template.',
+      modelChainTemplateEmptyChain: 'The template has neither a primary model nor a fallback chain; it cannot be saved.',
       modelChainTemplatePartialRoute: 'Configure the provider and model together, or leave both empty.',
       modelChainTemplateNameRequired: 'Enter a template name first.',
       modelChainTemplateNameLong: 'The template name is too long (at most {max} characters).',
-      modelChainTemplateNameExists: 'A template named "{name}" already exists; use "Update template" to overwrite it.',
+      modelChainTemplateNameExists: 'A template named "{name}" already exists; choose another name.',
       modelChainTemplateLimit: 'The template limit of {max} has been reached.',
       modelChainTemplatePick: 'Select a template first.',
+      modelChainTemplateSaveFirst: 'The template has unsaved changes; save it before applying it to roles.',
       modelChainTemplateCheckedNone: 'Check at least one role.',
       modelChainTemplateApplied: 'Applied the template to {count} roles; click Save above to write the configuration.',
       ruleHint: 'permanent reaches the prompt immediately; candidate waits for a repeat or confirmation here; session rules only live in the current Session and do not appear here.',
@@ -619,32 +621,6 @@ window.__ModuleLoader__.load({
       return routes
     }
 
-    /**
-     * Project one role's current model chain.
-     *
-     * The legacy single fallback pair is still honored when `fallbacks` is
-     * empty, so saving a template from an older role does not silently lose its
-     * fallback route. The result contains only routing fields.
-     */
-    function chainOfRole(role) {
-      const fallbacks = chainFallbacks(role?.fallbacks)
-      const legacy = fallbacks.length === 0
-        && chainText(role?.fallbackProvider) !== ''
-        && chainText(role?.fallbackModel) !== ''
-        ? [{
-            provider: chainText(role.fallbackProvider),
-            model: chainText(role.fallbackModel),
-            reasoningEffort: chainText(role.fallbackReasoningEffort),
-          }]
-        : fallbacks
-      return {
-        provider: chainText(role?.provider),
-        model: chainText(role?.model),
-        reasoningEffort: chainText(role?.reasoningEffort),
-        fallbacks: legacy,
-      }
-    }
-
     /** Normalize the persisted `modelChainTemplates` field into the editor shape. */
     function normalizeModelChainTemplates(input) {
       const templates = []
@@ -659,16 +635,44 @@ window.__ModuleLoader__.load({
         const provider = chainText(candidate.provider)
         const model = chainText(candidate.model)
         const paired = provider !== '' && model !== ''
+        // Older templates may still carry the single fallbackProvider/Model pair
+        // with no ordered list; keep that route instead of dropping it.
+        const fallbacks = chainFallbacks(candidate.fallbacks)
+        const legacy = fallbacks.length === 0
+          && chainText(candidate.fallbackProvider) !== ''
+          && chainText(candidate.fallbackModel) !== ''
+          ? [{
+              provider: chainText(candidate.fallbackProvider),
+              model: chainText(candidate.fallbackModel),
+              reasoningEffort: chainText(candidate.fallbackReasoningEffort),
+            }]
+          : fallbacks
         templates.push({
           name,
           provider: paired ? provider : '',
           model: paired ? model : '',
           reasoningEffort: paired ? chainText(candidate.reasoningEffort) : '',
-          fallbacks: chainFallbacks(candidate.fallbacks),
+          fallbacks: legacy,
         })
         if (templates.length >= MAX_MODEL_CHAIN_TEMPLATES) break
       }
       return templates
+    }
+
+    /** An empty editable draft for the template editor. */
+    function emptyTemplateDraft() {
+      return { name: '', provider: '', model: '', reasoningEffort: '', fallbacks: [] }
+    }
+
+    /** Copy one stored template into a fresh editable draft (independent of roles). */
+    function templateDraftOf(template) {
+      return {
+        name: chainText(template?.name),
+        provider: chainText(template?.provider),
+        model: chainText(template?.model),
+        reasoningEffort: chainText(template?.reasoningEffort),
+        fallbacks: chainFallbacks(template?.fallbacks),
+      }
     }
 
     /**
@@ -1858,81 +1862,114 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Named model-chain templates: save, select, update, delete, apply.
+     * Named model-chain templates, editable without touching any role.
      *
-     * Template CRUD persists through `onChange`, which writes only the
-     * `modelChainTemplates` Config field. Applying a template is deliberately a
-     * local, route-only edit of the checked roles: the page's Save button writes
-     * it, so this action never publishes an unrelated unsaved draft and never
-     * touches a checked or unchecked role's non-route fields.
+     * The editor owns a local draft (name, primary route, ordered fallbacks) so
+     * a template can be created from nothing or loaded from the saved library
+     * and edited in place. `onChange` persists only the `modelChainTemplates`
+     * Config field. Applying a template is a local, route-only edit of the
+     * checked roles; the page's Save button writes those role routes, so an
+     * unrelated unsaved role draft is never published by this panel.
      */
-    function ModelChainTemplatesPanel({ t, roles, selected, templates, busy, onChange, onRolesChange }) {
-      const [name, setName] = React.useState('')
-      const [selectedName, setSelectedName] = React.useState('')
+    function ModelChainTemplatesPanel({ t, roles, templates, catalogPairs, effortLevels, busy, onChange, onRolesChange }) {
+      const [draft, setDraft] = React.useState(emptyTemplateDraft)
+      const [editingName, setEditingName] = React.useState('')
       const [checkedRoles, setCheckedRoles] = React.useState([])
       const [localError, setLocalError] = React.useState('')
       const [localNotice, setLocalNotice] = React.useState('')
 
-      const template = templates.find(item => item.name === selectedName) ?? null
       const checkableRoles = Array.isArray(roles) ? roles : []
       const checkedSet = new Set(checkedRoles.filter(id => checkableRoles.some(role => role.id === id)))
+      const pairs = Array.isArray(catalogPairs) ? catalogPairs : []
+      const levels = Array.isArray(effortLevels) && effortLevels.length > 0
+        ? effortLevels
+        : ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+      // A stale identity (deleted or renamed elsewhere) shows the empty picker
+      // entry instead of resetting the editor: the draft survives until New.
+      const pickerName = templates.some(item => item.name === editingName) ? editingName : ''
 
       const fail = (message) => { setLocalNotice(''); setLocalError(message) }
       const done = (message) => { setLocalError(''); setLocalNotice(message) }
-      /**
-       * Validate one chain for storage.
-       *
-       * A provider/model pair must be complete. An empty pair is legal: it means
-       * "inherit the session route" (the SE role does this while still carrying
-       * a fallback chain), so only a chain with neither a primary route nor a
-       * fallback is refused.
-       */
-      const chainProblem = (chain) => {
-        const hasProvider = chain.provider !== ''
-        const hasModel = chain.model !== ''
-        if (hasProvider !== hasModel) return t('modelChainTemplatePartialRoute')
-        if (!hasProvider && chain.fallbacks.length === 0) return t('modelChainTemplateEmptyChain')
-        return ''
-      }
-      const selectedChain = () => chainOfRole(selected)
+      const patchDraft = (patch) => setDraft(current => ({ ...current, ...patch }))
 
+      /** Normalize the draft the same way the persisted field is normalized. */
+      const normalizeDraft = () => {
+        const provider = chainText(draft.provider)
+        const model = chainText(draft.model)
+        const paired = provider !== '' && model !== ''
+        return {
+          name: chainText(draft.name),
+          provider: paired ? provider : '',
+          model: paired ? model : '',
+          reasoningEffort: paired ? chainText(draft.reasoningEffort) : '',
+          fallbacks: chainFallbacks(draft.fallbacks),
+        }
+      }
+
+      const startNew = () => {
+        setDraft(emptyTemplateDraft())
+        setEditingName('')
+        setLocalError('')
+        setLocalNotice('')
+      }
+
+      const openTemplate = (name) => {
+        const found = templates.find(item => item.name === name)
+        if (found === undefined) {
+          startNew()
+          return
+        }
+        setDraft(templateDraftOf(found))
+        setEditingName(found.name)
+        setLocalError('')
+        setLocalNotice('')
+      }
+
+      /**
+       * Create or update one template from the editor.
+       *
+       * A blank primary route is legal: it means "inherit the session route" and
+       * is only rejected when the template also has no fallback chain. Renaming
+       * an open template changes its identity; the new name must still be free.
+       */
       const saveTemplate = async () => {
-        const trimmed = name.trim()
-        if (trimmed === '') return fail(t('modelChainTemplateNameRequired'))
-        if (trimmed.length > MODEL_CHAIN_TEMPLATE_NAME_LIMIT) {
+        const template = normalizeDraft()
+        if (template.name === '') return fail(t('modelChainTemplateNameRequired'))
+        if (template.name.length > MODEL_CHAIN_TEMPLATE_NAME_LIMIT) {
           return fail(fill(t('modelChainTemplateNameLong'), { max: MODEL_CHAIN_TEMPLATE_NAME_LIMIT }))
         }
-        if (templates.some(item => item.name === trimmed)) {
-          return fail(fill(t('modelChainTemplateNameExists'), { name: trimmed }))
+        const rawProvider = chainText(draft.provider)
+        const rawModel = chainText(draft.model)
+        if ((rawProvider === '') !== (rawModel === '')) return fail(t('modelChainTemplatePartialRoute'))
+        const openName = editingName
+        const open = openName === '' ? undefined : templates.find(item => item.name === openName)
+        if (openName !== '' && open === undefined) return fail(t('modelChainTemplatePick'))
+        if (template.provider === '' && template.fallbacks.length === 0) {
+          return fail(t('modelChainTemplateEmptyChain'))
         }
-        if (templates.length >= MAX_MODEL_CHAIN_TEMPLATES) {
+        if (templates.some(item => item.name === template.name && item.name !== openName)) {
+          return fail(fill(t('modelChainTemplateNameExists'), { name: template.name }))
+        }
+        if (openName === '' && templates.length >= MAX_MODEL_CHAIN_TEMPLATES) {
           return fail(fill(t('modelChainTemplateLimit'), { max: MAX_MODEL_CHAIN_TEMPLATES }))
         }
-        const chain = selectedChain()
-        const problem = chainProblem(chain)
-        if (problem !== '') return fail(problem)
-        if (await onChange([...templates, { name: trimmed, ...chain }]) === false) return
-        setName('')
-        setSelectedName(trimmed)
+        const next = openName === ''
+          ? [...templates, template]
+          : templates.map(item => (item.name === openName ? template : item))
+        if (await onChange(next) === false) return
+        setDraft(templateDraftOf(template))
+        setEditingName(template.name)
         // The page-level "saved" banner reports the successful write.
         done('')
       }
 
-      const updateTemplate = async () => {
-        if (template === null) return fail(t('modelChainTemplatePick'))
-        const chain = selectedChain()
-        const problem = chainProblem(chain)
-        if (problem !== '') return fail(problem)
-        const next = templates.map(item => (item.name === template.name ? { ...item, ...chain } : item))
-        if (await onChange(next) === false) return
-        done('')
-      }
-
       const deleteTemplate = async () => {
-        if (template === null) return fail(t('modelChainTemplatePick'))
-        const next = templates.filter(item => item.name !== template.name)
+        if (editingName === '') return fail(t('modelChainTemplatePick'))
+        if (!templates.some(item => item.name === editingName)) return fail(t('modelChainTemplatePick'))
+        const next = templates.filter(item => item.name !== editingName)
         if (await onChange(next) === false) return
-        setSelectedName(next[0]?.name ?? '')
+        setDraft(emptyTemplateDraft())
+        setEditingName('')
         done('')
       }
 
@@ -1942,69 +1979,234 @@ window.__ModuleLoader__.load({
           : [...current, id]))
       }
 
+      const addFallback = () => {
+        setDraft(current => (current.fallbacks.length >= MAX_MODEL_CHAIN_FALLBACKS
+          ? current
+          : { ...current, fallbacks: [...current.fallbacks, { provider: '', model: '', reasoningEffort: '' }] }))
+      }
+
+      const updateFallback = (index, patch) => {
+        setDraft(current => ({
+          ...current,
+          fallbacks: current.fallbacks.map((entry, at) => (at === index ? { ...entry, ...patch } : entry)),
+        }))
+      }
+
+      const removeFallback = (index) => {
+        setDraft(current => ({ ...current, fallbacks: current.fallbacks.filter((entry, at) => at !== index) }))
+      }
+
+      const moveFallback = (index, delta) => {
+        setDraft(current => {
+          const target = index + delta
+          if (target < 0 || target >= current.fallbacks.length) return current
+          const next = [...current.fallbacks]
+          const [moved] = next.splice(index, 1)
+          next.splice(target, 0, moved)
+          return { ...current, fallbacks: next }
+        })
+      }
+
+      /**
+       * Apply the saved template — never an unsaved draft — to checked roles.
+       *
+       * This matches the documented flow: save first, then apply. The draft
+       * comparison also prevents a half-edited template from silently applying
+       * values the user has not stored yet.
+       */
       const applyTemplate = () => {
-        if (template === null) return fail(t('modelChainTemplatePick'))
+        if (editingName === '') return fail(t('modelChainTemplatePick'))
+        const saved = templates.find(item => item.name === editingName)
+        if (saved === undefined) return fail(t('modelChainTemplatePick'))
+        if (JSON.stringify(normalizeDraft()) !== JSON.stringify(saved)) {
+          return fail(t('modelChainTemplateSaveFirst'))
+        }
         const targets = [...checkedSet]
         if (targets.length === 0) return fail(t('modelChainTemplateCheckedNone'))
-        const patch = chainPatchOf(template)
+        const patch = chainPatchOf(saved)
         onRolesChange(current => current.map(role => (
           targets.includes(role.id) ? { ...role, ...patch } : role
         )))
         done(fill(t('modelChainTemplateApplied'), { count: targets.length }))
       }
 
+      /** One row of the ordered fallback editor. */
+      const fallbackRow = (entry, index) => {
+        const currentValue = entry.provider && entry.model ? `${entry.provider}::${entry.model}` : ''
+        const known = pairs.find(pair => pair.provider === entry.provider && pair.id === entry.model)
+        const rowPairs = currentValue && !known
+          ? [{ provider: entry.provider, id: entry.model }, ...pairs]
+          : pairs
+        const rowLevels = Array.isArray(known?.efforts)
+          ? known.efforts
+          : levels.map(id => ({ id, name: id }))
+        const options = [{ id: '', name: t('modelEffortDefault') }, ...rowLevels]
+        if (entry.reasoningEffort && !rowLevels.some(level => level.id === entry.reasoningEffort)) {
+          options.push({ id: entry.reasoningEffort, name: entry.reasoningEffort })
+        }
+        return h('div', {
+          key: index,
+          style: { display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr) auto', gap: 6, alignItems: 'end' },
+        }, [
+          h('label', { key: 'model', style: label }, [
+            h('span', { key: 'label' }, `${t('fallbackModel')} #${index + 1}`),
+            h('select', {
+              key: 'select',
+              style: input,
+              value: currentValue,
+              'aria-label': `${t('fallbackModel')} #${index + 1}`,
+              onChange: event => {
+                const [nextProvider = '', nextModel = ''] = event.target.value.split('::')
+                updateFallback(index, { provider: nextProvider, model: nextModel, reasoningEffort: '' })
+              },
+            }, [
+              h('option', { key: 'none', value: '' }, t('fallbackNone')),
+              ...rowPairs.map(pair => h('option', {
+                key: pair.provider + '::' + pair.id,
+                value: pair.provider + '::' + pair.id,
+              }, pair.provider + '/' + pair.id + (pair.name ? ' — ' + pair.name : ''))),
+            ]),
+          ]),
+          h('label', { key: 'effort', style: label }, [
+            h('span', { key: 'label' }, t('effort')),
+            h('select', {
+              key: 'select',
+              style: input,
+              value: entry.reasoningEffort ?? '',
+              disabled: !entry.provider || !entry.model,
+              'aria-label': `${t('effort')} #${index + 1}`,
+              onChange: event => updateFallback(index, { reasoningEffort: event.target.value }),
+            }, options.map(option => h('option', { key: option.id, value: option.id }, option.name))),
+          ]),
+          h('div', { key: 'actions', style: row }, [
+            h('button', {
+              key: 'up', type: 'button', style: button, disabled: index === 0,
+              title: t('moveUp'), 'aria-label': t('moveUp'), onClick: () => moveFallback(index, -1),
+            }, '↑'),
+            h('button', {
+              key: 'down', type: 'button', style: button, disabled: index === draft.fallbacks.length - 1,
+              title: t('moveDown'), 'aria-label': t('moveDown'), onClick: () => moveFallback(index, 1),
+            }, '↓'),
+            h('button', {
+              key: 'remove', type: 'button', style: button,
+              title: t('removeFallback'), 'aria-label': t('removeFallback'), onClick: () => removeFallback(index),
+            }, '×'),
+          ]),
+        ])
+      }
+
+      // Primary route options: the empty value is the legal "inherit session"
+      // choice, and an unknown stored route stays selectable for compatibility.
+      const primaryValue = draft.provider && draft.model ? `${draft.provider}::${draft.model}` : ''
+      const primaryKnown = pairs.find(pair => pair.provider === draft.provider && pair.id === draft.model)
+      const primaryPairs = primaryValue && !primaryKnown
+        ? [{ provider: draft.provider, id: draft.model }, ...pairs]
+        : pairs
+      const primaryLevels = Array.isArray(primaryKnown?.efforts)
+        ? primaryKnown.efforts
+        : levels.map(id => ({ id, name: id }))
+      const primaryOptions = [{
+        id: '',
+        name: primaryKnown?.defaultEffort
+          ? `${t('effortDefault')} (${primaryKnown.defaultEffort})`
+          : t('effortDefault'),
+      }, ...primaryLevels]
+      if (draft.reasoningEffort && !primaryLevels.some(level => level.id === draft.reasoningEffort)) {
+        primaryOptions.push({ id: draft.reasoningEffort, name: draft.reasoningEffort })
+      }
+
       return h('div', { style: { ...panel, ...card } }, [
-        h('div', { key: 'head', style: { ...row, flexWrap: 'wrap', gap: 8 } }, [
+        h('div', { key: 'head', style: { ...row, flexWrap: 'wrap', gap: 8, justifyContent: 'space-between' } }, [
           h('strong', { key: 'title', style: { fontSize: 13 } }, t('modelChainTemplates')),
+          h('button', { key: 'new', type: 'button', style: button, disabled: busy, onClick: startNew }, t('modelChainTemplateNew')),
         ]),
         h('span', { key: 'hint', style: small }, t('modelChainTemplateHint')),
         templates.length === 0 ? h('span', { key: 'empty', style: small }, t('modelChainTemplateEmpty')) : null,
-        h('div', { key: 'name-row', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 8, alignItems: 'end' } }, [
-          h('label', { key: 'name', style: label }, [
-            h('span', { key: 'l' }, t('modelChainTemplateName')),
-            h('input', {
-              key: 'i',
-              style: input,
-              value: name,
-              placeholder: t('modelChainTemplateNamePlaceholder'),
-              'aria-label': t('modelChainTemplateName'),
-              onChange: event => setName(event.target.value),
-            }),
-          ]),
-          h('button', {
-            key: 'save', type: 'button', style: primaryButton, disabled: busy,
-            onClick: saveTemplate,
-          }, t('modelChainTemplateSave')),
-        ]),
-        h('div', { key: 'pick-row', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto', gap: 8, alignItems: 'end' } }, [
+        h('div', { key: 'pick-row', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 8, alignItems: 'end' } }, [
           h('label', { key: 'pick', style: label }, [
             h('span', { key: 'l' }, t('modelChainTemplateSelect')),
             h('select', {
               key: 's',
               style: input,
-              value: template?.name ?? '',
+              value: pickerName,
               'aria-label': t('modelChainTemplateSelect'),
-              onChange: event => {
-                setSelectedName(event.target.value)
-                setLocalError('')
-                setLocalNotice('')
-              },
+              onChange: event => openTemplate(event.target.value),
             }, [
               h('option', { key: 'none', value: '' }, t('modelChainTemplateNone')),
               ...templates.map(item => h('option', { key: item.name, value: item.name }, item.name)),
             ]),
           ]),
           h('button', {
-            key: 'update', type: 'button', style: button, disabled: busy || template === null,
-            onClick: updateTemplate,
-          }, t('modelChainTemplateUpdate')),
-          h('button', {
-            key: 'delete', type: 'button', style: button, disabled: busy || template === null,
+            key: 'delete', type: 'button', style: button,
+            disabled: busy || editingName === '',
             onClick: deleteTemplate,
           }, t('modelChainTemplateDelete')),
         ]),
-        h('span', { key: 'preview', style: small },
-          template === null ? t('modelChainTemplateNone') : chainSummary(template, t)),
+        h('div', { key: 'editor', style: { ...panel, gap: 10, paddingTop: 6, borderTop: '1px solid var(--dsw-alias-border-l1)' } }, [
+          h('div', { key: 'name-row', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 8, alignItems: 'end' } }, [
+            h('label', { key: 'name', style: label }, [
+              h('span', { key: 'l' }, t('modelChainTemplateName')),
+              h('input', {
+                key: 'i',
+                style: input,
+                value: draft.name,
+                placeholder: t('modelChainTemplateNamePlaceholder'),
+                'aria-label': t('modelChainTemplateName'),
+                onChange: event => patchDraft({ name: event.target.value }),
+              }),
+            ]),
+            h('button', {
+              key: 'save', type: 'button', style: primaryButton, disabled: busy,
+              onClick: saveTemplate,
+            }, t('modelChainTemplateSave')),
+          ]),
+          h('div', { key: 'primary', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1.4fr) minmax(0,1fr)', gap: 10 } }, [
+            h('label', { key: 'model', style: label }, [
+              h('span', { key: 'label' }, t('primaryModel')),
+              h('select', {
+                key: 'select',
+                style: input,
+                value: primaryValue,
+                'aria-label': t('primaryModel'),
+                onChange: event => {
+                  const [nextProvider = '', nextModel = ''] = event.target.value.split('::')
+                  patchDraft({ provider: nextProvider, model: nextModel, reasoningEffort: '' })
+                },
+              }, [
+                h('option', { key: 'inherit', value: '' }, t('modelChainTemplateInherit')),
+                ...primaryPairs.map(pair => h('option', {
+                  key: pair.provider + '::' + pair.id,
+                  value: pair.provider + '::' + pair.id,
+                }, pair.provider + '/' + pair.id + (pair.name ? ' — ' + pair.name : ''))),
+              ]),
+            ]),
+            h('label', { key: 'effort', style: label }, [
+              h('span', { key: 'label' }, t('effort')),
+              h('select', {
+                key: 'select',
+                style: input,
+                value: draft.reasoningEffort ?? '',
+                disabled: primaryValue === '',
+                'aria-label': t('effort'),
+                onChange: event => patchDraft({ reasoningEffort: event.target.value }),
+              }, primaryOptions.map(option => h('option', { key: option.id, value: option.id }, option.name))),
+            ]),
+          ]),
+          h('div', { key: 'fallbacks', style: { ...panel, gap: 8 } }, [
+            h('div', { key: 'head', style: { ...row, justifyContent: 'space-between' } }, [
+              h('span', { key: 'title', style: { ...small, fontWeight: 600, color: 'var(--dsw-alias-label-primary)' } }, t('fallbacks')),
+              h('button', {
+                key: 'add', type: 'button', style: button,
+                disabled: draft.fallbacks.length >= MAX_MODEL_CHAIN_FALLBACKS,
+                onClick: addFallback,
+              }, '＋ ' + t('addFallback')),
+            ]),
+            draft.fallbacks.length === 0
+              ? h('span', { key: 'empty', style: small }, t('fallbackEmpty'))
+              : draft.fallbacks.map((entry, index) => fallbackRow(entry, index)),
+          ]),
+          h('span', { key: 'preview', style: small }, chainSummary(normalizeDraft(), t)),
+        ]),
         h('div', {
           key: 'targets',
           style: { ...panel, gap: 6, paddingTop: 6, borderTop: '1px solid var(--dsw-alias-border-l1)' },
@@ -2161,8 +2363,9 @@ window.__ModuleLoader__.load({
           key: 'chain-templates',
           t,
           roles,
-          selected,
           templates: Array.isArray(templates) ? templates : [],
+          catalogPairs,
+          effortLevels,
           busy,
           onChange: onTemplatesChange,
           onRolesChange,

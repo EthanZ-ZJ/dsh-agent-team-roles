@@ -319,7 +319,7 @@ Skills are registered only in that member's Agent scope; global skills still com
 
 ## Reusing a model chain
 
-In Settings → Agent team roles → Roles, save a role's primary model, reasoning effort and ordered fallbacks as a named template. For example, capture DEV's chain as “Daily development”, select the template, check SE, DEV and TSE, then apply and save. Unchecked roles stay unchanged. Tool permissions, prompts and private skills are not copied from the source role.
+In Settings → Agent team roles, use the model chain template editor to create a named chain without selecting or configuring a teammate. Choose the primary model and reasoning effort, then add fallbacks in the order they should be tried. Opening an existing template edits that template’s own chain. For example, create “Daily development” first, then check SE, DEV and TSE only when you want to apply it. Unchecked roles, tool permissions, prompts and private skills stay unchanged.
 
 A chain may inherit the session's primary model and still define its own fallbacks. Selecting a template previews those fallbacks in order. Creating, updating or deleting a template persists just the template library; applying one stages the selected roles until you click Save at the top of the page.
 
