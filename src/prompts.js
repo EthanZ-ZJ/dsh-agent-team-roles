@@ -153,6 +153,24 @@ export function leadRoutingGuide() {
   ].join('\n')
 }
 
+/**
+ * The Lead's turn protocol: dispatch first, then verify from reports.
+ *
+ * Numbers come from the live policy so the text and the enforced guard agree.
+ */
+export function leadWorkflowGuide({ selfBudget = 3, preDispatchBudget = 1 } = {}) {
+  return [
+    '## Turn protocol: dispatch first, then verify',
+    '',
+    `1. Read the request and assign it: one \`team_task_create\` per unit of work, then \`spawn_team_member\` (the role that owns it) or \`send_message\` (an existing member).`,
+    `2. You may self-check at most ${preDispatchBudget} time(s) before a dispatch and at most ${selfBudget} time(s) per turn. The budget resets each turn; exceeding it is refused.`,
+    '3. After dispatching, read only what verifies a report: a diff, a test result, a returned file. Do not re-investigate what a member owns.',
+    '4. Your answer to the user is a dispatch report — who was given what, current status, and what you need from the user. Do not produce the design, the root-cause analysis, or the implementation plan yourself: the role that owns the work produces it.',
+    '',
+    'If a question needs judgement, ask the owning role for a one-paragraph conclusion instead of reasoning it out here. If you notice yourself searching for a way to work around this, stop and dispatch.',
+  ].join('\n')
+}
+
 /** Render a compact rule list for tool results. */
 export function ruleSummary(roleId, rules) {
   if (rules.length === 0) return `role "${roleId}" has no learned rules`

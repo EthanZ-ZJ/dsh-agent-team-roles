@@ -1,6 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { activeMembers, leadCatalog, leadMemoryGuide, leadRoutingGuide, memberPersona } from '../src/prompts.js'
+import { activeMembers, leadCatalog, leadMemoryGuide, leadRoutingGuide, leadWorkflowGuide, memberPersona } from '../src/prompts.js'
+
+test('the Lead workflow guide states the dispatch-first protocol with live limits', () => {
+  const text = leadWorkflowGuide({ selfBudget: 2, preDispatchBudget: 0 })
+  assert.match(text, /dispatch first, then verify/)
+  assert.match(text, /team_task_create/)
+  assert.match(text, /at most 0 time\(s\) before a dispatch/)
+  assert.match(text, /at most 2 time\(s\) per turn/)
+  assert.match(text, /dispatch report/)
+  assert.match(text, /stop and dispatch/)
+})
 
 test('the Lead routing guide forbids implementation and names the delegation path', () => {
   const text = leadRoutingGuide()

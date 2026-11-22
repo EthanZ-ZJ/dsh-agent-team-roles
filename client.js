@@ -24,6 +24,12 @@ window.__ModuleLoader__.load({
       denyCommands: '命令拒绝策略',
       denyHint: '示例：\\bgit\\s+push\\b, \\bnpm\\s+publish\\b —— 该角色调用 bash/pwsh 且命令命中任一正则即被拒绝（≤20 条、单条 ≤200 字符）。',
       leadPlaybook: 'Lead 编排 playbook',
+      leadWorkflowMode: 'Lead 回合协议',
+      leadWorkflowHint: 'dispatch-first：每轮先派发任务；自查工具（read/grep/glob/read_image）派发前最多 N 次、每轮最多 M 次，超限会被拒绝并提示交给成员。off：不限制。',
+      leadWorkflowDispatchFirst: '先派发再自查（推荐）',
+      leadWorkflowOff: '不限制',
+      leadSelfWorkBudget: '每轮自查上限',
+      leadPreDispatchBudget: '派发前自查上限',
       leadToolMode: 'Lead 工具策略',
       leadToolModeHint: 'hide：从 Lead 的工具清单里移除实现类工具（write/edit/pwsh 等），模型看不到；deny：保留可见但调用时拒绝并提醒交给对应角色；off：不限制。改 hide/deny 需重载插件后完全生效。',
       leadToolModeHide: '隐藏实现工具（推荐）',
@@ -277,6 +283,12 @@ window.__ModuleLoader__.load({
       denyCommands: 'Denied commands',
       denyHint: 'Example: \\bgit\\s+push\\b, \\bnpm\\s+publish\\b — matching bash/pwsh commands are denied for this role (at most 20 patterns of 200 characters).',
       leadPlaybook: 'Lead orchestration playbook',
+      leadWorkflowMode: 'Lead turn protocol',
+      leadWorkflowHint: 'dispatch-first: assign the work first; self-check tools (read/grep/glob/read_image) are limited to N calls before a dispatch and M per turn, and exceeding either is refused with a routing reminder. off disables the limit.',
+      leadWorkflowDispatchFirst: 'Dispatch first (recommended)',
+      leadWorkflowOff: 'Unrestricted',
+      leadSelfWorkBudget: 'Self-checks per turn',
+      leadPreDispatchBudget: 'Self-checks before dispatch',
       leadToolMode: 'Lead tool policy',
       leadToolModeHint: 'hide removes implementation tools (write/edit/pwsh, ...) from the Lead\'s tool list; deny keeps them visible but refuses each call with a routing reminder; off disables the policy. Reload the plugin for hide/deny to take full effect.',
       leadToolModeHide: 'Hide implementation tools (recommended)',
@@ -1104,6 +1116,9 @@ window.__ModuleLoader__.load({
         const gatesBaselineRef = React.useRef('[]')
         const [engine, setEngine] = React.useState({
           leadPlaybook: '',
+          leadWorkflowMode: 'dispatch-first',
+          leadSelfWorkBudget: 3,
+          leadPreDispatchBudget: 1,
           leadToolMode: 'hide',
           leadToolDeny: '',
           activeTemplate: '',
@@ -1127,6 +1142,9 @@ window.__ModuleLoader__.load({
           setTemplates(normalizeModelChainTemplates(view.value?.modelChainTemplates))
           setEngine({
             leadPlaybook: typeof view.value?.leadPlaybook === 'string' ? view.value.leadPlaybook : '',
+            leadWorkflowMode: ['dispatch-first', 'off'].includes(view.value?.leadWorkflowMode) ? view.value.leadWorkflowMode : 'dispatch-first',
+            leadSelfWorkBudget: Number.isSafeInteger(view.value?.leadSelfWorkBudget) ? view.value.leadSelfWorkBudget : 3,
+            leadPreDispatchBudget: Number.isSafeInteger(view.value?.leadPreDispatchBudget) ? view.value.leadPreDispatchBudget : 1,
             leadToolMode: ['hide', 'deny', 'off'].includes(view.value?.leadToolMode) ? view.value.leadToolMode : 'hide',
             leadToolDeny: Array.isArray(view.value?.leadToolDeny) ? view.value.leadToolDeny.join(', ') : '',
             activeTemplate: typeof view.value?.activeTemplate === 'string' ? view.value.activeTemplate : '',
@@ -1385,6 +1403,9 @@ window.__ModuleLoader__.load({
               .filter((id) => gateIds.has(id))
             const fields = [
               { field: 'leadPlaybook', value: engine.leadPlaybook },
+              { field: 'leadWorkflowMode', value: ['dispatch-first', 'off'].includes(engine.leadWorkflowMode) ? engine.leadWorkflowMode : 'dispatch-first' },
+              { field: 'leadSelfWorkBudget', value: Number.isSafeInteger(Number(engine.leadSelfWorkBudget)) ? Math.max(0, Number(engine.leadSelfWorkBudget)) : 3 },
+              { field: 'leadPreDispatchBudget', value: Number.isSafeInteger(Number(engine.leadPreDispatchBudget)) ? Math.max(0, Number(engine.leadPreDispatchBudget)) : 1 },
               { field: 'leadToolMode', value: ['hide', 'deny', 'off'].includes(engine.leadToolMode) ? engine.leadToolMode : 'hide' },
               { field: 'leadToolDeny', value: String(engine.leadToolDeny ?? '').split(',').map((name) => name.trim()).filter((name) => name !== '') },
               { field: 'activeTemplate', value: engine.activeTemplate },
@@ -1564,6 +1585,46 @@ window.__ModuleLoader__.load({
             }),
             h('span', { key: 'hint', style: small }, t('templateHint')),
           ]),
+        ]),
+        h('div', { key: 'lead-workflow', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)', gap: 12 } }, [
+          h('label', { key: 'mode', style: label }, [
+            h('span', { key: 'l' }, t('leadWorkflowMode')),
+            h('select', {
+              key: 'i',
+              style: input,
+              value: engine.leadWorkflowMode,
+              'aria-label': t('leadWorkflowMode'),
+              onChange: (event) => edit({ leadWorkflowMode: event.target.value }),
+            }, [
+              h('option', { key: 'dispatch', value: 'dispatch-first' }, t('leadWorkflowDispatchFirst')),
+              h('option', { key: 'off', value: 'off' }, t('leadWorkflowOff')),
+            ]),
+          ]),
+          h('label', { key: 'self', style: label }, [
+            h('span', { key: 'l' }, t('leadSelfWorkBudget')),
+            h('input', {
+              key: 'i',
+              type: 'number',
+              min: 0,
+              style: input,
+              value: engine.leadSelfWorkBudget,
+              'aria-label': t('leadSelfWorkBudget'),
+              onChange: (event) => edit({ leadSelfWorkBudget: event.target.value }),
+            }),
+          ]),
+          h('label', { key: 'pre', style: label }, [
+            h('span', { key: 'l' }, t('leadPreDispatchBudget')),
+            h('input', {
+              key: 'i',
+              type: 'number',
+              min: 0,
+              style: input,
+              value: engine.leadPreDispatchBudget,
+              'aria-label': t('leadPreDispatchBudget'),
+              onChange: (event) => edit({ leadPreDispatchBudget: event.target.value }),
+            }),
+          ]),
+          h('span', { key: 'hint', style: { ...small, gridColumn: '1 / -1' } }, t('leadWorkflowHint')),
         ]),
         h('div', { key: 'lead-tools', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 12 } }, [
           h('label', { key: 'mode', style: label }, [

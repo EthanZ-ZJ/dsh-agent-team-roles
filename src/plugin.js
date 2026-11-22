@@ -18,8 +18,15 @@ import z from '@deepseek-ai/schemastery'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { LEAD_ROLE_ID, findRole, mergeRoles, readConfig, roleFallbacks, roleForTarget } from './config.js'
-import { activeMembers, leadCatalog, leadMemoryGuide, leadRoutingGuide, memberPersona } from './prompts.js'
+import { activeMembers, leadCatalog, leadMemoryGuide, leadRoutingGuide, leadWorkflowGuide, memberPersona } from './prompts.js'
 import { leadDelegateReason, leadToolPolicy } from './lead-policy.js'
+import {
+  SELF_SERVICE_TOOLS,
+  createLeadWorkflowCounter,
+  leadWorkflowPolicy,
+  preDispatchRefusal,
+  selfWorkRefusal,
+} from './lead-workflow.js'
 import { evaluateDeny } from './policy.js'
 import {
   GateSchema,
@@ -188,6 +195,12 @@ export const Config = z.object({
   modelChainTemplates: z.array(ModelChainTemplateSchema).default([]).volatile()
     .description('Named model-chain templates saved from the Settings page; each bundles a primary route and ordered fallbacks for applying to roles.'),
   rules: z.array(RuleSchema).default([]).volatile().description('Learned standing rules.'),
+  leadWorkflowMode: z.string().default('dispatch-first').volatile()
+    .description('Lead turn protocol: dispatch-first enforces the per-turn self-check budget; off disables it.'),
+  leadSelfWorkBudget: z.number().default(3).volatile()
+    .description('Maximum self-check tool calls (read/grep/glob/read_image) the Team Lead may make per turn.'),
+  leadPreDispatchBudget: z.number().default(1).volatile()
+    .description('Self-check calls the Team Lead may make before its first dispatch in a turn.'),
   leadToolMode: z.string().default('hide').volatile()
     .description('Team Lead tool policy: hide (remove implementation tools), deny (keep them visible but refuse with a routing reminder), or off.'),
   leadToolDeny: z.array(z.string()).default([]).volatile()
@@ -280,6 +293,9 @@ export function apply(ctx, config) {
   const memberRouteOverrides = new Map()
   // Live Lead Agent handles keyed by team root, for the member-model view.
   const leadAgents = new Map()
+  // Current turn per Lead Agent: the workflow guard resets its per-turn budget
+  // when this changes, so no turn-end event is needed.
+  const leadTurns = new Map()
   // Session-scoped gate enable/disable overlay: teamId -> Map<gateId, disabled>.
   // The global Config list stays the policy default; this overlay is a per-Team
   // operational decision and dies with the process, like the gate ledger.
@@ -594,7 +610,7 @@ export function apply(ctx, config) {
 
     try {
       if (membership.role === 'lead') {
-        const applied = installLead({ scoped, register, tools, ctx, config, snapshots, roles: rolesReader, ruleStore, agent, playbook: leadPlaybook, gateSummary: gateSummaryFor })
+        const applied = installLead({ scoped, register, tools, ctx, config, snapshots, roles: rolesReader, ruleStore, agent, playbook: leadPlaybook, gateSummary: gateSummaryFor, turnOf: () => leadTurns.get(agent.id) ?? 0 })
         // A Lead whose session preset is not resolved yet (early `agent/created`)
         // installs nothing; do not mark it installed, so the pre-step backstop
         // retries once the session context is complete.
@@ -641,6 +657,7 @@ export function apply(ctx, config) {
   const onDisposed = ({ agent }) => {
     installed.get(agent)?.()
     installed.delete(agent)
+    leadTurns.delete(agent.id)
   }
 
   ctx.on('agent/created', onCreated)
@@ -666,7 +683,8 @@ export function apply(ctx, config) {
     }
   })
 
-  ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, messages }, next) => {
+  ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, messages, turn }, next) => {
+    leadTurns.set(agent.id, turn)
     // Backstop install: a session created while the plugin is already active may
     // resolve its preset and Team membership only after `agent/created`, so the
     // first step re-checks and installs the scoped contributions then.
@@ -1207,6 +1225,42 @@ const LEAD_MEMORY_TOOLS = ['record_role_feedback', 'list_role_rules', 'forget_ro
  * model-facing reminder to route the work to a role. The policy is read live, so
  * switching it to `deny` or `off` in Settings applies on the next tool call.
  */
+/**
+ * Enforce the dispatch-first turn protocol.
+ *
+ * The Lead may self-check a little before assigning work and a little more after
+ * dispatching, but it must hand the investigation to the member that owns it
+ * instead of reasoning over the code itself. Counters are per turn; a refusal is
+ * a model-facing instruction, not a silent failure.
+ */
+export function installLeadWorkflow({ scoped, register, agent, config, turnOf }) {
+  const counter = createLeadWorkflowCounter()
+  const live = () => leadWorkflowPolicy({
+    mode: readConfig(config, 'leadWorkflowMode'),
+    selfBudget: readConfig(config, 'leadSelfWorkBudget'),
+    preDispatchBudget: readConfig(config, 'leadPreDispatchBudget'),
+  })
+  register(scoped.tools.guard((exec) => {
+    const policy = live()
+    if (policy.mode === 'off') return undefined
+    counter.reset(typeof turnOf === 'function' ? turnOf() : 0)
+    if (counter.observeDispatch(exec.name)) return undefined
+    if (!SELF_SERVICE_TOOLS.includes(exec.name)) return undefined
+    const used = counter.use()
+    if (!counter.dispatched && used > policy.preDispatchBudget) return preDispatchRefusal(policy.preDispatchBudget)
+    if (used > policy.selfBudget) return selfWorkRefusal(policy.selfBudget)
+    return undefined
+  }))
+  register(scoped.systemPrompt.section({
+    name: 'agent-team-roles:lead-workflow',
+    order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY') + 6,
+    text: () => {
+      const policy = live()
+      return policy.mode === 'off' ? '' : leadWorkflowGuide(policy)
+    },
+  }))
+}
+
 export function installLeadToolPolicy({ scoped, register, ctx, agent, config }) {
   const live = () => leadToolPolicy({
     mode: readConfig(config, 'leadToolMode'),
@@ -1246,7 +1300,7 @@ export function installLeadToolPolicy({ scoped, register, ctx, agent, config }) 
 }
 
 /** Install the Lead's role catalog, tools, and the official-spawn guard. */
-function installLead({ scoped, register, tools, ctx, config, snapshots, roles, ruleStore, agent, playbook, gateSummary }) {
+function installLead({ scoped, register, tools, ctx, config, snapshots, roles, ruleStore, agent, playbook, gateSummary, turnOf }) {
   // Lead memory: standing rules about how the Lead itself works ("from now on,
   // ask before deleting"). They apply wherever this Agent is the official Team
   // Lead, even when the session preset is not `team-lead`: a resumed roster
@@ -1331,6 +1385,7 @@ function installLead({ scoped, register, tools, ctx, config, snapshots, roles, r
     if (!LEAD_MEMORY_TOOLS.includes(definition.name)) register(scoped.tools.register(definition))
   }
   installLeadToolPolicy({ scoped, register, ctx, agent, config })
+  installLeadWorkflow({ scoped, register, agent, config, turnOf })
   register(scoped.tools.guard((exec) => {
     if (exec.name !== 'spawn_teammate') return undefined
     return 'The official spawn_teammate tool is disabled in this Team. Use spawn_team_member with a configured role instead.'

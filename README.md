@@ -273,6 +273,16 @@ A Team Lead orchestrates; it must not edit files, run shells, or execute code it
 
 `run_code` and scoped tools cannot be hidden, so a guard covers them in both modes. The guard also reads the policy live: switching to `deny` or `off` in Settings applies on the next tool call, while the hidden list itself needs a plugin reload. Read-only tools (`read`, `grep`, `glob`) stay available for checking a report or diff. Extra tool names can be appended in Settings → Engine → Lead tool policy; non-Team sessions are unaffected.
 
+## Turn protocol: dispatch first
+
+The Lead's remaining way to drift is investigating the code itself. The plugin enforces a dispatch-first turn protocol on the Lead:
+
+- One `team_task_create` per unit of work, then `spawn_team_member` (the owning role) or `send_message` (an existing member).
+- Self-check tools (`read`, `grep`, `glob`, `read_image`) are budgeted: at most **1** call before a dispatch and **3** per turn by default. Exceeding either is refused with a message naming the routing tools; the counters reset every turn.
+- The Lead's answer is a dispatch report (who got what, status, what it needs), not the design or root-cause analysis — the owning role produces that.
+
+All three limits are editable in Settings → Engine → Lead turn protocol (`dispatch-first` / `off`, self-checks per turn, self-checks before dispatch) and the guard reads them live. This complements the tool policy above: the policy removes implementation tools, the protocol limits self-investigation.
+
 ## Learned rules
 
 The Team Lead has its own rule bucket, id `lead`. Say "from now on, X" to the Lead and it records that with `remember_role_rule` (or `record_role_feedback` with `role: "lead"`); the rule is rendered into the Lead's own prompt on the next step and can be reviewed, promoted, or retired in the **Rules** tab of Settings, where `lead` appears after the spawnable roles and a new rule still defaults to a real role. The Lead's rule tools and prompt section work in any session where the agent is the official Team Lead, even when the session preset is not `team-lead`; the role catalog and spawn tooling stay preset-gated. This is separate from a role's rules: a Lead rule governs how the Lead itself works, never a teammate.
