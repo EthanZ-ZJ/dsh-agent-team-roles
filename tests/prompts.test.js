@@ -1,6 +1,19 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { activeMembers, leadCatalog, memberPersona } from '../src/prompts.js'
+import { activeMembers, leadCatalog, leadMemoryGuide, memberPersona } from '../src/prompts.js'
+
+test('the Lead memory guide routes rules to the profile and facts to project memory', () => {
+  const text = leadMemoryGuide()
+  assert.match(text, /record_role_feedback/)
+  assert.match(text, /role: "lead"/)
+  assert.match(text, /memory_capture/)
+  assert.match(text, /\.plugins\/memory/)
+  assert.match(text, /every project/)
+  assert.match(text, /from now on/)
+  assert.match(text, /list_role_rules/)
+  assert.match(text, /forget_role_rule/)
+  assert.match(text, /作为 Lead 通用规则/)
+})
 
 test('lead catalog lists every role and disables the ad-hoc tool', () => {
   const text = leadCatalog([

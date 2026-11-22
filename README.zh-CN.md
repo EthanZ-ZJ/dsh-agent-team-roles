@@ -263,6 +263,8 @@ await roles.remove('reviewer')
 
 Team Lead 有自己的规则桶，id 为 `lead`。对 Lead 说「以后都 X」时，它会用 `remember_role_rule`（或 `record_role_feedback`，`role: "lead"`）记录；规则在下一步就渲染进 Lead 自己的提示词，并可在设置页「规则」标签中查看、确认或退役——`lead` 排在可召唤角色之后，新建规则默认仍选真实角色。只要该 Agent 是官方 Team Lead，记录工具与提示词段就生效，即使会话 preset 不是 `team-lead`（角色目录与拉取能力仍按 preset 门控）。它与角色规则分开：Lead 规则约束 Lead 自己的工作方式，不会作用于任何成员。
 
+「记住 X」会先判断归属再写入：长期的工作方式要求（「从今以后/以后都/每次/不要/永远」等）写成规则——Lead 自己用 `role: "lead"`，某个成员用它的角色 id；工作区事实（路径、版本、命令、发现的 API）用 `memory_capture` 存项目记忆。规则存在 profile、对所有项目生效；记忆库只作用于当前工作区。判断不清时 Lead 会先问一句存哪，而不是猜。已经误存进项目记忆的条目，可以读出来记成规则，再把那条记忆退役。
+
 两个工具负责写入：
 
 - `remember_role_rule`：成员记录与自己角色相关的长期要求。

@@ -496,7 +496,7 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
   const recordRoleFeedback = defineTool({
     name: 'record_role_feedback',
     description:
-      'Record one lasting requirement about how a role - or the Lead itself (role "lead") - works, after the user states it. Use this for "from now on", "always", and "never" requirements; use session scope for a task-local correction. Never record project-specific facts (brand names, domains, schemas, environment, versions, file paths) here — put those in the project memory vault with memory_capture. Only the Team Lead may call this tool.',
+      'Record one lasting requirement about how a role - or the Lead itself (role "lead") - works, after the user states it. Use this for "from now on", "always", "never", and "remember this" requests about working style; use session scope for a task-local correction. Rules are global (every project), so they are the right store for a lasting requirement. Never record project-specific facts (brand names, domains, schemas, environment, versions, file paths) here — put those in the project memory vault with memory_capture. Only the Team Lead may call this tool.',
     parameters: {
       role: { type: 'string', required: true, description: 'Configured role id, or "lead" for the Team Lead itself.' },
       text: {

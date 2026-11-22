@@ -18,7 +18,7 @@ import z from '@deepseek-ai/schemastery'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { LEAD_ROLE_ID, findRole, mergeRoles, readConfig, roleFallbacks, roleForTarget } from './config.js'
-import { activeMembers, leadCatalog, memberPersona } from './prompts.js'
+import { activeMembers, leadCatalog, leadMemoryGuide, memberPersona } from './prompts.js'
 import { evaluateDeny } from './policy.js'
 import {
   GateSchema,
@@ -1216,6 +1216,15 @@ function installLead({ scoped, register, tools, ctx, snapshots, roles, ruleStore
   for (const definition of tools.lead) {
     if (LEAD_MEMORY_TOOLS.includes(definition.name)) register(scoped.tools.register(definition))
   }
+
+  // Where "remember this" belongs: global rules vs the workspace memory vault.
+  // Installed for every official Lead, so a session on another preset cannot
+  // silently file a lasting requirement into project-local memory.
+  register(scoped.systemPrompt.section({
+    name: 'agent-team-roles:lead-memory',
+    order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY') + 8,
+    text: () => leadMemoryGuide(),
+  }))
 
   // Manual pulls, the roster catalog, and the spawn guard are Team-Lead-preset
   // features; other presets must not carry them.

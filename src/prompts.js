@@ -109,6 +109,30 @@ export function memberPersona({ frozen, rulesText, target, teamDescription = '',
   return lines.join('\n')
 }
 
+/**
+ * Where a "remember this" request belongs.
+ *
+ * The Lead has two durable stores: global standing rules (profile Config,
+ * rendered into the Lead or role prompt) and the project memory vault, which is
+ * workspace-scoped. Without this instruction the model tends to send a lasting
+ * working requirement to the project vault, where it silently stops applying in
+ * other workspaces.
+ */
+export function leadMemoryGuide() {
+  return [
+    '## Remembering what the user tells you',
+    '',
+    'Before writing anything, decide which store the request belongs to. They are not interchangeable:',
+    '',
+    '- **Global standing rule** — how you or a role should keep working ("从今以后/以后都/每次/默认/不要/永远…", "from now on", "always", "never", "prefer"). Use `record_role_feedback` with `role: "lead"` for your own working style, or the teammate role id for that role. Rules persist in the profile and apply in every project; they appear in Settings → Agent team roles → Rules.',
+    '- **Project memory** — a fact about THIS workspace (paths, versions, commands, architecture decisions, discovered APIs, environment quirks). Use `memory_capture`; that vault lives in the workspace (`.plugins/memory`) and only applies there.',
+    '',
+    'If a lasting requirement also carries project details, put the requirement in the rule and mention the details inside its text; do not leave a lasting requirement only in project memory. When the user\'s intent is genuinely ambiguous, ask one short question ("作为 Lead 通用规则，还是本项目记忆？") instead of guessing.',
+    '',
+    'To review or revoke what you recorded, use `list_role_rules` (with `role: "lead"` for your own rules) and `forget_role_rule`.',
+  ].join('\n')
+}
+
 /** Render a compact rule list for tool results. */
 export function ruleSummary(roleId, rules) {
   if (rules.length === 0) return `role "${roleId}" has no learned rules`

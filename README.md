@@ -267,6 +267,8 @@ The service is deliberately a "trusted plugin API" and does not verify the calli
 
 The Team Lead has its own rule bucket, id `lead`. Say "from now on, X" to the Lead and it records that with `remember_role_rule` (or `record_role_feedback` with `role: "lead"`); the rule is rendered into the Lead's own prompt on the next step and can be reviewed, promoted, or retired in the **Rules** tab of Settings, where `lead` appears after the spawnable roles and a new rule still defaults to a real role. The Lead's rule tools and prompt section work in any session where the agent is the official Team Lead, even when the session preset is not `team-lead`; the role catalog and spawn tooling stay preset-gated. This is separate from a role's rules: a Lead rule governs how the Lead itself works, never a teammate.
 
+A "remember this" request is routed before anything is written: a lasting working requirement ("从今以后/每次/不要…", "from now on", "always", "never") becomes a rule — `role: "lead"` for the Lead itself, or the teammate's role id — while a workspace fact (paths, versions, commands, discovered APIs) goes to project memory with `memory_capture`. Rules live in the profile and apply in every project; the memory vault is workspace-scoped. When the intent is ambiguous the Lead asks which store the user means instead of guessing. To move something that was filed into project memory by mistake, read the note and record it as a rule, then retire the note.
+
 Two tools write rules:
 
 - `remember_role_rule`: a member records a long-term requirement about its own role.
