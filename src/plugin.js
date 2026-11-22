@@ -121,6 +121,13 @@ const CODEX_MEMBER_TOOLS = [
 const DEFAULT_TEAM_TASK =
   '[[TEAM_HANDSHAKE]] 你已加入团队。现在只做握手：不要分析、不要提问、不要复述任务、不要给计划、不要调用任何工具。只回复 READY，然后等待 Team Lead 的下一步消息。'
 
+/** One ordered model route; shared by a role's fallback chain and model-chain templates. */
+const FallbackRouteSchema = z.object({
+  provider: z.string().default(''),
+  model: z.string().default(''),
+  reasoningEffort: z.string().default(''),
+})
+
 const RoleSchema = z.object({
   id: z.string().description('Stable role identity; also the default teammate target.'),
   name: z.string().default('').description('Display name shown in settings and the Lead catalog.'),
@@ -135,11 +142,7 @@ const RoleSchema = z.object({
     .description('Fallback model id; must be configured together with fallbackProvider.'),
   fallbackReasoningEffort: z.string().default('')
     .description('Reasoning effort for the fallback model; empty uses the model default.'),
-  fallbacks: z.array(z.object({
-    provider: z.string().default(''),
-    model: z.string().default(''),
-    reasoningEffort: z.string().default(''),
-  })).default([]).description('Ordered fallback routes tried in order; empty keeps the legacy single fallback fields.'),
+  fallbacks: z.array(FallbackRouteSchema).default([]).description('Ordered fallback routes tried in order; empty keeps the legacy single fallback fields.'),
   toolMode: z.string().default('all').description('Tool policy: all, or a custom allow-list.'),
   tools: z.array(z.string()).default([]).description('Allowed tool names when toolMode is custom.'),
   denyCommands: z.array(z.string()).default([])
@@ -148,6 +151,22 @@ const RoleSchema = z.object({
   codexSandbox: z.string().default('')
     .description('Role-level Codex sandbox override (read-only / workspace-write / danger-full-access); empty inherits the global setting.'),
   color: z.string().default('').description('Accent color for the roster.'),
+})
+
+/**
+ * One named model-chain template: a primary route plus ordered fallbacks.
+ *
+ * Templates are settings data, not runtime policy: the Settings page applies one
+ * to the selected roles, which then persist as ordinary role routes. They live in
+ * the same Config as the catalog so a save from one page never rewrites the other.
+ */
+const ModelChainTemplateSchema = z.object({
+  name: z.string().default('').description('Unique template name shown in the settings picker.'),
+  provider: z.string().default('').description('Primary provider route.'),
+  model: z.string().default('').description('Primary model id.'),
+  reasoningEffort: z.string().default('').description('Primary reasoning effort; empty keeps the adapter default.'),
+  fallbacks: z.array(FallbackRouteSchema).default([])
+    .description('Ordered fallback routes tried in order; empty means no fallback chain.'),
 })
 
 const RuleSchema = z.object({
@@ -165,6 +184,8 @@ const RuleSchema = z.object({
 /** Live role and rule settings exposed to the Settings page. */
 export const Config = z.object({
   roles: z.array(RoleSchema).default([]).volatile().description('Configured role presets.'),
+  modelChainTemplates: z.array(ModelChainTemplateSchema).default([]).volatile()
+    .description('Named model-chain templates saved from the Settings page; each bundles a primary route and ordered fallbacks for applying to roles.'),
   rules: z.array(RuleSchema).default([]).volatile().description('Learned standing rules.'),
   freshProvider: z.string().default('spawn').volatile().description('Subagent backend for fresh teammates.'),
   forkProvider: z.string().default('fork').volatile().description('Subagent backend for forked teammates.'),

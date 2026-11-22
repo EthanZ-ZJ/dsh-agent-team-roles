@@ -207,6 +207,31 @@ window.__ModuleLoader__.load({
       moveDown: '下移',
       fallbackEmpty: '还没有备用模型；主模型不可用时可切到这里。',
       fallbackHint: '按顺序尝试：主模型失败后先试备用 1，再试备用 2；每轮最多自动切换 2 次，切换后模型面板会标注序号。',
+      modelChainTemplates: '模型链模板',
+      modelChainTemplateHint: '把常用模型链存成命名模板，勾选多个角色后可一次套用。只改模型路由（主模型、推理强度、备用链），不改提示词、工具、技能或 Codex 配置。',
+      modelChainTemplateEmpty: '还没有模型链模板。先配置好当前角色的模型链，再保存为模板。',
+      modelChainTemplateName: '模板名称',
+      modelChainTemplateNamePlaceholder: '例如：主力链',
+      modelChainTemplateSelect: '选择模板',
+      modelChainTemplateSave: '保存为模板',
+      modelChainTemplateUpdate: '更新模板',
+      modelChainTemplateDelete: '删除模板',
+      modelChainTemplateTargets: '应用到的角色',
+      modelChainTemplateApply: '应用到勾选角色',
+      modelChainTemplateCheckedCount: '已选 {count} 个角色',
+      modelChainTemplateNone: '未选择模板',
+      modelChainTemplateRoute: '主模型：{route}',
+      modelChainTemplateInherit: '跟随会话',
+      modelChainTemplateFallbacksOrdered: '备用：{list}',
+      modelChainTemplateEmptyChain: '当前角色既没有主模型也没有备用链，无法保存为模板。',
+      modelChainTemplatePartialRoute: '提供方和主模型必须同时填写或同时留空。',
+      modelChainTemplateNameRequired: '请先填写模板名称。',
+      modelChainTemplateNameLong: '模板名称过长（最多 {max} 个字符）。',
+      modelChainTemplateNameExists: '已存在同名模板「{name}」；如需覆盖请用「更新模板」。',
+      modelChainTemplateLimit: '模板数量已达上限 {max}。',
+      modelChainTemplatePick: '请先选择一个模板。',
+      modelChainTemplateCheckedNone: '请至少勾选一个角色。',
+      modelChainTemplateApplied: '已把模板应用到 {count} 个角色；点上方「保存」后写入配置。',
       ruleHint: 'permanent 会立即进入提示词；candidate 需要重复或在这里确认；session 只在当前会话生效，不会出现在这里。',
       history: '历史记忆',
       noHistory: '该角色还没有历史记忆。',
@@ -419,6 +444,31 @@ window.__ModuleLoader__.load({
       moveDown: 'Move down',
       fallbackEmpty: 'No fallback routes yet; a failing primary route cannot fall back.',
       fallbackHint: 'Tried in order: fallback 1, then fallback 2. The plugin switches at most twice per turn and the member panel shows the position.',
+      modelChainTemplates: 'Model chain templates',
+      modelChainTemplateHint: 'Save a reusable model chain under a name, then apply it to several checked roles at once. Only the model route (primary model, reasoning effort, fallback chain) changes; prompts, tools, skills, and Codex settings stay untouched.',
+      modelChainTemplateEmpty: 'No model chain templates yet. Configure the current role\'s chain first, then save it as a template.',
+      modelChainTemplateName: 'Template name',
+      modelChainTemplateNamePlaceholder: 'For example: primary chain',
+      modelChainTemplateSelect: 'Select template',
+      modelChainTemplateSave: 'Save as template',
+      modelChainTemplateUpdate: 'Update template',
+      modelChainTemplateDelete: 'Delete template',
+      modelChainTemplateTargets: 'Apply to roles',
+      modelChainTemplateApply: 'Apply to checked roles',
+      modelChainTemplateCheckedCount: '{count} roles checked',
+      modelChainTemplateNone: 'No template selected',
+      modelChainTemplateRoute: 'Primary: {route}',
+      modelChainTemplateInherit: 'inherit session',
+      modelChainTemplateFallbacksOrdered: 'Fallbacks: {list}',
+      modelChainTemplateEmptyChain: 'The current role has neither a primary model nor a fallback chain; it cannot be saved as a template.',
+      modelChainTemplatePartialRoute: 'Configure the provider and model together, or leave both empty.',
+      modelChainTemplateNameRequired: 'Enter a template name first.',
+      modelChainTemplateNameLong: 'The template name is too long (at most {max} characters).',
+      modelChainTemplateNameExists: 'A template named "{name}" already exists; use "Update template" to overwrite it.',
+      modelChainTemplateLimit: 'The template limit of {max} has been reached.',
+      modelChainTemplatePick: 'Select a template first.',
+      modelChainTemplateCheckedNone: 'Check at least one role.',
+      modelChainTemplateApplied: 'Applied the template to {count} roles; click Save above to write the configuration.',
       ruleHint: 'permanent reaches the prompt immediately; candidate waits for a repeat or confirmation here; session rules only live in the current Session and do not appear here.',
       history: 'Memory history',
       noHistory: 'No memory history for this role yet.',
@@ -445,6 +495,12 @@ window.__ModuleLoader__.load({
     const MAX_GATE_PATTERN = 200
     /** Gate id grammar; mirrors GATE_ID in src/gates.js. */
     const GATE_ID = /^[a-z][a-z0-9-]{0,63}$/
+    /** Cap on named model-chain templates stored in one Config field. */
+    const MAX_MODEL_CHAIN_TEMPLATES = 20
+    /** Template names stay short enough to read in a single select row. */
+    const MODEL_CHAIN_TEMPLATE_NAME_LIMIT = 64
+    /** Ordered fallback cap; mirrors FALLBACK_LIMIT in src/config.js. */
+    const MAX_MODEL_CHAIN_FALLBACKS = 8
     const input = {
       width: '100%',
       boxSizing: 'border-box',
@@ -532,6 +588,126 @@ window.__ModuleLoader__.load({
     function fill(template, params) {
       return String(template ?? '').replace(/\{(\w+)\}/g, (match, name) =>
         params !== undefined && name in params ? String(params[name]) : '')
+    }
+
+    /** Trim one model-chain string field, never throwing on a non-string. */
+    function chainText(value) {
+      return typeof value === 'string' ? value.trim() : ''
+    }
+
+    /**
+     * Normalize one ordered fallback chain.
+     *
+     * Only complete routes survive; duplicates are dropped and the host's
+     * eight-route cap is enforced. Every entry is copied, so a template and a
+     * role never share a mutable route object.
+     */
+    function chainFallbacks(input) {
+      const routes = []
+      const seen = new Set()
+      for (const candidate of Array.isArray(input) ? input : []) {
+        if (candidate === null || typeof candidate !== 'object') continue
+        const provider = chainText(candidate.provider)
+        const model = chainText(candidate.model)
+        if (provider === '' || model === '') continue
+        const key = `${provider}::${model}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        routes.push({ provider, model, reasoningEffort: chainText(candidate.reasoningEffort) })
+        if (routes.length >= MAX_MODEL_CHAIN_FALLBACKS) break
+      }
+      return routes
+    }
+
+    /**
+     * Project one role's current model chain.
+     *
+     * The legacy single fallback pair is still honored when `fallbacks` is
+     * empty, so saving a template from an older role does not silently lose its
+     * fallback route. The result contains only routing fields.
+     */
+    function chainOfRole(role) {
+      const fallbacks = chainFallbacks(role?.fallbacks)
+      const legacy = fallbacks.length === 0
+        && chainText(role?.fallbackProvider) !== ''
+        && chainText(role?.fallbackModel) !== ''
+        ? [{
+            provider: chainText(role.fallbackProvider),
+            model: chainText(role.fallbackModel),
+            reasoningEffort: chainText(role.fallbackReasoningEffort),
+          }]
+        : fallbacks
+      return {
+        provider: chainText(role?.provider),
+        model: chainText(role?.model),
+        reasoningEffort: chainText(role?.reasoningEffort),
+        fallbacks: legacy,
+      }
+    }
+
+    /** Normalize the persisted `modelChainTemplates` field into the editor shape. */
+    function normalizeModelChainTemplates(input) {
+      const templates = []
+      const seen = new Set()
+      for (const candidate of Array.isArray(input) ? input : []) {
+        if (candidate === null || typeof candidate !== 'object') continue
+        const name = chainText(candidate.name)
+        if (name === '' || seen.has(name)) continue
+        seen.add(name)
+        // A half-filled primary route is not usable: treat it as "inherit the
+        // session route" so applying it can never write an invalid role route.
+        const provider = chainText(candidate.provider)
+        const model = chainText(candidate.model)
+        const paired = provider !== '' && model !== ''
+        templates.push({
+          name,
+          provider: paired ? provider : '',
+          model: paired ? model : '',
+          reasoningEffort: paired ? chainText(candidate.reasoningEffort) : '',
+          fallbacks: chainFallbacks(candidate.fallbacks),
+        })
+        if (templates.length >= MAX_MODEL_CHAIN_TEMPLATES) break
+      }
+      return templates
+    }
+
+    /**
+     * The complete route-only patch a template applies to a role.
+     *
+     * Applying a chain must never touch a role's prompt, tool policy, skills,
+     * color, or Codex settings: this object lists exactly the routing fields.
+     * The legacy single-fallback fields are retired because `fallbacks` becomes
+     * authoritative, matching what the chain editor itself does.
+     */
+    function chainPatchOf(template) {
+      return {
+        provider: chainText(template?.provider),
+        model: chainText(template?.model),
+        reasoningEffort: chainText(template?.reasoningEffort),
+        fallbacks: chainFallbacks(template?.fallbacks),
+        fallbackProvider: '',
+        fallbackModel: '',
+        fallbackReasoningEffort: '',
+      }
+    }
+
+    /**
+     * One readable line for a model chain, used in template previews.
+     *
+     * An empty primary route means "inherit the session route"; in that case the
+     * ordered fallback names are the only concrete routes, so they are listed
+     * by position instead of being reduced to a count.
+     */
+    function chainSummary(template, t) {
+      const route = template.provider === '' || template.model === ''
+        ? t('modelChainTemplateInherit')
+        : `${template.provider}/${template.model}${template.reasoningEffort === '' ? '' : ` · ${template.reasoningEffort}`}`
+      const primary = fill(t('modelChainTemplateRoute'), { route })
+      if (template.fallbacks.length === 0) return primary
+      const ordered = template.fallbacks
+        .map((fallback, index) => `#${index + 1} ${fallback.provider}/${fallback.model}${fallback.reasoningEffort === '' ? '' : ` · ${fallback.reasoningEffort}`}`)
+        .join(' → ')
+      return `${primary} · ${fill(t('modelChainTemplateFallbacksOrdered'), { list: ordered })}`
     }
 
     /** Project one stored gate into the editable form shape. */
@@ -885,6 +1061,7 @@ window.__ModuleLoader__.load({
         const [revision, setRevision] = React.useState(0)
         const [roles, setRoles] = React.useState([])
         const [rules, setRules] = React.useState([])
+        const [templates, setTemplates] = React.useState([])
         const [selectedRole, setSelectedRole] = React.useState('general')
         const [dirty, setDirty] = React.useState(false)
         const gatesBaselineRef = React.useRef('[]')
@@ -906,6 +1083,9 @@ window.__ModuleLoader__.load({
           const nextRoles = Array.isArray(view.value?.roles) ? view.value.roles : []
           setRoles(nextRoles)
           setRules(Array.isArray(view.value?.rules) ? view.value.rules : [])
+          // Model chain templates are a separate Config field: keep the editor
+          // shape complete even when the host value is missing or hand-edited.
+          setTemplates(normalizeModelChainTemplates(view.value?.modelChainTemplates))
           setEngine({
             leadPlaybook: typeof view.value?.leadPlaybook === 'string' ? view.value.leadPlaybook : '',
             activeTemplate: typeof view.value?.activeTemplate === 'string' ? view.value.activeTemplate : '',
@@ -1083,6 +1263,35 @@ window.__ModuleLoader__.load({
           }
         }
 
+        /**
+         * Persist only the `modelChainTemplates` field.
+         *
+         * Template CRUD is independent of the role editor save: it must not
+         * rewrite `roles` (that would publish an unsaved draft or clobber
+         * another writer) and it must not touch any other Config field. The
+         * local draft and panel selection are left alone on failure.
+         */
+        const persistTemplates = async (nextTemplates) => {
+          const value = normalizeModelChainTemplates(nextTemplates)
+          setError('')
+          setNotice('')
+          setBusy(true)
+          try {
+            const view = await writeNamespace(ctx, revision, 'modelChainTemplates', value)
+            setRevision(view.revision)
+            setTemplates(normalizeModelChainTemplates(view.value?.modelChainTemplates ?? value))
+            lastWriteAt.current = Date.now()
+            setNotice(t('saved'))
+            return true
+          } catch (caught) {
+            setError(`${t('saveFailed')}${caught.message}`)
+            await refreshRevision()
+            return false
+          } finally {
+            setBusy(false)
+          }
+        }
+
         const saveEngine = async () => {
           setError('')
           setNotice('')
@@ -1239,6 +1448,7 @@ window.__ModuleLoader__.load({
                 rules,
                 selectedRole,
                 selected,
+                templates,
                 busy,
                 onSelect: (id) => { setSelectedRole(id); setNotice('') },
                 onAdd: addRole,
@@ -1247,6 +1457,8 @@ window.__ModuleLoader__.load({
                 onRename: renameSelected,
                 onSave: saveRoles,
                 onRefresh: load,
+                onTemplatesChange: persistTemplates,
+                onRolesChange: (updater) => { setDirty(true); setRoles(updater) },
               })
             : tab === 'engine'
               ? h(EnginePanel, {
@@ -1645,7 +1857,196 @@ window.__ModuleLoader__.load({
       ])
     }
 
-    function RolesPanel({ t, roles, rules, selectedRole, selected, busy, onSelect, onAdd, onRemove, onEdit, onRename, onSave, onRefresh }) {
+    /**
+     * Named model-chain templates: save, select, update, delete, apply.
+     *
+     * Template CRUD persists through `onChange`, which writes only the
+     * `modelChainTemplates` Config field. Applying a template is deliberately a
+     * local, route-only edit of the checked roles: the page's Save button writes
+     * it, so this action never publishes an unrelated unsaved draft and never
+     * touches a checked or unchecked role's non-route fields.
+     */
+    function ModelChainTemplatesPanel({ t, roles, selected, templates, busy, onChange, onRolesChange }) {
+      const [name, setName] = React.useState('')
+      const [selectedName, setSelectedName] = React.useState('')
+      const [checkedRoles, setCheckedRoles] = React.useState([])
+      const [localError, setLocalError] = React.useState('')
+      const [localNotice, setLocalNotice] = React.useState('')
+
+      const template = templates.find(item => item.name === selectedName) ?? null
+      const checkableRoles = Array.isArray(roles) ? roles : []
+      const checkedSet = new Set(checkedRoles.filter(id => checkableRoles.some(role => role.id === id)))
+
+      const fail = (message) => { setLocalNotice(''); setLocalError(message) }
+      const done = (message) => { setLocalError(''); setLocalNotice(message) }
+      /**
+       * Validate one chain for storage.
+       *
+       * A provider/model pair must be complete. An empty pair is legal: it means
+       * "inherit the session route" (the SE role does this while still carrying
+       * a fallback chain), so only a chain with neither a primary route nor a
+       * fallback is refused.
+       */
+      const chainProblem = (chain) => {
+        const hasProvider = chain.provider !== ''
+        const hasModel = chain.model !== ''
+        if (hasProvider !== hasModel) return t('modelChainTemplatePartialRoute')
+        if (!hasProvider && chain.fallbacks.length === 0) return t('modelChainTemplateEmptyChain')
+        return ''
+      }
+      const selectedChain = () => chainOfRole(selected)
+
+      const saveTemplate = async () => {
+        const trimmed = name.trim()
+        if (trimmed === '') return fail(t('modelChainTemplateNameRequired'))
+        if (trimmed.length > MODEL_CHAIN_TEMPLATE_NAME_LIMIT) {
+          return fail(fill(t('modelChainTemplateNameLong'), { max: MODEL_CHAIN_TEMPLATE_NAME_LIMIT }))
+        }
+        if (templates.some(item => item.name === trimmed)) {
+          return fail(fill(t('modelChainTemplateNameExists'), { name: trimmed }))
+        }
+        if (templates.length >= MAX_MODEL_CHAIN_TEMPLATES) {
+          return fail(fill(t('modelChainTemplateLimit'), { max: MAX_MODEL_CHAIN_TEMPLATES }))
+        }
+        const chain = selectedChain()
+        const problem = chainProblem(chain)
+        if (problem !== '') return fail(problem)
+        if (await onChange([...templates, { name: trimmed, ...chain }]) === false) return
+        setName('')
+        setSelectedName(trimmed)
+        // The page-level "saved" banner reports the successful write.
+        done('')
+      }
+
+      const updateTemplate = async () => {
+        if (template === null) return fail(t('modelChainTemplatePick'))
+        const chain = selectedChain()
+        const problem = chainProblem(chain)
+        if (problem !== '') return fail(problem)
+        const next = templates.map(item => (item.name === template.name ? { ...item, ...chain } : item))
+        if (await onChange(next) === false) return
+        done('')
+      }
+
+      const deleteTemplate = async () => {
+        if (template === null) return fail(t('modelChainTemplatePick'))
+        const next = templates.filter(item => item.name !== template.name)
+        if (await onChange(next) === false) return
+        setSelectedName(next[0]?.name ?? '')
+        done('')
+      }
+
+      const toggleRole = (id) => {
+        setCheckedRoles(current => (current.includes(id)
+          ? current.filter(entry => entry !== id)
+          : [...current, id]))
+      }
+
+      const applyTemplate = () => {
+        if (template === null) return fail(t('modelChainTemplatePick'))
+        const targets = [...checkedSet]
+        if (targets.length === 0) return fail(t('modelChainTemplateCheckedNone'))
+        const patch = chainPatchOf(template)
+        onRolesChange(current => current.map(role => (
+          targets.includes(role.id) ? { ...role, ...patch } : role
+        )))
+        done(fill(t('modelChainTemplateApplied'), { count: targets.length }))
+      }
+
+      return h('div', { style: { ...panel, ...card } }, [
+        h('div', { key: 'head', style: { ...row, flexWrap: 'wrap', gap: 8 } }, [
+          h('strong', { key: 'title', style: { fontSize: 13 } }, t('modelChainTemplates')),
+        ]),
+        h('span', { key: 'hint', style: small }, t('modelChainTemplateHint')),
+        templates.length === 0 ? h('span', { key: 'empty', style: small }, t('modelChainTemplateEmpty')) : null,
+        h('div', { key: 'name-row', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 8, alignItems: 'end' } }, [
+          h('label', { key: 'name', style: label }, [
+            h('span', { key: 'l' }, t('modelChainTemplateName')),
+            h('input', {
+              key: 'i',
+              style: input,
+              value: name,
+              placeholder: t('modelChainTemplateNamePlaceholder'),
+              'aria-label': t('modelChainTemplateName'),
+              onChange: event => setName(event.target.value),
+            }),
+          ]),
+          h('button', {
+            key: 'save', type: 'button', style: primaryButton, disabled: busy,
+            onClick: saveTemplate,
+          }, t('modelChainTemplateSave')),
+        ]),
+        h('div', { key: 'pick-row', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto', gap: 8, alignItems: 'end' } }, [
+          h('label', { key: 'pick', style: label }, [
+            h('span', { key: 'l' }, t('modelChainTemplateSelect')),
+            h('select', {
+              key: 's',
+              style: input,
+              value: template?.name ?? '',
+              'aria-label': t('modelChainTemplateSelect'),
+              onChange: event => {
+                setSelectedName(event.target.value)
+                setLocalError('')
+                setLocalNotice('')
+              },
+            }, [
+              h('option', { key: 'none', value: '' }, t('modelChainTemplateNone')),
+              ...templates.map(item => h('option', { key: item.name, value: item.name }, item.name)),
+            ]),
+          ]),
+          h('button', {
+            key: 'update', type: 'button', style: button, disabled: busy || template === null,
+            onClick: updateTemplate,
+          }, t('modelChainTemplateUpdate')),
+          h('button', {
+            key: 'delete', type: 'button', style: button, disabled: busy || template === null,
+            onClick: deleteTemplate,
+          }, t('modelChainTemplateDelete')),
+        ]),
+        h('span', { key: 'preview', style: small },
+          template === null ? t('modelChainTemplateNone') : chainSummary(template, t)),
+        h('div', {
+          key: 'targets',
+          style: { ...panel, gap: 6, paddingTop: 6, borderTop: '1px solid var(--dsw-alias-border-l1)' },
+        }, [
+          h('span', { key: 'title', style: { ...small, fontWeight: 600, color: 'var(--dsw-alias-label-primary)' } }, t('modelChainTemplateTargets')),
+          h('div', {
+            key: 'list',
+            style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 6 },
+          }, checkableRoles.map(role => h('label', {
+            key: role.id,
+            style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, minWidth: 0 },
+          }, [
+            h('input', {
+              key: 'check',
+              type: 'checkbox',
+              value: role.id,
+              checked: checkedSet.has(role.id),
+              'aria-label': role.id,
+              onChange: () => toggleRole(role.id),
+            }),
+            h('span', { key: 'text', style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, `${role.name || role.id} (${role.id})`),
+          ]))),
+          h('div', { key: 'actions', style: { ...row, flexWrap: 'wrap', gap: 8 } }, [
+            h('button', {
+              key: 'apply', type: 'button', style: primaryButton, disabled: busy,
+              onClick: applyTemplate,
+            }, t('modelChainTemplateApply')),
+            h('span', { key: 'count', style: small }, fill(t('modelChainTemplateCheckedCount'), { count: checkedSet.size })),
+          ]),
+        ]),
+        localError !== '' ? h('div', { key: 'error', style: banner('state-error') }, localError) : null,
+        // Keep the page-level success banner as the only `banner('state-success')`
+        // in this section; this line is panel-local feedback, not a save notice.
+        localNotice !== '' ? h('span', {
+          key: 'notice',
+          role: 'status',
+          style: { ...small, color: 'var(--dsw-alias-state-success-primary)' },
+        }, localNotice) : null,
+      ])
+    }
+
+    function RolesPanel({ t, roles, rules, selectedRole, selected, templates, busy, onSelect, onAdd, onRemove, onEdit, onRename, onSave, onRefresh, onTemplatesChange, onRolesChange }) {
       const roleRules = roles === undefined || rules === undefined
         ? []
         : rules
@@ -1756,6 +2157,16 @@ window.__ModuleLoader__.load({
           ]),
           h('button', { key: 'add', type: 'button', style: button, onClick: onAdd }, t('addRole')),
         ]),
+        h(ModelChainTemplatesPanel, {
+          key: 'chain-templates',
+          t,
+          roles,
+          selected,
+          templates: Array.isArray(templates) ? templates : [],
+          busy,
+          onChange: onTemplatesChange,
+          onRolesChange,
+        }),
         h('div', { key: 'editor', style: { ...panel, ...card } }, selected === undefined
           ? [h('span', { key: 'empty', style: small }, t('empty'))]
           : [

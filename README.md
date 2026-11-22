@@ -317,6 +317,14 @@ Review this diff...
 
 Skills are registered only in that member's Agent scope; global skills still come from the deployment's own skill provider. An empty role `skills` list exposes the whole role folder; a non-empty list matches the skill frontmatter `name` (or the file name without frontmatter) and exposes only the listed skills.
 
+## Reusing a model chain
+
+In Settings → Agent team roles → Roles, save a role's primary model, reasoning effort and ordered fallbacks as a named template. For example, capture DEV's chain as “Daily development”, select the template, check SE, DEV and TSE, then apply and save. Unchecked roles stay unchanged. Tool permissions, prompts and private skills are not copied from the source role.
+
+A chain may inherit the session's primary model and still define its own fallbacks. Selecting a template previews those fallbacks in order. Creating, updating or deleting a template persists just the template library; applying one stages the selected roles until you click Save at the top of the page.
+
+Applying a template copies its values; it does not link the roles to the template. Editing or deleting the template later will not change those roles. To sync an existing Team, use **↻ (Apply settings)** in its panel. A member with a manual override must follow its role route again to pick up the new chain.
+
 ## Switching a member's model from the Team panel
 
 The Team panel's **Members** page lists each teammate with the model it is actually using. **Switch model** opens a picker for that member that offers only the routes the role configures — its primary and its fallbacks, with each route's reasoning effort shown alongside (there is no separate effort select). Opening the picker preselects the route the member is using, or the primary route when the current model is not among the role routes. **Apply** posts to `/agent-team-roles/member-model` with the Team root and member name.
