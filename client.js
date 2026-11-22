@@ -1499,8 +1499,8 @@ window.__ModuleLoader__.load({
                   key: 'rules',
                   t,
                   // 'lead' is a rule bucket, not a spawnable role: the Rules tab
-                  // lists it so instructions aimed at the Lead are visible here.
-                  roles: [{ id: 'lead', name: t('leadRole') }, ...roles],
+                  // lists it last so a new rule still defaults to a real role.
+                  roles: [...roles, { id: 'lead', name: t('leadRole') }],
                   rules,
                   busy,
                   setRules: (updater) => { setDirty(true); setRules(updater) },

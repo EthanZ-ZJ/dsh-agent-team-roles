@@ -598,7 +598,9 @@ export function apply(ctx, config) {
           return
         }
         // Keep the Lead handle so the member-model view can list this Team.
-        if (leadAgents !== undefined) {
+        // A roster kept by a session on another preset is not a Team surface, so
+        // it stays out of the panel.
+        if (leadAgents !== undefined && isTeamLeadPreset(agent, ctx)) {
           leadAgents.set(agent.id, agent)
           register(() => leadAgents.delete(agent.id))
         }
@@ -1163,23 +1165,41 @@ export function apply(ctx, config) {
  * consulted too, exactly like the Lead command gates do, so a freshly created
  * Team Lead session is recognized on the first install.
  */
-export function isTeamLeadPreset(agent, ctx) {
+/** Preset identities this session may report for itself. */
+function presetCandidates(agent, ctx) {
   const presets = ctx?.get?.('agentPresets')
-  const candidates = [
+  return [
     agent?.session?.header?.agentPreset,
     presets?.composedPreset?.(agent?.ctx),
     presets?.presetForSession?.(agent?.session),
   ]
-  return candidates.includes('team-lead')
 }
+
+export function isTeamLeadPreset(agent, ctx) {
+  return presetCandidates(agent, ctx).includes('team-lead')
+}
+
+/**
+ * Whether the session preset is resolved at all.
+ *
+ * The session header is written increasingly late; at `agent/created` it may
+ * still be missing. An unresolved preset must retry the install later, while a
+ * definitely non-Team preset installs the Lead-memory part and stops there.
+ */
+function hasResolvedPreset(agent, ctx) {
+  return presetCandidates(agent, ctx).some((value) => typeof value === 'string' && value !== '')
+}
+
+/** Lead tools that record, list, and retire Lead memory; not Team-preset features. */
+const LEAD_MEMORY_TOOLS = ['record_role_feedback', 'list_role_rules', 'forget_role_rule']
 
 /** Install the Lead's role catalog, tools, and the official-spawn guard. */
 function installLead({ scoped, register, tools, ctx, snapshots, roles, ruleStore, agent, playbook, gateSummary }) {
-  // Manual pulls and the team description are Team-Lead-preset features; other
-  // presets run plain sessions and must not carry the roster catalog.
-  if (!isTeamLeadPreset(agent, ctx)) return false
-  // Standing rules the user taught the Lead itself ("from now on, ask before
-  // deleting"): rendered per step so a new rule applies immediately.
+  // Lead memory: standing rules about how the Lead itself works ("from now on,
+  // ask before deleting"). They apply wherever this Agent is the official Team
+  // Lead, even when the session preset is not `team-lead`: a resumed roster
+  // keeps its Lead and the rules must stay teachable. Rendered per step so a new
+  // rule reaches the next assembly.
   if (ruleStore !== undefined) {
     register(scoped.systemPrompt.section({
       name: 'agent-team-roles:lead-rules',
@@ -1193,6 +1213,13 @@ function installLead({ scoped, register, tools, ctx, snapshots, roles, ruleStore
       },
     }))
   }
+  for (const definition of tools.lead) {
+    if (LEAD_MEMORY_TOOLS.includes(definition.name)) register(scoped.tools.register(definition))
+  }
+
+  // Manual pulls, the roster catalog, and the spawn guard are Team-Lead-preset
+  // features; other presets must not carry them.
+  if (!isTeamLeadPreset(agent, ctx)) return hasResolvedPreset(agent, ctx) ? true : false
   register(scoped.systemPrompt.section({
     name: 'agent-team-roles:lead-catalog',
     order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY') + 10,
@@ -1239,7 +1266,9 @@ function installLead({ scoped, register, tools, ctx, snapshots, roles, ruleStore
       }
     },
   }))
-  for (const definition of tools.lead) register(scoped.tools.register(definition))
+  for (const definition of tools.lead) {
+    if (!LEAD_MEMORY_TOOLS.includes(definition.name)) register(scoped.tools.register(definition))
+  }
   register(scoped.tools.guard((exec) => {
     if (exec.name !== 'spawn_teammate') return undefined
     return 'The official spawn_teammate tool is disabled in this Team. Use spawn_team_member with a configured role instead.'

@@ -265,7 +265,7 @@ The service is deliberately a "trusted plugin API" and does not verify the calli
 
 ## Learned rules
 
-The Team Lead has its own rule bucket, id `lead`. Say "from now on, X" to the Lead and it records that with `remember_role_rule` (or `record_role_feedback` with `role: "lead"`); the rule is rendered into the Lead's own prompt on the next step and can be reviewed, promoted, or retired in the **Rules** tab of Settings, where `lead` appears alongside the spawnable roles. This is separate from a role's rules: a Lead rule governs how the Lead itself works, never a teammate.
+The Team Lead has its own rule bucket, id `lead`. Say "from now on, X" to the Lead and it records that with `remember_role_rule` (or `record_role_feedback` with `role: "lead"`); the rule is rendered into the Lead's own prompt on the next step and can be reviewed, promoted, or retired in the **Rules** tab of Settings, where `lead` appears after the spawnable roles and a new rule still defaults to a real role. The Lead's rule tools and prompt section work in any session where the agent is the official Team Lead, even when the session preset is not `team-lead`; the role catalog and spawn tooling stay preset-gated. This is separate from a role's rules: a Lead rule governs how the Lead itself works, never a teammate.
 
 Two tools write rules:
 

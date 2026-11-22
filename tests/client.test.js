@@ -343,6 +343,31 @@ async function openEngineTab(mounted) {
   return { tree, engine, panel }
 }
 
+test('the rules tab lists the lead bucket last so a new rule still targets a role', async () => {
+  const harness = createReactHarness()
+  const mounted = await mountSection(harness, {
+    describe: () => namespaceView(baseValue({
+      roles: [
+        { id: 'general', name: 'General', description: '' },
+        { id: 'dev', name: 'DEV', description: '' },
+      ],
+    }), 3),
+    mutate: () => namespaceView(baseValue(), 4),
+  })
+  findButton(mounted.tree, 'rules').props.onClick()
+  const tree = await mounted.harness.render(mounted.page)
+  const panel = findComponent(tree, 'RulesPanel')
+  assert.deepEqual(panel.props.roles.map((role) => role.id), ['general', 'dev', 'lead'])
+  const rendered = await mounted.harness.render(panel.type, panel.props)
+  const selects = findAll(rendered, (element) => element.type === 'select')
+  const roleOptions = selects.map((select) => (select.children ?? [])
+    .filter((child) => child.type === 'option')
+    .map((option) => option.props?.value))
+  assert.ok(roleOptions.some((values) => values.includes('lead')), 'the lead bucket is selectable')
+  const draft = roleOptions.find((values) => values.includes('general') && values.includes('lead') && !values.includes(''))
+  assert.equal(draft?.[0], 'general', 'a new rule defaults to a real role, not the lead bucket')
+})
+
 test('the settings page has a change-log tab that lists recorded diffs', async (t) => {
   t.mock.method(globalThis, 'fetch', async (url) => {
     if (url.startsWith('/agent-team-roles/settings-log')) {
