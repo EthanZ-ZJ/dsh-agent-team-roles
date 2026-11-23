@@ -310,11 +310,13 @@ Learned rules **cannot** change a role's tool policy or model route, and members
 
 ## Private skills
 
-Design- and architecture-related skills ship with DEV, CR and SE (installed under the role skill folders, all offline):
+Five skills ship across four roles (PM, SE, DEV and CR), installed under the role skill folders and fully offline:
 
-- `frontend-design` — from [anthropics/skills](https://github.com/anthropics/skills) (Apache-2.0, license included). Design-direction guidance: distinctive typography, palette, layout, and anti-"AI slop" checks for building or reshaping UI.
-- `web-interface-guidelines` — from [vercel-labs/web-interface-guidelines](https://github.com/vercel-labs/web-interface-guidelines) (MIT, license included). The full Vercel Web Interface Guidelines copied locally: accessibility, focus, forms, animation, typography, performance, interaction. DEV self-checks against it before reporting; CR uses the same rules when reviewing frontend changes with `file:line` findings.
-- `software-architect` — SE's merged architecture and contracts handbook: leveling (L0–L3), ASR quality scenarios, C4 current-state mapping, decomposition and boundaries, trade-off matrix, ADR, API/event/schema contracts with compatibility windows and versioning, migration and evolution, review and handoff. One skill now owns both architecture design and contract duties, so SE intentionally ships a single skill; it is fully offline (seven `references/` checklists, no scripts).
+- `product-sense` (PM) — product-manager working method: problem framing, research synthesis, prioritization frameworks, PRD structure and user-story checks; loaded before writing requirements, ranking trade-offs or summarizing research.
+- `software-architect` (SE) — SE's merged architecture and contracts handbook: leveling (L0–L3), ASR quality scenarios, C4 current-state mapping, decomposition and boundaries, trade-off matrix, ADR, API/event/schema contracts with compatibility windows and versioning, migration and evolution, review and handoff. One skill owns both architecture design and contract duties, so SE intentionally ships a single skill; it is fully offline (seven `references/` checklists, no scripts).
+- `clean-code-guard` (DEV and CR) — from [amElnagdy/guard-skills](https://github.com/amElnagdy/guard-skills) (MIT, license included). Clean Code, SOLID, DRY, KISS, YAGNI and LLM-specific failure-mode checks for generated or changed production code, used before presenting, committing or merging.
+- `frontend-design` (DEV and CR) — from [anthropics/skills](https://github.com/anthropics/skills) (Apache-2.0, license included). Design-direction guidance: distinctive typography, palette, layout, and anti-"AI slop" checks for building or reshaping UI.
+- `web-interface-guidelines` (DEV and CR) — from [vercel-labs/web-interface-guidelines](https://github.com/vercel-labs/web-interface-guidelines) (MIT, license included). The full Vercel Web Interface Guidelines copied locally: accessibility, focus, forms, animation, typography, performance, interaction. DEV self-checks against it before reporting; CR uses the same rules when reviewing frontend changes with `file:line` findings.
 
 ### Role skill folders
 

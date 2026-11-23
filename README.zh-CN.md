@@ -306,10 +306,13 @@ Team Lead 有自己的规则桶，id 为 `lead`。对 Lead 说「以后都 X」�
 
 ## 私有技能
 
-随包提供三个角色技能（安装在角色技能目录下，全部离线）：
+随包提供 5 个角色技能，分布在 4 个角色（PM、SE、DEV、CR）的技能目录下，全部离线：
 
-- `frontend-design`（来自 [anthropics/skills](https://github.com/anthropics/skills)，Apache-2.0，含许可证）与 `web-interface-guidelines`（来自 [vercel-labs/web-interface-guidelines](https://github.com/vercel-labs/web-interface-guidelines)，MIT，含许可证）供 DEV 与 CR 做界面设计与前端自查；具体用途见英文 README 的对应条目。
-- `software-architect` 是 SE 唯一的架构与契约工作手册：L0–L3 定级、ASR 质量属性场景、C4 现状测绘、拆分与边界、trade-off 矩阵、ADR、接口/事件/Schema 契约与兼容性及版本演进、迁移与演进、评审与交接。架构设计与契约职责现已合并到这一个技能，SE 不再提供第二个架构/契约技能；内容全部离线（7 个 `references/` 清单，无脚本）。SE 的角色 `skills` 列表保持为空，目录中只有这一个技能，所以设置页只显示一个技能 chip。
+- `product-sense`（PM）：产品经理工作方法——问题框定、调研综合、优先级排序、PRD 撰写与用户故事；写需求文档、做取舍排序或整理调研结论前加载。
+- `software-architect`（SE）：SE 唯一的架构与契约工作手册——L0–L3 定级、ASR 质量属性场景、C4 现状测绘、拆分与边界、trade-off 矩阵、ADR、接口/事件/Schema 契约与兼容性及版本演进、迁移与演进、评审与交接。架构设计与契约职责已合并到这一个技能，内容全部离线（7 个 `references/` 清单，无脚本）；SE 的角色 `skills` 列表为空且目录中只有它，所以设置页只显示一个技能 chip。
+- `clean-code-guard`（DEV、CR）：对生成或改动后的生产代码做 Clean Code / SOLID / DRY / KISS / YAGNI 与 LLM 典型失效模式检查，在展示、提交或合并前使用；来自 [amElnagdy/guard-skills](https://github.com/amElnagdy/guard-skills)（MIT，含许可证）。
+- `frontend-design`（DEV、CR）：来自 [anthropics/skills](https://github.com/anthropics/skills)（Apache-2.0，含许可证）；界面设计方向、字体、配色与布局指导，避免读起来像模板默认值。
+- `web-interface-guidelines`（DEV、CR）：来自 [vercel-labs/web-interface-guidelines](https://github.com/vercel-labs/web-interface-guidelines)（MIT，含许可证）；本地内置 Vercel Web Interface Guidelines 全文，DEV 实现 UI 后自查，CR 用同一套规则以 `file:line` 检视前端改动。
 
 角色技能放在：
 
