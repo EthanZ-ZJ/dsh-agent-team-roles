@@ -310,10 +310,11 @@ Learned rules **cannot** change a role's tool policy or model route, and members
 
 ## Private skills
 
-Two design-related skills ship with DEV and CR (installed under the role skill folders, all offline):
+Design- and architecture-related skills ship with DEV, CR and SE (installed under the role skill folders, all offline):
 
 - `frontend-design` — from [anthropics/skills](https://github.com/anthropics/skills) (Apache-2.0, license included). Design-direction guidance: distinctive typography, palette, layout, and anti-"AI slop" checks for building or reshaping UI.
 - `web-interface-guidelines` — from [vercel-labs/web-interface-guidelines](https://github.com/vercel-labs/web-interface-guidelines) (MIT, license included). The full Vercel Web Interface Guidelines copied locally: accessibility, focus, forms, animation, typography, performance, interaction. DEV self-checks against it before reporting; CR uses the same rules when reviewing frontend changes with `file:line` findings.
+- `software-architect` — SE's merged architecture and contracts handbook: leveling (L0–L3), ASR quality scenarios, C4 current-state mapping, decomposition and boundaries, trade-off matrix, ADR, API/event/schema contracts with compatibility windows and versioning, migration and evolution, review and handoff. One skill now owns both architecture design and contract duties, so SE intentionally ships a single skill; it is fully offline (seven `references/` checklists, no scripts).
 
 ### Role skill folders
 
@@ -379,7 +380,7 @@ Role configuration can be edited from the Settings page, the Lead tools, and the
 node --test
 ```
 
-The suite covers 8 test files: `tests/config.test.js` (role normalization and validation), `tests/rules.test.js` (rule evidence/promotion/conflicts/limits/retirement), `tests/prompts.test.js` (prompt rendering), `tests/spawn.test.js` (reuse/suffixes/failure rollback/handshake delivery/standard preset), `tests/plugin.test.js` (handshake detection/role resolution/preset gating), `tests/store.test.js` (RoleStore persistence), `tests/tools.test.js` (tool schemas and argument validation), `tests/preset.test.js` (Team Lead preset assembly). `src/skills.js` and the session/fallback paths of `RuleStore` have no direct unit tests yet. The plugin has also been verified by hand in a real Agent Teams profile (spawn injection, live rule updates, private skills).
+The suite spans 31 test files. Representative coverage: `tests/config.test.js` (role normalization and validation), `tests/rules.test.js` (rule evidence/promotion/conflicts/limits/retirement), `tests/prompts.test.js` (prompt rendering), `tests/spawn.test.js` (reuse/suffixes/failure rollback/handshake delivery/standard preset), `tests/plugin.test.js` (handshake detection/role resolution/preset gating), `tests/store.test.js` (RoleStore persistence), `tests/tools.test.js` (tool schemas and argument validation), `tests/preset.test.js` (Team Lead preset assembly), `tests/role-skills.test.js` (role-private skill scanning and registration, including the merged SE skill), `tests/templates.test.js` (template parsing/seeding/skill copy), `tests/template-authority.test.js` (authority and check contract), and `tests/skill-routes.test.js` (role-skill HTTP routes). The session/fallback paths of `RuleStore` still have no direct unit tests. The plugin has also been verified by hand in a real Agent Teams profile (spawn injection, live rule updates, private skills).
 
 ## License
 

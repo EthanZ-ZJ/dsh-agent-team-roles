@@ -194,7 +194,7 @@ test('a template update never erases a configured model route or policy', async 
     model: 'glm-5.3-flash',
     reasoningEffort: 'high',
     fallbacks: [{ provider: 'p2', model: 'm2', reasoningEffort: '' }],
-    skills: ['architecture-contracts'],
+    skills: ['software-architect'],
     denyCommands: ['\\bgit\\s+push\\b'],
     color: '#5ee0b5',
     tools: ['read'],
@@ -230,7 +230,7 @@ test('a template update never erases a configured model route or policy', async 
   assert.equal(patch.model, 'glm-5.3-flash')
   assert.equal(patch.reasoningEffort, 'high')
   assert.deepEqual(patch.fallbacks, [{ provider: 'p2', model: 'm2', reasoningEffort: '' }])
-  assert.deepEqual(patch.skills, ['architecture-contracts'])
+  assert.deepEqual(patch.skills, ['software-architect'])
   assert.deepEqual(patch.denyCommands, ['\\bgit\\s+push\\b'])
   assert.equal(patch.description, 'new description', 'a template value still wins')
   assert.deepEqual(patch.tools, ['read', 'glob', 'grep'], 'tool policy still comes from the template')

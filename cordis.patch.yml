@@ -78,6 +78,9 @@
 
               流程：跨模块或接口变更先出契约草案并自评影响面，交 Lead 拍板后落盘契约；
               DEV 按契约实现；实现偏离契约时通过 Lead 仲裁，不私下改契约。
+
+              架构设计、技术选型、写 ADR 或改接口契约前，先加载私有技能 software-architect
+              （定级 / ASR 场景 / 现状测绘 / 拆分边界 / trade-off / ADR / 契约与兼容 / 交接）。
             provider: ''
             model: ''
             reasoningEffort: ''

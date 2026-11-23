@@ -306,6 +306,11 @@ Team Lead 有自己的规则桶，id 为 `lead`。对 Lead 说「以后都 X」�
 
 ## 私有技能
 
+随包提供三个角色技能（安装在角色技能目录下，全部离线）：
+
+- `frontend-design`（来自 [anthropics/skills](https://github.com/anthropics/skills)，Apache-2.0，含许可证）与 `web-interface-guidelines`（来自 [vercel-labs/web-interface-guidelines](https://github.com/vercel-labs/web-interface-guidelines)，MIT，含许可证）供 DEV 与 CR 做界面设计与前端自查；具体用途见英文 README 的对应条目。
+- `software-architect` 是 SE 唯一的架构与契约工作手册：L0–L3 定级、ASR 质量属性场景、C4 现状测绘、拆分与边界、trade-off 矩阵、ADR、接口/事件/Schema 契约与兼容性及版本演进、迁移与演进、评审与交接。架构设计与契约职责现已合并到这一个技能，SE 不再提供第二个架构/契约技能；内容全部离线（7 个 `references/` 清单，无脚本）。SE 的角色 `skills` 列表保持为空，目录中只有这一个技能，所以设置页只显示一个技能 chip。
+
 角色技能放在：
 
 ```text
@@ -368,7 +373,7 @@ whenToUse: 改动准备进入审查时。
 node --test
 ```
 
-测试覆盖 8 个测试文件：`tests/config.test.js`（角色归一化与校验）、`tests/rules.test.js`（规则证据/提升/冲突/上限/退役）、`tests/prompts.test.js`（提示词渲染）、`tests/spawn.test.js`（复用/后缀/失败回滚/握手投递/standard 预设）、`tests/plugin.test.js`（握手识别/角色解析/预设门控）、`tests/store.test.js`（RoleStore 持久化）、`tests/tools.test.js`（工具 schema 与参数校验）、`tests/preset.test.js`（Team Lead 预设组装）。`src/skills.js` 以及 `RuleStore` 的 session/回退路径目前没有直接单测。插件本体已在真实 Agent Teams profile 中做过手工验证（召唤注入、规则热更新、私有技能）。
+测试共 31 个测试文件。主要覆盖：`tests/config.test.js`（角色归一化与校验）、`tests/rules.test.js`（规则证据/提升/冲突/上限/退役）、`tests/prompts.test.js`（提示词渲染）、`tests/spawn.test.js`（复用/后缀/失败回滚/握手投递/standard 预设）、`tests/plugin.test.js`（握手识别/角色解析/预设门控）、`tests/store.test.js`（RoleStore 持久化）、`tests/tools.test.js`（工具 schema 与参数校验）、`tests/preset.test.js`（Team Lead 预设组装）、`tests/role-skills.test.js`（角色私有技能的扫描与注册，含合并后的 SE 技能）、`tests/templates.test.js`（模板解析/播种/技能复制）、`tests/template-authority.test.js`（唯一权威与检查契约）、`tests/skill-routes.test.js`（角色技能 HTTP 路由）。`RuleStore` 的 session/回退路径目前仍没有直接单测。插件本体已在真实 Agent Teams profile 中做过手工验证（召唤注入、规则热更新、私有技能）。
 
 ## 许可证
 
