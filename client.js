@@ -170,6 +170,7 @@ window.__ModuleLoader__.load({
       skillReveal: '在文件管理器中定位',
       skillRevealFailed: '无法在文件管理器中定位此技能。',
       effortDefault: '默认（跟随会话）',
+      effortUnsupported: '该模型不支持推理强度',
       membersModel: '成员模型',
       membersTitle: '成员模型（实时）',
       membersHint: '打开时刷新一次，可点「刷新」再取最新状态；「备用·自动」表示额度失败后由插件自动切换。',
@@ -443,6 +444,7 @@ window.__ModuleLoader__.load({
       skillReveal: 'Show in file manager',
       skillRevealFailed: 'Could not reveal this skill in the file manager.',
       effortDefault: 'Default (follow the session)',
+      effortUnsupported: 'This model does not support reasoning effort',
       membersModel: 'Member models',
       membersTitle: 'Member models (live)',
       membersHint: 'Fetches once when opened; click Refresh for the latest state. "fallback·auto" means the plugin switched after a quota failure.',
@@ -660,6 +662,45 @@ window.__ModuleLoader__.load({
     function fill(template, params) {
       return String(template ?? '').replace(/\{(\w+)\}/g, (match, name) =>
         params !== undefined && name in params ? String(params[name]) : '')
+    }
+
+    /**
+     * Reasoning-effort choices for one catalog route.
+     *
+     * The catalog's three-state contract must not be collapsed:
+     * - `reasoningSupported === false`: the adapter explicitly says this model
+     *   takes no reasoning effort. Offer only the empty value labeled
+     *   "unsupported" and disable the control; never invent generic levels.
+     * - `efforts` present: offer exactly the advertised levels plus the empty
+     *   adapter-default entry.
+     * - neither (unknown): keep the caller's generic fallback levels, which is
+     *   the pre-existing behavior for a catalog without capability metadata.
+     *
+     * @returns {{ unsupported: boolean, disabled: boolean, levels: Array, options: Array }}
+     */
+    function reasoningEffortChoices(route, fallbackEfforts, t, defaultLabel) {
+      if (route !== null && typeof route === 'object' && route.reasoningSupported === false) {
+        return {
+          unsupported: true,
+          disabled: true,
+          levels: [],
+          options: [{ id: '', name: t('effortUnsupported') }],
+        }
+      }
+      const known = Array.isArray(route?.efforts) && route.efforts.length > 0
+      const levels = known
+        ? route.efforts.map((level) => ({
+            id: String(level.id ?? ''),
+            name: String(level.name ?? level.id ?? ''),
+          }))
+        : fallbackEfforts.map((id) => ({ id, name: id }))
+      const options = [{
+        id: '',
+        name: typeof route?.defaultEffort === 'string' && route.defaultEffort !== ''
+          ? `${defaultLabel} (${route.defaultEffort})`
+          : defaultLabel,
+      }, ...levels]
+      return { unsupported: false, disabled: false, levels, options }
     }
 
     /** Trim one model-chain string field, never throwing on a non-string. */
@@ -1650,21 +1691,21 @@ window.__ModuleLoader__.load({
         }, String(route.id ?? '') + (route.name && route.name !== route.id ? ' · ' + route.name : '')))))
       }
       const fallbackEfforts = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
-      const selectedEfforts = Array.isArray(selectedRoute?.efforts) && selectedRoute.efforts.length > 0
-        ? selectedRoute.efforts.map((level) => ({ id: String(level.id ?? ''), name: String(level.name ?? level.id ?? '') }))
-        : fallbackEfforts.map((id) => ({ id, name: id }))
-      const effortChoices = [{
-        id: '',
-        name: typeof selectedRoute?.defaultEffort === 'string' && selectedRoute.defaultEffort !== ''
-          ? `${t('routerEffortDefault')} (${selectedRoute.defaultEffort})`
-          : t('routerEffortDefault'),
-      }, ...selectedEfforts]
-      if (engine.routerReasoningEffort !== '' && !selectedEfforts.some((level) => level.id === engine.routerReasoningEffort)) {
-        effortChoices.push({ id: engine.routerReasoningEffort, name: engine.routerReasoningEffort })
+      const effortView = reasoningEffortChoices(selectedRoute, fallbackEfforts, t, t('routerEffortDefault'))
+      // A route that explicitly does not support reasoning has no meaningful
+      // stored effort: show the adapter default while the control is disabled.
+      const routerEffort = effortView.unsupported ? '' : engine.routerReasoningEffort
+      const effortChoices = [...effortView.options]
+      if (!effortView.unsupported && routerEffort !== '' && !effortView.levels.some((level) => level.id === routerEffort)) {
+        effortChoices.push({ id: routerEffort, name: routerEffort })
       }
-      const levelsForRoute = (route) => Array.isArray(route?.efforts) && route.efforts.length > 0
-        ? route.efforts.map((level) => String(level.id ?? ''))
-        : fallbackEfforts
+      // Choosing a model preselects its advertised default effort; an
+      // unsupported model always resolves to the empty adapter default.
+      const levelsForRoute = (route) => (route !== null && typeof route === 'object' && route.reasoningSupported === false
+        ? []
+        : (Array.isArray(route?.efforts) && route.efforts.length > 0
+            ? route.efforts.map((level) => String(level.id ?? ''))
+            : fallbackEfforts))
       return h('div', { style: { ...panel, ...card } }, [
         h('div', { key: 'head', style: { ...row, justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, [
           h('strong', { key: 'title', style: { fontSize: 13 } }, t('engine')),
@@ -1791,8 +1832,8 @@ window.__ModuleLoader__.load({
             h('select', {
               key: 'i',
               style: input,
-              value: engine.routerReasoningEffort,
-              disabled: routerValue === '',
+              value: routerEffort,
+              disabled: routerValue === '' || effortView.disabled,
               'aria-label': t('routerReasoningEffort'),
               onChange: (event) => edit({ routerReasoningEffort: event.target.value }),
             }, effortChoices.map((level) => h('option', { key: level.id === '' ? 'default' : level.id, value: level.id }, level.name))),
@@ -2449,12 +2490,11 @@ window.__ModuleLoader__.load({
         const rowPairs = currentValue && !known
           ? [{ provider: entry.provider, id: entry.model }, ...pairs]
           : pairs
-        const rowLevels = Array.isArray(known?.efforts)
-          ? known.efforts
-          : levels.map(id => ({ id, name: id }))
-        const options = [{ id: '', name: t('modelEffortDefault') }, ...rowLevels]
-        if (entry.reasoningEffort && !rowLevels.some(level => level.id === entry.reasoningEffort)) {
-          options.push({ id: entry.reasoningEffort, name: entry.reasoningEffort })
+        const effortView = reasoningEffortChoices(known, levels, t, t('modelEffortDefault'))
+        const options = [...effortView.options]
+        const effortValue = effortView.unsupported ? '' : (entry.reasoningEffort ?? '')
+        if (!effortView.unsupported && effortValue !== '' && !effortView.levels.some(level => level.id === effortValue)) {
+          options.push({ id: effortValue, name: effortValue })
         }
         return h('div', {
           key: index,
@@ -2481,8 +2521,8 @@ window.__ModuleLoader__.load({
             h('select', {
               key: 'select',
               style: input,
-              value: entry.reasoningEffort ?? '',
-              disabled: !entry.provider || !entry.model,
+              value: effortValue,
+              disabled: effortView.disabled || !entry.provider || !entry.model,
               'aria-label': `${t('effort')} #${index + 1}`,
               onChange: event => updateFallback(index, { reasoningEffort: event.target.value }),
             }, options.map(option => h('option', { key: option.id, value: option.id }, option.name))),
@@ -2511,17 +2551,11 @@ window.__ModuleLoader__.load({
       const primaryPairs = primaryValue && !primaryKnown
         ? [{ provider: draft.provider, id: draft.model }, ...pairs]
         : pairs
-      const primaryLevels = Array.isArray(primaryKnown?.efforts)
-        ? primaryKnown.efforts
-        : levels.map(id => ({ id, name: id }))
-      const primaryOptions = [{
-        id: '',
-        name: primaryKnown?.defaultEffort
-          ? `${t('effortDefault')} (${primaryKnown.defaultEffort})`
-          : t('effortDefault'),
-      }, ...primaryLevels]
-      if (draft.reasoningEffort && !primaryLevels.some(level => level.id === draft.reasoningEffort)) {
-        primaryOptions.push({ id: draft.reasoningEffort, name: draft.reasoningEffort })
+      const primaryEfforts = reasoningEffortChoices(primaryKnown, levels, t, t('effortDefault'))
+      const primaryOptions = [...primaryEfforts.options]
+      const primaryEffortValue = primaryEfforts.unsupported ? '' : (draft.reasoningEffort ?? '')
+      if (!primaryEfforts.unsupported && primaryEffortValue !== '' && !primaryEfforts.levels.some(level => level.id === primaryEffortValue)) {
+        primaryOptions.push({ id: primaryEffortValue, name: primaryEffortValue })
       }
 
       const applyDisabled = busy || editing || selected === null || checkedSet.size === 0
@@ -2612,8 +2646,8 @@ window.__ModuleLoader__.load({
                   h('select', {
                     key: 'select',
                     style: input,
-                    value: draft.reasoningEffort ?? '',
-                    disabled: primaryValue === '',
+                    value: primaryEffortValue,
+                    disabled: primaryValue === '' || primaryEfforts.disabled,
                     'aria-label': t('effort'),
                     onChange: event => patchDraft({ reasoningEffort: event.target.value }),
                   }, primaryOptions.map(option => h('option', { key: option.id, value: option.id }, option.name))),
@@ -2898,9 +2932,12 @@ window.__ModuleLoader__.load({
                 const route = catalogPairs.find(pair => pair.provider === provider && pair.id === model)
                 const pairs = current && !route ? [{ provider, id: model }, ...catalogPairs] : catalogPairs
                 const effort = selected.reasoningEffort ?? ''
-                const levels = Array.isArray(route?.efforts) ? route.efforts : effortLevels.map(id => ({ id, name: id }))
-                const options = [{ id: '', name: route?.defaultEffort ? t('effortDefault') + ' (' + route.defaultEffort + ')' : t('effortDefault') }, ...levels]
-                if (effort && !levels.some(level => level.id === effort)) options.push({ id: effort, name: effort })
+                const effortView = reasoningEffortChoices(route, effortLevels, t, t('effortDefault'))
+                const options = [...effortView.options]
+                const effortValue = effortView.unsupported ? '' : effort
+                if (!effortView.unsupported && effortValue !== '' && !effortView.levels.some(level => level.id === effortValue)) {
+                  options.push({ id: effortValue, name: effortValue })
+                }
                 return h('div', { key: 'primary', style: { ...panel, ...card, gap: 8 } }, [
                   h('label', { key: 'model', style: label }, [
                     h('span', { key: 'label' }, t('primaryModel')),
@@ -2914,7 +2951,10 @@ window.__ModuleLoader__.load({
                   ]),
                   h('label', { key: 'effort', style: label }, [
                     h('span', { key: 'label' }, t('effort')),
-                    h('select', { key: 'select', style: input, value: effort, disabled: options.length === 1,
+                    h('select', {
+                      key: 'select', style: input, value: effortValue,
+                      disabled: effortView.disabled || options.length === 1,
+                      'aria-label': t('effort'),
                       onChange: event => onEdit({ reasoningEffort: event.target.value }),
                     }, options.map(option => h('option', { key: option.id, value: option.id }, option.name))),
                   ]),
@@ -2949,9 +2989,12 @@ window.__ModuleLoader__.load({
                     ? h('span', { key: 'empty', style: small }, t('fallbackEmpty'))
                     : legacy.map((entry, index) => {
                         const route = catalogPairs.find(pair => pair.provider === entry.provider && pair.id === entry.model)
-                        const levels = Array.isArray(route?.efforts) ? route.efforts : effortLevels.map(id => ({ id, name: id }))
-                        const options = [{ id: '', name: t('modelEffortDefault') }, ...levels]
-                        if (entry.reasoningEffort && !levels.some(level => level.id === entry.reasoningEffort)) options.push({ id: entry.reasoningEffort, name: entry.reasoningEffort })
+                        const effortView = reasoningEffortChoices(route, effortLevels, t, t('modelEffortDefault'))
+                        const options = [...effortView.options]
+                        const effortValue = effortView.unsupported ? '' : (entry.reasoningEffort ?? '')
+                        if (!effortView.unsupported && effortValue !== '' && !effortView.levels.some(level => level.id === effortValue)) {
+                          options.push({ id: effortValue, name: effortValue })
+                        }
                         const update = (patch) => write(legacy.map((item, at) => (at === index ? { ...item, ...patch } : item)))
                         const move = (delta) => {
                           const next = [...legacy]
@@ -2973,7 +3016,9 @@ window.__ModuleLoader__.load({
                           h('label', { key: 'effort', style: label }, [
                             h('span', { key: 'label' }, t('effort')),
                             h('select', {
-                              key: 'select', style: input, value: entry.reasoningEffort ?? '', disabled: !entry.provider || !entry.model,
+                              key: 'select', style: input, value: effortValue,
+                              disabled: effortView.disabled || !entry.provider || !entry.model,
+                              'aria-label': t('effort') + ' #' + (index + 1),
                               onChange: event => update({ reasoningEffort: event.target.value }),
                             }, options.map(option => h('option', { key: option.id, value: option.id }, option.name))),
                           ]),

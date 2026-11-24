@@ -278,7 +278,7 @@ Lead 派发前先调用 `route_task`：把任务（以及最少的必要上下�
 在 设置 → 引擎 → 路由决策模型 里配置：
 
 - `routerMode`：`model`（默认）/ `rules` / `off`（`route_task` 直接报错）。
-- `routerProvider` / `routerModel` 通过下拉选择，下拉与角色模型配置同源 catalog（空值表示未配置，自动回退规则路由）；`routerReasoningEffort` 是第二个下拉，选项随所选模型的 efforts——选中模型后自动预选该模型公布的默认强度（如 `high`），新模型不支持当前强度时也会换到新模型的默认值，空值选项显示「适配器默认 (<实际默认>)」。另有这次调用专用的 `routerTimeoutMs`（默认 20000）与 `routerMaxTokens`（默认 800）。
+- `routerProvider` / `routerModel` 通过下拉选择，下拉与角色模型配置同源 catalog（空值表示未配置，自动回退规则路由）；`routerReasoningEffort` 是第二个下拉，选项随所选模型的 efforts——选中模型后自动预选该模型公布的默认强度（如 `high`），新模型不支持当前强度时也会换到新模型的默认值，空值选项显示「适配器默认 (<实际默认>)」。模型明确不支持推理强度时，强度下拉只显示禁用的「该模型不支持推理强度」，不会列出 off…max 通用档位；只有 catalog 暂时查不到能力信息时才保留通用兜底。另有这次调用专用的 `routerTimeoutMs`（默认 20000）与 `routerMaxTokens`（默认 800）。
 - `routerRequireDecision`（默认开启）：开启时，本轮没有一次成功的 `route_task`，`spawn_team_member` 会被拒绝。
 
 provider 或 model 留空、模式为 `rules`，或模型调用失败、超时、回复无法解析时，`route_task` 会自动回退到确定性的关键词/词元规则路由（`source: "rules"`），**不会阻塞派发**。模型决策返回 `source: "model"` 与应答的 `provider/model`；两种情况都会给出 `confidence`、`reason` 和 `suggestedTaskPrompt`，任务确实需要多个角色时还有 `needsSplit`。
@@ -412,7 +412,7 @@ MIT。
 
 ## 模型主备与额度耗尽
 
-每个角色可配置一个主模型和最多 8 个**备用模型**（按顺序组成备用链）。主模型与每个备用模型都可单独设置推理强度；旧的单个 `fallbackProvider`/`fallbackModel`/`fallbackReasoningEffort` 仍被兼容，等同“备用 1”。额度耗尽或主路由失效时的正确处置：
+每个角色可配置一个主模型和最多 8 个**备用模型**（按顺序组成备用链）。主模型与每个备用模型都可单独设置推理强度；模型明确不支持推理强度时，强度下拉显示为禁用的「该模型不支持推理强度」，不再列出通用档位；只有 catalog 查不到能力信息时才保留通用兜底。旧的单个 `fallbackProvider`/`fallbackModel`/`fallbackReasoningEffort` 仍被兼容，等同“备用 1”。额度耗尽或主路由失效时的正确处置：
 
 1. 对 Lead 说：“把 dev 切到备用模型继续”（或 Lead 自行判断）；Lead 调用 `switch_member_model(member:"dev", route:"fallback", index:0)` 指定链上的第几个备用。
 2. 自动切换同样按链推进：每轮最多切换 2 次，避免一次故障耗尽所有备用模型的额度；暂时性错误（超时、限流）仍交给宿主重试。

@@ -79,24 +79,50 @@ test('model reasoning metadata rides along per route', async () => {
   }
   const catalog = await buildModelCatalog(llm)
   const route = catalog.routes.find((entry) => entry.id === 'glm-5.2')
+  assert.equal(route.reasoningSupported, true)
   assert.deepEqual(route.efforts.map((effort) => effort.id), ['off', 'high'])
   assert.deepEqual(route.efforts.map((effort) => effort.name), ['Off', 'High'])
   assert.equal(route.defaultEffort, 'high')
 })
 
-test('a model without reasoning metadata keeps the canonical fallback', async () => {
+test('an answered lookup without reasoning metadata is an explicit no-support answer', async () => {
   const llm = {
-    listProviders: () => [{ provider: 'zai' }],
-    listModels: async () => [{ id: 'glm-5.2', name: 'GLM-5.2' }],
-    resolveModelInfo: async () => ({ provider: 'zai', id: 'glm-5.2', name: 'GLM-5.2' }),
+    listProviders: () => [{ provider: 'opencode-go-api' }],
+    listModels: async () => [{ id: 'hy4-flash-free', name: 'Hy4 Flash Free' }],
+    // The host's resolveModelInfo omits `reasoning` when the adapter declares no
+    // reasoning capability; this is the real hy4-flash-free shape.
+    resolveModelInfo: async () => ({
+      provider: 'opencode-go-api',
+      id: 'hy4-flash-free',
+      name: 'Hy4 Flash Free',
+      context: { contextWindow: 1048576 },
+    }),
   }
   const catalog = await buildModelCatalog(llm)
-  const route = catalog.routes.find((entry) => entry.id === 'glm-5.2')
-  assert.equal(route.efforts, undefined)
+  const route = catalog.routes.find((entry) => entry.id === 'hy4-flash-free')
+  assert.equal(route.reasoningSupported, false, 'the route must say reasoning is unsupported')
+  assert.deepEqual(route.efforts, [])
   assert.equal(route.defaultEffort, undefined)
 })
 
-test('a failing resolveModelInfo is skipped per model, never fatal', async () => {
+test('an answered lookup with an empty effort list is also an explicit no-support answer', async () => {
+  const llm = {
+    listProviders: () => [{ provider: 'zai' }],
+    listModels: async () => [{ id: 'glm-5.2', name: 'GLM-5.2' }],
+    resolveModelInfo: async () => ({
+      provider: 'zai',
+      id: 'glm-5.2',
+      name: 'GLM-5.2',
+      reasoning: { efforts: [] },
+    }),
+  }
+  const catalog = await buildModelCatalog(llm)
+  const route = catalog.routes.find((entry) => entry.id === 'glm-5.2')
+  assert.equal(route.reasoningSupported, false)
+  assert.deepEqual(route.efforts, [])
+})
+
+test('a failed reasoning lookup is unknown, not an unsupported answer', async () => {
   const llm = {
     listProviders: () => [{ provider: 'zai' }],
     listModels: async () => [{ id: 'glm-5.2', name: 'GLM-5.2' }, { id: 'glm-5.3', name: 'GLM-5.3' }],
@@ -106,6 +132,22 @@ test('a failing resolveModelInfo is skipped per model, never fatal', async () =>
     },
   }
   const catalog = await buildModelCatalog(llm)
-  assert.deepEqual(catalog.routes.map((route) => route.id), ['glm-5.2', 'glm-5.3'])
+  assert.deepEqual(catalog.routes.map((route) => route.id), ['glm-5.2', 'glm-5.3'], 'a failure never drops a route')
+  const unknown = catalog.routes[0]
+  assert.equal('reasoningSupported' in unknown, false, 'an unknown capability must stay absent')
+  assert.equal(unknown.efforts, undefined)
+  assert.equal(unknown.defaultEffort, undefined)
+  assert.equal(catalog.routes[1].reasoningSupported, true)
   assert.equal(catalog.routes[1].efforts[0].id, 'high')
+})
+
+test('a catalog without resolveModelInfo also stays unknown', async () => {
+  const llm = {
+    listProviders: () => [{ provider: 'zai' }],
+    listModels: async () => [{ id: 'glm-5.2', name: 'GLM-5.2' }],
+  }
+  const catalog = await buildModelCatalog(llm)
+  const route = catalog.routes.find((entry) => entry.id === 'glm-5.2')
+  assert.equal('reasoningSupported' in route, false)
+  assert.equal(route.efforts, undefined)
 })

@@ -4,7 +4,22 @@
  * the chat dialog offers.
  *
  *   GET /agent-team-roles/model-catalog
- *     → { routes: [{provider, id, name, description?}], efforts: [...] }
+ *     → {
+ *         routes: [{
+ *           provider, id, name, description?,
+ *           reasoningSupported?, efforts?: [{id, name, description?}], defaultEffort?
+ *         }],
+ *         efforts: [...]   // generic fallback levels only for unknown capability
+ *       }
+ *
+ * Reasoning capability is three-valued per route:
+ * - `reasoningSupported: true` — the adapter advertises `efforts`; the client
+ *   must offer exactly those levels (and the route's `defaultEffort`).
+ * - `reasoningSupported: false` — the adapter explicitly declares no reasoning
+ *   support (the normalized resolveModelInfo result has no `reasoning` field,
+ *   or an empty effort list). The client must not invent levels for it.
+ * - field absent — the catalog could not learn the capability (resolveModelInfo
+ *   missing, timed out, or failed); the client keeps its generic fallback list.
  *
  * Per-provider listModels calls are raced against a timeout and a failing
  * provider is skipped instead of failing the whole catalog (providers whose
@@ -38,38 +53,57 @@ function withTimeout(promise, ms, label) {
 }
 
 /**
- * Read one model's advertised reasoning efforts via resolveModelInfo.
- * Returns undefined when the adapter exposes none or the lookup fails.
+ * Read one model's reasoning capability via resolveModelInfo.
+ *
+ * The host resolves exact model metadata and omits `reasoning` entirely when
+ * the adapter declares no reasoning capability (there is no separate
+ * "supports" flag); a supported model then carries a non-empty
+ * `reasoning.efforts` list. Therefore a successful lookup without a usable
+ * reasoning list is an *explicit* "no reasoning support", while a lookup that
+ * throws, times out, or is unavailable is *unknown* and must stay undefined so
+ * the client can keep its generic fallback.
+ *
+ * @returns {reasoningSupported:false, efforts:[]} for an explicit no-support
+ *   answer, {reasoningSupported:true, efforts, defaultEffort?} for a supported
+ *   model, or undefined when the capability could not be learned.
  */
 async function modelReasoning(llm, provider, modelId) {
   if (typeof llm.resolveModelInfo !== 'function') return undefined
+  let info
   try {
-    const info = await withTimeout(llm.resolveModelInfo(provider, modelId), MODEL_INFO_TIMEOUT_MS, `resolveModelInfo(${provider}, ${modelId})`)
-    const reasoning = info?.reasoning
-    if (reasoning === undefined || !Array.isArray(reasoning.efforts) || reasoning.efforts.length === 0) return undefined
-    const efforts = reasoning.efforts
-      .filter((effort) => effort !== null && typeof effort === 'object' && typeof effort.id === 'string' && effort.id !== '')
-      .map((effort) => ({
-        id: effort.id,
-        name: typeof effort.name === 'string' && effort.name !== '' ? effort.name : effort.id,
-        ...(typeof effort.description === 'string' && effort.description !== '' ? { description: effort.description } : {}),
-      }))
-    if (efforts.length === 0) return undefined
-    return {
-      efforts,
-      ...(typeof reasoning.defaultEffort === 'string' && reasoning.defaultEffort !== ''
-        ? { defaultEffort: reasoning.defaultEffort }
-        : {}),
-    }
+    info = await withTimeout(llm.resolveModelInfo(provider, modelId), MODEL_INFO_TIMEOUT_MS, `resolveModelInfo(${provider}, ${modelId})`)
   } catch {
     return undefined
+  }
+  if (info === null || typeof info !== 'object') return undefined
+  const reasoning = info.reasoning
+  // An answered lookup without reasoning metadata is authoritative: this model
+  // does not take a reasoning effort. (The host would reject a requested effort
+  // for it with UNSUPPORTED_REASONING_EFFORT.)
+  if (reasoning === undefined || reasoning === null) return { reasoningSupported: false, efforts: [] }
+  if (!Array.isArray(reasoning.efforts)) return { reasoningSupported: false, efforts: [] }
+  const efforts = reasoning.efforts
+    .filter((effort) => effort !== null && typeof effort === 'object' && typeof effort.id === 'string' && effort.id !== '')
+    .map((effort) => ({
+      id: effort.id,
+      name: typeof effort.name === 'string' && effort.name !== '' ? effort.name : effort.id,
+      ...(typeof effort.description === 'string' && effort.description !== '' ? { description: effort.description } : {}),
+    }))
+  if (efforts.length === 0) return { reasoningSupported: false, efforts: [] }
+  return {
+    reasoningSupported: true,
+    efforts,
+    ...(typeof reasoning.defaultEffort === 'string' && reasoning.defaultEffort !== ''
+      ? { defaultEffort: reasoning.defaultEffort }
+      : {}),
   }
 }
 
 /**
  * Build the catalog from an llm service ({listProviders, listModels, resolveModelInfo}).
  * A provider whose listModels rejects is omitted, never fatal; per-model
- * reasoning lookup is best-effort and absent when the adapter exposes none.
+ * reasoning lookup is best-effort. A route whose capability could not be
+ * learned carries no `reasoningSupported` field at all.
  */
 export async function buildModelCatalog(llm) {
   const providers = llm.listProviders()

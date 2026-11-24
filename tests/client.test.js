@@ -1598,3 +1598,150 @@ test('every model chain template locale key exists in both dictionaries', () => 
     assert.ok(enKeys.has(key), `the en dictionary must define ${key}`)
   }
 })
+
+// ---------------------------------------------------------------------------
+// Reasoning-effort capability: an explicit "no reasoning support" answer must
+// not fall back to the generic off/minimal/.../max list, while an unknown
+// capability keeps that fallback.
+// ---------------------------------------------------------------------------
+
+const REASONING_CATALOG = [
+  {
+    provider: 'p',
+    id: 'main',
+    name: 'Main',
+    reasoningSupported: true,
+    efforts: [{ id: 'off', name: 'Off' }, { id: 'high', name: 'High' }],
+    defaultEffort: 'high',
+  },
+  {
+    provider: 'opencode-go-api',
+    id: 'hy4-flash-free',
+    name: 'Hy4 Flash Free',
+    reasoningSupported: false,
+    efforts: [],
+  },
+  { provider: 'mystery', id: 'unknown', name: 'Unknown' },
+]
+
+function mockReasoningCatalog(t) {
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    if (String(url).startsWith('/agent-team-roles/model-catalog')) {
+      return {
+        ok: true,
+        json: async () => ({
+          routes: REASONING_CATALOG,
+          efforts: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+        }),
+      }
+    }
+    if (String(url).startsWith('/agent-team-roles/role-skills')) return { ok: false, json: async () => ({}) }
+    return { ok: true, json: async () => ({}) }
+  })
+}
+
+function optionValues(tree) {
+  return findAll(tree, (element) => element.type === 'option').map((option) => option.props.value)
+}
+
+test('the router effort control only offers the unsupported marker for a no-support model', async (t) => {
+  mockReasoningCatalog(t)
+  const harness = createReactHarness()
+  const mounted = await mountSection(harness, {
+    describe: () => namespaceView(baseValue({
+      routerProvider: 'opencode-go-api',
+      routerModel: 'hy4-flash-free',
+      routerReasoningEffort: 'max',
+    }), 5),
+  })
+  const { panel } = await openEngineTab(mounted)
+  const effort = findOne(panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'routerReasoningEffort')
+  assert.equal(effort.props.disabled, true, 'the unsupported model disables the effort control')
+  assert.equal(effort.props.value, '', 'an unsupported model shows the adapter default')
+  assert.deepEqual(optionValues(effort), [''], 'generic levels must not be invented')
+  assert.equal(textOf(effort), 'effortUnsupported', 'a clear no-support label is shown')
+})
+
+test('the router effort control keeps model efforts and defaults for a supported route', async (t) => {
+  mockReasoningCatalog(t)
+  const harness = createReactHarness()
+  const mounted = await mountSection(harness, {
+    describe: () => namespaceView(baseValue({
+      routerProvider: 'p',
+      routerModel: 'main',
+      routerReasoningEffort: 'high',
+    }), 5),
+  })
+  let { panel } = await openEngineTab(mounted)
+  let effort = findOne(panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'routerReasoningEffort')
+  assert.equal(effort.props.disabled, false)
+  assert.equal(effort.props.value, 'high', 'the saved supported effort stays selected')
+  assert.deepEqual(optionValues(effort), ['', 'off', 'high'], 'only the model efforts are offered')
+  const defaultOption = findOne(effort, (element) => element.type === 'option' && element.props?.value === '')
+  assert.match(textOf(defaultOption), /routerEffortDefault \(high\)/, 'the model default is named in the default option')
+
+  // An unknown capability keeps the generic fallback list (the pre-fix behavior).
+  const modelSelect = findOne(panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'routerModel')
+  modelSelect.props.onChange({ target: { value: 'mystery\u0000unknown' } })
+  ;({ panel } = await renderEngine(mounted))
+  effort = findOne(panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'routerReasoningEffort')
+  assert.equal(effort.props.disabled, false)
+  assert.deepEqual(optionValues(effort), ['', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'], 'unknown info keeps the generic levels')
+})
+
+test('role primary and fallback effort controls hide generic levels for a no-support model', async (t) => {
+  mockReasoningCatalog(t)
+  const harness = createReactHarness()
+  const dev = {
+    id: 'dev',
+    name: 'DEV',
+    provider: 'opencode-go-api',
+    model: 'hy4-flash-free',
+    reasoningEffort: 'max',
+    fallbacks: [{ provider: 'opencode-go-api', model: 'hy4-flash-free', reasoningEffort: 'max' }],
+  }
+  const mounted = await mountSection(harness, {
+    describe: () => namespaceView(baseValue({ roles: [{ id: 'general', name: 'General' }, dev] }), 5),
+  })
+  const page = await harness.render(mounted.page)
+  const roles = findComponent(page, 'RolesPanel')
+  const tree = await harness.render(roles.type, roles.props)
+  const primary = findOne(tree, (element) => element.type === 'select' && element.props?.['aria-label'] === 'effort')
+  assert.equal(primary.props.disabled, true)
+  assert.equal(primary.props.value, '')
+  assert.deepEqual(optionValues(primary), [''])
+  assert.equal(textOf(primary), 'effortUnsupported')
+  const fallback = findOne(tree, (element) => element.type === 'select' && element.props?.['aria-label'] === 'effort #1')
+  assert.equal(fallback.props.disabled, true)
+  assert.equal(fallback.props.value, '')
+  assert.deepEqual(optionValues(fallback), [''])
+  assert.equal(textOf(fallback), 'effortUnsupported')
+})
+
+test('role effort controls use model efforts when supported and the generic fallback when unknown', async (t) => {
+  mockReasoningCatalog(t)
+  const harness = createReactHarness()
+  const role = (provider, model) => ({ id: 'dev', name: 'DEV', provider, model, reasoningEffort: '', fallbacks: [] })
+  const mounted = await mountSection(harness, {
+    describe: () => namespaceView(baseValue({ roles: [
+      { id: 'general', name: 'General' },
+      role('p', 'main'),
+      role('mystery', 'unknown'),
+    ] }), 5),
+  })
+  let page = await harness.render(mounted.page)
+  let roles = findComponent(page, 'RolesPanel')
+  let tree = await harness.render(roles.type, roles.props)
+  let effort = findOne(tree, (element) => element.type === 'select' && element.props?.['aria-label'] === 'effort')
+  assert.deepEqual(optionValues(effort), ['', 'off', 'high'], 'a supported model lists exactly its efforts')
+
+  // Point the selected role at the unknown-capability model; the generic
+  // fallback list must survive.
+  const modelSelect = findOne(tree, (element) => element.type === 'select' && element.props?.value === 'p::main')
+  modelSelect.props.onChange({ target: { value: 'mystery::unknown' } })
+  page = await harness.render(mounted.page)
+  roles = findComponent(page, 'RolesPanel')
+  tree = await harness.render(roles.type, roles.props)
+  effort = findOne(tree, (element) => element.type === 'select' && element.props?.['aria-label'] === 'effort')
+  assert.deepEqual(optionValues(effort), ['', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'], 'unknown info keeps the generic levels')
+})
