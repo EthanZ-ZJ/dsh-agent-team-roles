@@ -589,16 +589,29 @@ test('the router model is a catalog-backed dropdown grouped by provider', async 
   const pickedModel = findOne(picked.panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'routerModel')
   assert.equal(pickedModel.props.value, 'p\u0000main')
   const pickedEffort = findOne(picked.panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'routerReasoningEffort')
+  assert.equal(pickedEffort.props.value, 'high', 'selecting a model preselects that model\'s advertised default effort')
+  const pickedEffortOptions = findAll(pickedEffort, (element) => element.type === 'option')
   assert.deepEqual(
-    findAll(pickedEffort, (element) => element.type === 'option').map((option) => option.props.value),
+    pickedEffortOptions.map((option) => option.props.value),
     ['', 'high', 'low'],
     'the effort options follow the selected model',
   )
+  assert.equal(
+    textOf(pickedEffortOptions.find((option) => option.props.value === '')),
+    'routerEffortDefault (high)',
+    'the adapter-default option names the model default it stands for',
+  )
+
+  // A model whose levels exclude the current effort preselects its own default instead.
+  pickedModel.props.onChange({ target: { value: 'q\u0000alt' } })
+  const altPicked = await renderEngine(mounted)
+  assert.equal(findOne(altPicked.panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'routerReasoningEffort').props.value, 'medium', 'the effort follows the newly selected model default')
 
   await findButton(await mounted.harness.render(mounted.page), 'save').props.onClick()
   const ops = mounted.state.mutateCalls[0][1]
-  assert.equal(ops.find((op) => op.path[0] === 'routerProvider').value, 'p')
-  assert.equal(ops.find((op) => op.path[0] === 'routerModel').value, 'main')
+  assert.equal(ops.find((op) => op.path[0] === 'routerProvider').value, 'q')
+  assert.equal(ops.find((op) => op.path[0] === 'routerModel').value, 'alt')
+  assert.equal(ops.find((op) => op.path[0] === 'routerReasoningEffort').value, 'medium', 'the preselected default effort is saved')
 
   // Choosing the unset option writes the empty pair back: routing falls back to rules.
   pickedModel.props.onChange({ target: { value: '' } })

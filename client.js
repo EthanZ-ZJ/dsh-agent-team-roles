@@ -1653,7 +1653,12 @@ window.__ModuleLoader__.load({
       const selectedEfforts = Array.isArray(selectedRoute?.efforts) && selectedRoute.efforts.length > 0
         ? selectedRoute.efforts.map((level) => ({ id: String(level.id ?? ''), name: String(level.name ?? level.id ?? '') }))
         : fallbackEfforts.map((id) => ({ id, name: id }))
-      const effortChoices = [{ id: '', name: t('routerEffortDefault') }, ...selectedEfforts]
+      const effortChoices = [{
+        id: '',
+        name: typeof selectedRoute?.defaultEffort === 'string' && selectedRoute.defaultEffort !== ''
+          ? `${t('routerEffortDefault')} (${selectedRoute.defaultEffort})`
+          : t('routerEffortDefault'),
+      }, ...selectedEfforts]
       if (engine.routerReasoningEffort !== '' && !selectedEfforts.some((level) => level.id === engine.routerReasoningEffort)) {
         effortChoices.push({ id: engine.routerReasoningEffort, name: engine.routerReasoningEffort })
       }
@@ -1759,10 +1764,20 @@ window.__ModuleLoader__.load({
                   return
                 }
                 const nextRoute = routeChoices.find((route) => route.provider === nextProvider && route.id === nextModel)
+                const nextLevels = levelsForRoute(nextRoute)
+                // The effort follows the chosen model: keep the current level
+                // when the new model still supports it, otherwise preselect the
+                // model's advertised default, and only then fall back to the
+                // adapter default.
+                const defaultEffort = typeof nextRoute?.defaultEffort === 'string' && nextRoute.defaultEffort !== ''
+                  ? nextRoute.defaultEffort
+                  : ''
                 edit({
                   routerProvider: nextProvider,
                   routerModel: nextModel,
-                  routerReasoningEffort: levelsForRoute(nextRoute).includes(engine.routerReasoningEffort) ? engine.routerReasoningEffort : '',
+                  routerReasoningEffort: engine.routerReasoningEffort !== '' && nextLevels.includes(engine.routerReasoningEffort)
+                    ? engine.routerReasoningEffort
+                    : (defaultEffort !== '' && nextLevels.includes(defaultEffort) ? defaultEffort : ''),
                 })
               },
             }, [
