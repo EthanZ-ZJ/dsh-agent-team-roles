@@ -461,7 +461,7 @@ test('manually adding and editing a gate stays local until engine save', async (
   const routerModeSelect = findOne(panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'routerMode')
   assert.deepEqual(routerModeSelect.children.map((option) => option.props.value), ['model', 'rules', 'off'])
   assert.equal(routerModeSelect.props.value, 'model', 'routing starts on the model decision')
-  for (const label of ['routerMode', 'routerProvider', 'routerModel', 'routerReasoningEffort', 'routerTimeoutMs', 'routerMaxTokens', 'routerRequireDecision']) {
+  for (const label of ['routerMode', 'routerModel', 'routerReasoningEffort', 'routerTimeoutMs', 'routerMaxTokens', 'routerRequireDecision']) {
     assert.ok(
       findOne(panel, (element) => (element.type === 'input' || element.type === 'select') && element.props?.['aria-label'] === label),
       `the router control "${label}" must be labeled`,
@@ -483,7 +483,8 @@ test('manually adding and editing a gate stays local until engine save', async (
   assert.deepEqual(hostValue.gates, [VALID_GATE, VALID_GATE_2])
 })
 
-test('the engine form adopts the host router settings and saves them unchanged', async () => {
+test('the engine form adopts the host router settings and saves them unchanged', async (t) => {
+  mockCatalog(t)
   let hostValue = baseValue({
     routerMode: 'rules',
     routerProvider: 'openai-codex',
@@ -505,8 +506,13 @@ test('the engine form adopts the host router settings and saves them unchanged',
   const { panel } = await openEngineTab(mounted)
   const routerMode = findOne(panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'routerMode')
   assert.equal(routerMode.props.value, 'rules')
-  assert.equal(findOne(panel, (element) => element.type === 'input' && element.props?.['aria-label'] === 'routerProvider').props.value, 'openai-codex')
-  assert.equal(findOne(panel, (element) => element.type === 'input' && element.props?.['aria-label'] === 'routerModel').props.value, 'gpt-6.2-astra')
+  const routerModelSelect = findOne(panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'routerModel')
+  assert.equal(routerModelSelect.props.value, 'openai-codex\u0000gpt-6.2-astra', 'a saved route missing from the catalog stays selected')
+  const savedOption = findOne(routerModelSelect, (element) => element.type === 'option' && element.props?.value === 'openai-codex\u0000gpt-6.2-astra')
+  assert.equal(textOf(savedOption), 'gpt-6.2-astra', 'the unknown saved route is still visible')
+  const routerEffort = findOne(panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'routerReasoningEffort')
+  assert.equal(routerEffort.props.value, 'high')
+  assert.ok(findAll(routerEffort, (element) => element.type === 'option').some((option) => option.props.value === 'high'), 'a stored effort stays selectable')
   assert.equal(findOne(panel, (element) => element.type === 'input' && element.props?.['aria-label'] === 'routerTimeoutMs').props.value, 35000)
   assert.equal(findOne(panel, (element) => element.type === 'input' && element.props?.['aria-label'] === 'routerRequireDecision').props.checked, false)
 
@@ -538,8 +544,8 @@ test('the engine form falls back to router defaults for invalid host values', as
   const { panel } = await openEngineTab(mounted)
   const routerMode = findOne(panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'routerMode')
   assert.equal(routerMode.props.value, 'model', 'an unknown mode falls back to the model decision')
-  assert.equal(findOne(panel, (element) => element.type === 'input' && element.props?.['aria-label'] === 'routerProvider').props.value, '')
-  assert.equal(findOne(panel, (element) => element.type === 'input' && element.props?.['aria-label'] === 'routerModel').props.value, '')
+  assert.equal(findOne(panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'routerModel').props.value, '')
+  assert.equal(findOne(panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'routerReasoningEffort').props.value, '')
   assert.equal(findOne(panel, (element) => element.type === 'input' && element.props?.['aria-label'] === 'routerTimeoutMs').props.value, 20000)
   assert.equal(findOne(panel, (element) => element.type === 'input' && element.props?.['aria-label'] === 'routerMaxTokens').props.value, 800)
   assert.equal(findOne(panel, (element) => element.type === 'input' && element.props?.['aria-label'] === 'routerRequireDecision').props.checked, true)
@@ -549,6 +555,59 @@ test('the engine form falls back to router defaults for invalid host values', as
   assert.equal(ops.find((op) => op.path[0] === 'routerTimeoutMs').value, 20000)
   assert.equal(ops.find((op) => op.path[0] === 'routerMaxTokens').value, 800)
   assert.equal(ops.find((op) => op.path[0] === 'routerRequireDecision').value, true)
+})
+
+test('the router model is a catalog-backed dropdown grouped by provider', async (t) => {
+  mockCatalog(t)
+  const harness = createReactHarness()
+  const mounted = await mountSection(harness, {
+    describe: () => namespaceView(baseValue(), 5),
+    mutate: () => namespaceView(baseValue(), 6),
+  })
+  await openEngineTab(mounted)
+  const { panel } = await renderEngine(mounted)
+
+  const modelSelect = findOne(panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'routerModel')
+  assert.equal(modelSelect.props.value, '', 'the router starts unconfigured')
+  const options = findAll(modelSelect, (element) => element.type === 'option')
+  const values = options.map((option) => option.props.value)
+  assert.equal(values[0], '', 'the first option is "not configured"')
+  assert.ok(values.includes('p\u0000main'), 'the catalog main route is offered')
+  assert.ok(values.includes('p\u0000backup'), 'the catalog backup route is offered')
+  assert.ok(values.includes('q\u0000alt'), 'a route from another provider is offered')
+  assert.equal(textOf(options.find((option) => option.props.value === '')), 'routerModelUnset')
+  assert.equal(textOf(options.find((option) => option.props.value === 'p\u0000main')), 'main · Main')
+  const groups = findAll(modelSelect, (element) => element.type === 'optgroup')
+  assert.deepEqual(groups.map((group) => group.props.label), ['p', 'q', 'x', 'se-a'], 'options are grouped by provider')
+
+  const effortSelect = findOne(panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'routerReasoningEffort')
+  assert.equal(effortSelect.props.value, '', 'the effort starts at the adapter default')
+  assert.ok(findAll(effortSelect, (element) => element.type === 'option').some((option) => option.props.value === 'high'), 'the fallback effort list is shown while no model is selected')
+
+  modelSelect.props.onChange({ target: { value: 'p\u0000main' } })
+  const picked = await renderEngine(mounted)
+  const pickedModel = findOne(picked.panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'routerModel')
+  assert.equal(pickedModel.props.value, 'p\u0000main')
+  const pickedEffort = findOne(picked.panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'routerReasoningEffort')
+  assert.deepEqual(
+    findAll(pickedEffort, (element) => element.type === 'option').map((option) => option.props.value),
+    ['', 'high', 'low'],
+    'the effort options follow the selected model',
+  )
+
+  await findButton(await mounted.harness.render(mounted.page), 'save').props.onClick()
+  const ops = mounted.state.mutateCalls[0][1]
+  assert.equal(ops.find((op) => op.path[0] === 'routerProvider').value, 'p')
+  assert.equal(ops.find((op) => op.path[0] === 'routerModel').value, 'main')
+
+  // Choosing the unset option writes the empty pair back: routing falls back to rules.
+  pickedModel.props.onChange({ target: { value: '' } })
+  const cleared = await renderEngine(mounted)
+  assert.equal(findOne(cleared.panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'routerModel').props.value, '')
+  await findButton(await mounted.harness.render(mounted.page), 'save').props.onClick()
+  const clearedOps = mounted.state.mutateCalls[1][1]
+  assert.equal(clearedOps.find((op) => op.path[0] === 'routerProvider').value, '')
+  assert.equal(clearedOps.find((op) => op.path[0] === 'routerModel').value, '')
 })
 
 test('writeNamespaceFields surfaces the settings error code (cr #11)', async () => {

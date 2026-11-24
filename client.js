@@ -36,7 +36,10 @@ window.__ModuleLoader__.load({
       routerModeOff: '关闭路由',
       routerProvider: '路由模型 Provider',
       routerModel: '路由模型 ID',
+      routerModelUnset: '未配置（回退规则路由）',
+      routerModelHint: '未配置时自动回退规则路由；下拉选项与角色模型配置同源 catalog。',
       routerReasoningEffort: '路由模型推理强度',
+      routerEffortDefault: '适配器默认',
       routerTimeoutMs: '路由超时（毫秒）',
       routerMaxTokens: '路由最大 token 数',
       routerRequireDecision: '派发前必须先路由',
@@ -306,7 +309,10 @@ window.__ModuleLoader__.load({
       routerModeOff: 'Routing off',
       routerProvider: 'Router provider',
       routerModel: 'Router model id',
+      routerModelUnset: 'Not configured (falls back to rules routing)',
+      routerModelHint: 'Unset falls back to rules routing automatically; the options come from the same model catalog as role model configuration.',
       routerReasoningEffort: 'Router reasoning effort',
+      routerEffortDefault: 'Adapter default',
       routerTimeoutMs: 'Router timeout (ms)',
       routerMaxTokens: 'Router max tokens',
       routerRequireDecision: 'Require routing before dispatch',
@@ -1601,6 +1607,59 @@ window.__ModuleLoader__.load({
       t, engine, setEngine, busy, onSave, onRefresh,
     }) {
       const edit = (patch) => setEngine(patch)
+      // The router model uses the same catalog as the role model dropdown: one
+      // deployment-wide list of provider/model routes and their efforts.
+      const [catalog, setCatalog] = React.useState(null)
+      React.useEffect(() => {
+        let cancelled = false
+        fetch('/agent-team-roles/model-catalog')
+          .then((response) => (response.ok ? response.json() : Promise.reject(new Error('catalog unavailable'))))
+          .then((data) => {
+            if (!cancelled) setCatalog({ routes: Array.isArray(data.routes) ? data.routes : [], efforts: Array.isArray(data.efforts) ? data.efforts : null })
+          })
+          .catch(() => {
+            if (!cancelled) setCatalog({ routes: [], efforts: null })
+          })
+        return () => {
+          cancelled = true
+        }
+      }, [])
+      const catalogRoutes = catalog?.routes ?? []
+      const routerProvider = typeof engine.routerProvider === 'string' ? engine.routerProvider : ''
+      const routerModel = typeof engine.routerModel === 'string' ? engine.routerModel : ''
+      const routerValue = routerProvider !== '' && routerModel !== '' ? routerProvider + '\u0000' + routerModel : ''
+      const selectedRoute = catalogRoutes.find((route) => route.provider === routerProvider && route.id === routerModel)
+      // A saved route the catalog no longer advertises stays selectable, so the
+      // form never silently drops a working configuration.
+      const routeChoices = routerValue !== '' && selectedRoute === undefined
+        ? [...catalogRoutes, { provider: routerProvider, id: routerModel, name: '' }]
+        : catalogRoutes
+      const routeGroups = () => {
+        const groups = new Map()
+        for (const route of routeChoices) {
+          const provider = String(route.provider ?? '')
+          if (!groups.has(provider)) groups.set(provider, [])
+          groups.get(provider).push(route)
+        }
+        return [...groups.entries()].map(([provider, routes]) => h('optgroup', {
+          key: provider,
+          label: provider,
+        }, routes.map((route) => h('option', {
+          key: String(route.provider ?? '') + '\u0000' + String(route.id ?? ''),
+          value: String(route.provider ?? '') + '\u0000' + String(route.id ?? ''),
+        }, String(route.id ?? '') + (route.name && route.name !== route.id ? ' · ' + route.name : '')))))
+      }
+      const fallbackEfforts = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+      const selectedEfforts = Array.isArray(selectedRoute?.efforts) && selectedRoute.efforts.length > 0
+        ? selectedRoute.efforts.map((level) => ({ id: String(level.id ?? ''), name: String(level.name ?? level.id ?? '') }))
+        : fallbackEfforts.map((id) => ({ id, name: id }))
+      const effortChoices = [{ id: '', name: t('routerEffortDefault') }, ...selectedEfforts]
+      if (engine.routerReasoningEffort !== '' && !selectedEfforts.some((level) => level.id === engine.routerReasoningEffort)) {
+        effortChoices.push({ id: engine.routerReasoningEffort, name: engine.routerReasoningEffort })
+      }
+      const levelsForRoute = (route) => Array.isArray(route?.efforts) && route.efforts.length > 0
+        ? route.efforts.map((level) => String(level.id ?? ''))
+        : fallbackEfforts
       return h('div', { style: { ...panel, ...card } }, [
         h('div', { key: 'head', style: { ...row, justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, [
           h('strong', { key: 'title', style: { fontSize: 13 } }, t('engine')),
@@ -1686,37 +1745,42 @@ window.__ModuleLoader__.load({
               h('option', { key: 'off', value: 'off' }, t('routerModeOff')),
             ]),
           ]),
-          h('label', { key: 'provider', style: label }, [
-            h('span', { key: 'l' }, t('routerProvider')),
-            h('input', {
-              key: 'i',
-              style: input,
-              placeholder: 'openai-codex',
-              value: engine.routerProvider,
-              'aria-label': t('routerProvider'),
-              onChange: (event) => edit({ routerProvider: event.target.value }),
-            }),
-          ]),
           h('label', { key: 'model', style: label }, [
             h('span', { key: 'l' }, t('routerModel')),
-            h('input', {
+            h('select', {
               key: 'i',
               style: input,
-              placeholder: 'gpt-6.2-astra',
-              value: engine.routerModel,
+              value: routerValue,
               'aria-label': t('routerModel'),
-              onChange: (event) => edit({ routerModel: event.target.value }),
-            }),
+              onChange: (event) => {
+                const [nextProvider = '', nextModel = ''] = event.target.value.split('\u0000')
+                if (nextProvider === '' || nextModel === '') {
+                  edit({ routerProvider: '', routerModel: '', routerReasoningEffort: '' })
+                  return
+                }
+                const nextRoute = routeChoices.find((route) => route.provider === nextProvider && route.id === nextModel)
+                edit({
+                  routerProvider: nextProvider,
+                  routerModel: nextModel,
+                  routerReasoningEffort: levelsForRoute(nextRoute).includes(engine.routerReasoningEffort) ? engine.routerReasoningEffort : '',
+                })
+              },
+            }, [
+              h('option', { key: 'unset', value: '' }, t('routerModelUnset')),
+              ...routeGroups(),
+            ]),
+            h('span', { key: 'hint', style: small }, t('routerModelHint')),
           ]),
           h('label', { key: 'effort', style: label }, [
             h('span', { key: 'l' }, t('routerReasoningEffort')),
-            h('input', {
+            h('select', {
               key: 'i',
               style: input,
               value: engine.routerReasoningEffort,
+              disabled: routerValue === '',
               'aria-label': t('routerReasoningEffort'),
               onChange: (event) => edit({ routerReasoningEffort: event.target.value }),
-            }),
+            }, effortChoices.map((level) => h('option', { key: level.id === '' ? 'default' : level.id, value: level.id }, level.name))),
           ]),
           h('label', { key: 'timeout', style: label }, [
             h('span', { key: 'l' }, t('routerTimeoutMs')),

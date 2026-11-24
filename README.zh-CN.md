@@ -278,7 +278,7 @@ Lead 派发前先调用 `route_task`：把任务（以及最少的必要上下�
 在 设置 → 引擎 → 路由决策模型 里配置：
 
 - `routerMode`：`model`（默认）/ `rules` / `off`（`route_task` 直接报错）。
-- `routerProvider` / `routerModel` / `routerReasoningEffort`（留空用适配器默认），以及这次调用专用的 `routerTimeoutMs`（默认 20000）与 `routerMaxTokens`（默认 800）。
+- `routerProvider` / `routerModel` 通过下拉选择，下拉与角色模型配置同源 catalog（空值表示未配置，自动回退规则路由）；`routerReasoningEffort` 是第二个下拉，选项随所选模型的 efforts（空值用适配器默认）。另有这次调用专用的 `routerTimeoutMs`（默认 20000）与 `routerMaxTokens`（默认 800）。
 - `routerRequireDecision`（默认开启）：开启时，本轮没有一次成功的 `route_task`，`spawn_team_member` 会被拒绝。
 
 provider 或 model 留空、模式为 `rules`，或模型调用失败、超时、回复无法解析时，`route_task` 会自动回退到确定性的关键词/词元规则路由（`source: "rules"`），**不会阻塞派发**。模型决策返回 `source: "model"` 与应答的 `provider/model`；两种情况都会给出 `confidence`、`reason` 和 `suggestedTaskPrompt`，任务确实需要多个角色时还有 `needsSplit`。

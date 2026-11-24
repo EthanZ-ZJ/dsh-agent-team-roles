@@ -280,7 +280,7 @@ Before dispatching, the Lead calls `route_task` with the task (and only the mini
 The router is configured in Settings → Engine → Routing decision model:
 
 - `routerMode`: `model` (default), `rules`, or `off` (`route_task` fails).
-- `routerProvider` / `routerModel` / `routerReasoningEffort` (an empty reasoning effort uses the adapter default), plus `routerTimeoutMs` (default 20000) and `routerMaxTokens` (default 800) for the single call.
+- `routerProvider` / `routerModel` are picked from a dropdown fed by the same model catalog as the role model configuration (the empty choice means "not configured" and falls back to rules routing); `routerReasoningEffort` is a second dropdown limited to the efforts the selected model advertises (its empty choice uses the adapter default). `routerTimeoutMs` (default 20000) and `routerMaxTokens` (default 800) bound the single call.
 - `routerRequireDecision` (default on): while on, `spawn_team_member` is refused until a `route_task` has succeeded in the current turn.
 
 If the provider or model is empty, the mode is `rules`, or the model call fails, times out or its reply cannot be parsed, `route_task` returns a deterministic keyword/token decision instead (`source: "rules"`) — routing never blocks dispatch. Model decisions report `source: "model"` and the `provider/model` that answered; both return `confidence`, `reason` and `suggestedTaskPrompt`, plus `needsSplit` for tasks that genuinely need several roles.
