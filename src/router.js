@@ -50,10 +50,40 @@ const KEYWORD_ROUTES = Object.freeze([
   { roleId: 'dev', words: ['前端', '页面', '样式', 'ui', '组件'] },
   { roleId: 'tse', words: ['测试', '验收', '回归'] },
   { roleId: 'cicd', words: ['发布', '部署', '上线', '回退'] },
-  { roleId: 'pm', words: ['需求', '体验', 'prd', '用户故事'] },
+  { roleId: 'pm', words: ['需求', '体验', 'prd', '用户故事', '审美', '视觉风格', '设计规范'] },
   { roleId: 'se', words: ['架构', '接口', '契约', 'adr'] },
   { roleId: 'cr', words: ['审查', 'review', 'diff'] },
 ])
+
+/**
+ * Phrases that mark a task as visual/design review or specification work.
+ *
+ * Rules routing is the deterministic fallback, and its DEV keywords ("前端",
+ * "页面", "样式", "UI") would otherwise swallow design review tasks. A design
+ * intent therefore wins over those words, while pure implementation wording
+ * ("实现", "修复", "调整配色") still routes to DEV.
+ */
+const DESIGN_HINTS = Object.freeze([
+  '设计评审', '视觉评审', '样式评审', '截图评审', '设计规范', '视觉规范',
+  '设计系统', '视觉风格', '界面风格', '视觉一致性', '配色方案', '审美',
+])
+
+/** Subjects a design/visual review task talks about. */
+const DESIGN_SUBJECTS = Object.freeze([
+  '前端', '页面', '样式', 'ui', '界面', '配色', '字体', '排版', '布局', '视觉', '设计',
+])
+
+/** Verbs/nouns that make those subjects a review or specification request. */
+const DESIGN_INTENTS = Object.freeze([
+  '评审', '检查', '规范', '风格', '审美', '截图', '建议', '意见', '把关',
+])
+
+/** Whether the task asks for visual design guidance rather than implementation. */
+function designReviewIntent(taskLower) {
+  if (DESIGN_HINTS.some((word) => taskLower.includes(word))) return true
+  const subject = DESIGN_SUBJECTS.some((word) => taskLower.includes(word))
+  return subject && DESIGN_INTENTS.some((word) => taskLower.includes(word))
+}
 
 /** One lower-case alphanumeric token list, used for catalog-token hits. */
 function tokensOf(value) {
@@ -189,6 +219,17 @@ export function ruleRoute({ task = '', roles = [] } = {}) {
   const taskText = String(task ?? '')
   const taskTokens = new Set(tokensOf(taskText))
   const taskLower = taskText.toLowerCase()
+  // A design/visual review request belongs to the role that owns design, not to
+  // the implementer that merely owns the words "前端/页面/样式".
+  if (catalog.some((role) => role.id === 'pm') && designReviewIntent(taskLower)) {
+    return {
+      roleId: 'pm',
+      confidence: 0.7,
+      reason: 'design/visual review intent: visual style, design specs, or screenshot review',
+      suggestedTaskPrompt: taskText,
+      needsSplit: [],
+    }
+  }
   const scores = new Map()
   const hits = new Map()
   for (const role of catalog) {

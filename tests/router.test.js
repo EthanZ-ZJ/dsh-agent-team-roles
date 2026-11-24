@@ -108,6 +108,18 @@ test('ruleRoute maps built-in keywords and falls back in catalog order', () => {
   assert.equal(withoutGeneral.roleId, 'dev', 'the first catalog role wins when no hit and no general exists')
 })
 
+test('ruleRoute sends design review to PM but keeps implementation with DEV', () => {
+  const roles = [...ROLES, { id: 'pm', name: 'PM', description: 'product manager; visual design specs and review', tools: [] }]
+  assert.equal(ruleRoute({ task: '修复前端页面样式', roles }).roleId, 'dev', 'plain implementation stays with DEV')
+  assert.equal(ruleRoute({ task: '调整按钮样式', roles }).roleId, 'dev', 'a concrete styling change stays with DEV')
+  const review = ruleRoute({ task: '评审这个页面的样式和截图', roles })
+  assert.equal(review.roleId, 'pm')
+  assert.match(review.reason, /design\/visual review/)
+  assert.equal(ruleRoute({ task: '制定前端页面视觉风格和设计规范', roles }).roleId, 'pm')
+  // Without a PM in the catalog the design hint cannot win.
+  assert.equal(ruleRoute({ task: '评审这个页面的样式和截图', roles: ROLES }).roleId, 'dev')
+})
+
 test('ruleRoute scores catalog tokens and keeps catalog order on a tie', () => {
   const roles = [
     { id: 'alpha', name: 'Alpha', description: 'pipeline expert', tools: ['bash'] },

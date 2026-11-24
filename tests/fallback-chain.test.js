@@ -14,7 +14,13 @@ function mount(roles) {
       get: () => undefined,
       fiber: {},
       agents: { list: () => [] },
-      agentTeams: { tryMembership: () => ({ role: 'teammate', root: { id: 'root' }, name: 'dev' }) },
+      agentTeams: {
+        tryMembership: () => ({
+          role: 'teammate',
+          root: { id: 'root', session: { header: { agentPreset: 'team-lead' } } },
+          name: 'dev',
+        }),
+      },
       on(event, listener) { if (event === 'agent/request-error') requestError = listener },
       effect(register, name) { if (name === 'agent-team-roles:auto-fallback') register() },
       provide() {},

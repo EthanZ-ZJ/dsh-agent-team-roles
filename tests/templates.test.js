@@ -53,7 +53,7 @@ test('bundled software team requires local verification before release coordinat
   assert.match(template.leadPlaybook, /用户明确批准版本和环境后，由 CI\/CD 按项目手册负责发布、部署和上线验证/)
   const pm = template.roles.find(role => role.id === 'pm')
   assert.deepEqual(pm.skills, ['product-sense', 'design-taste'])
-  assert.match(pm.description, /视觉与交互设计规格\/评审/)
+  assert.match(pm.description, /视觉风格和设计规范|评审页面样式与截图/)
   assert.match(pm.persona, /设计负责人/)
   assert.match(pm.persona, /report_gate_event/)
   assert.match(template.roles.find(role => role.id === 'dev').persona, /设计 token/)

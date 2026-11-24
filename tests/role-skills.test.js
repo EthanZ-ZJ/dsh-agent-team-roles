@@ -28,15 +28,22 @@ function fakeAgent() {
   const agent = {
     ctx: {
       inject(_deps, callback) {
-        callback({
-          skills: {
-            register(definition) {
-              registered.push(definition)
-              return () => {}
+        let disposed = false
+        queueMicrotask(() => {
+          if (disposed) return
+          callback({
+            skills: {
+              register(definition) {
+                registered.push(definition)
+                return () => {
+                  const index = registered.indexOf(definition)
+                  if (index >= 0) registered.splice(index, 1)
+                }
+              },
             },
-          },
+          })
         })
-        return () => {}
+        return { dispose: async () => { disposed = true } }
       },
     },
   }
@@ -68,9 +75,10 @@ async function writeBundle(roleDir, dirName, { name = dirName, description = 'A 
 }
 
 /** Install for the SE role and return the registered definitions. */
-function installFor(skills) {
+async function installFor(skills) {
   const { agent, registered } = fakeAgent()
   installRoleSkills(agent, { id: 'se', skills })
+  await Promise.resolve()
   return registered
 }
 
@@ -84,7 +92,7 @@ test('installRoleSkills exposes every skill in the role folder when role.skills 
   await fsp.mkdir(path.join(roleDir, 'not-a-bundle'), { recursive: true })
   await fsp.writeFile(path.join(roleDir, 'notes.txt'), 'ignored')
 
-  const registered = installFor([])
+  const registered = await installFor([])
 
   assert.deepEqual(registered.map((definition) => definition.name).sort(), ['alpha', 'beta', 'gamma'])
   for (const definition of registered) {
@@ -99,7 +107,7 @@ test('installRoleSkills registers only the whitelisted skill names', async (t) =
   await writeBundle(roleDir, 'beta')
   await writeBundle(roleDir, 'gamma')
 
-  const registered = installFor(['beta'])
+  const registered = await installFor(['beta'])
 
   assert.deepEqual(registered.map((definition) => definition.name), ['beta'])
 })
@@ -115,7 +123,7 @@ test('a malformed role skill is skipped without dropping the others', async (t) 
   await fsp.mkdir(badNameDir, { recursive: true })
   await fsp.writeFile(path.join(badNameDir, 'SKILL.md'), '---\nname: Bad Name\ndescription: Invalid characters.\n---\n\n# bad\n\nBody.\n')
 
-  const registered = installFor([])
+  const registered = await installFor([])
 
   assert.deepEqual(registered.map((definition) => definition.name), ['good'])
 })
@@ -127,7 +135,7 @@ test('the merged SE architect skill registers with its merged frontmatter name a
   await fsp.mkdir(roleDir, { recursive: true })
   await fsp.cp(source, bundle, { recursive: true })
 
-  const registered = installFor([])
+  const registered = await installFor([])
 
   assert.equal(registered.length, 1)
   const [definition] = registered

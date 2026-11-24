@@ -445,6 +445,9 @@ export function apply(ctx, config) {
     if (agent === undefined) return undefined
     const membership = ctx.agentTeams.tryMembership(agent)
     if (membership === undefined) return undefined
+    // Gates are a Team Lead preset workflow: a plain session's official roster
+    // must not be governed by the configured Team gates.
+    if (!isTeamLeadPreset(membership.root, ctx)) return undefined
     const roles = mergeRoles(rolesReader.read())
     const snapshot = snapshots.get(membership.root.id, membership.name)
     // D7: Codex-backed members are external Agents and skip gate evaluation
@@ -594,6 +597,9 @@ export function apply(ctx, config) {
       if (agent === undefined) return next()
       const membership = ctx.agentTeams.tryMembership(agent)
       if (membership === undefined || membership.role !== 'teammate') return next()
+      // Role fallback chains are role configuration: only a Team Lead preset
+      // root gives its teammates the configured Team roles.
+      if (!isTeamLeadPreset(membership.root, ctx)) return next()
       const catalog = mergeRoles(rolesReader.read())
       const snapshot = snapshots.get(membership.root.id, membership.name)
       const role = snapshot?.frozen ?? roleForTarget(catalog, membership.name)
@@ -658,21 +664,78 @@ export function apply(ctx, config) {
     },
   })
 
-  /** One disposer per installed Agent scope. */
+  /**
+   * One reversible installation per Agent, keyed by the mode it was built for.
+   *
+   * A Session may switch preset before its first turn, and a child may be
+   * composed later than `agent/created`; a one-shot install would either leak a
+   * Team surface into a plain session or never appear after such a switch. Every
+   * install is therefore disposable and reconciled against the effective preset.
+   */
   const installed = new Map()
+  const disposedAgents = new WeakSet()
+  let ready = false
+  let stopped = false
+  let reconciling = false
 
-  /** Install all contributions for one Agent, once. */
-  function installAgent(agent) {
-    if (installed.has(agent)) return
-    const membership = ctx.agentTeams.tryMembership(agent)
-    if (membership === undefined) return
+  /**
+   * The install mode one Agent must have right now.
+   *
+   * - `lead`: the live Agent is the official Lead of a Team Lead preset session.
+   * - `member`: a teammate whose root session runs the Team Lead preset.
+   * - `none`: a resolved composition without a Team surface (including a
+   *   teammate of a non-Team session: role configuration fails closed).
+   * - `defer`: no preset signal yet; install nothing and retry on the next step.
+   */
+  function desiredInstallMode(agent) {
+    let membership
+    try {
+      membership = ctx.agentTeams.tryMembership(agent)
+    } catch {
+      return 'none'
+    }
+    if (membership === undefined) return 'none'
+    const root = membership.role === 'lead' ? agent : membership.root
+    if (isTeamLeadPreset(root, ctx)) return membership.role === 'lead' ? 'lead' : 'member'
+    return hasResolvedPreset(root, ctx) ? 'none' : 'defer'
+  }
+
+  /** Guard against tools/change emitted by our own registrations or disposals. */
+  function reconcileAgent(agent) {
+    if (stopped || reconciling || disposedAgents.has(agent)) return
+    reconciling = true
+    try {
+      reconcileScope(agent)
+    } finally {
+      reconciling = false
+    }
+  }
+
+  /** Install, remove, or keep one Agent's contributions to match its preset. */
+  function reconcileScope(agent) {
+    const desired = desiredInstallMode(agent)
+    const current = installed.get(agent)
+    if (current !== undefined && current.mode === desired) return
+    if (current !== undefined) {
+      installed.delete(agent)
+      try {
+        current.dispose()
+      } catch {
+        // Descriptors removed by a disposing scope must not block reconciling.
+      }
+    }
+    if (desired === 'none' || desired === 'defer') return
     const scoped = agent.ctx
     if (scoped === undefined) return
+    const membership = ctx.agentTeams.tryMembership(agent)
+    if (membership === undefined) return
 
     const disposers = []
     let active = true
     const register = (disposer) => {
-      if (typeof disposer === 'function' && active) disposers.push(disposer)
+      if (typeof disposer !== 'function') return
+      if (active) disposers.push(disposer)
+      else disposer()
     }
     const dispose = () => {
       if (!active) return
@@ -684,31 +747,65 @@ export function apply(ctx, config) {
           // Scope teardown is best-effort; the Agent is already going away.
         }
       }
-      installed.delete(agent)
     }
 
+    // Tool admission and section rendering both precede agent/pre-step.
+    // Check the live preset there too, while a rebind is between updating its
+    // scope and notifying the registry observers that remove the old overlay.
+    const presetMatches = () => isTeamLeadPreset(membership.root, ctx)
+    const installerScope = {
+      tools: {
+        register: (definition) => scoped.tools.register(definition, { when: presetMatches }),
+        guard: (predicate) => scoped.tools.guard(predicate),
+        restrict: (filter) => scoped.tools.restrict(filter),
+      },
+      systemPrompt: {
+        getSectionOrder: (name) => scoped.systemPrompt.getSectionOrder(name),
+        section: (definition) => {
+          const text = typeof definition.text === 'function' ? definition.text : () => definition.text
+          return scoped.systemPrompt.section({
+            ...definition,
+            text: (...args) => (presetMatches() ? text(...args) : ''),
+          })
+        },
+      },
+    }
+    // A tool set admitted before the rebind may still reach the executor.
+    const definitions = desired === 'lead' ? tools.lead : [...tools.member, ...tools.codexMember]
+    const teamToolNames = new Set(definitions.map((definition) => definition.name))
+    register(scoped.tools.guard((exec) => {
+      if (presetMatches() || !teamToolNames.has(exec.name)) return undefined
+      return 'Team tools are available only in a Team Lead preset session.'
+    }))
+
     try {
-      if (membership.role === 'lead') {
-        const applied = installLead({ scoped, register, tools, ctx, config, snapshots, roles: rolesReader, ruleStore, agent, playbook: leadPlaybook, gateSummary: gateSummaryFor, turnOf: () => leadTurns.get(agent.id) ?? 0, routeDecisions })
-        // A Lead whose session preset is not resolved yet (early `agent/created`)
-        // installs nothing; do not mark it installed, so the pre-step backstop
-        // retries once the session context is complete.
-        if (applied === false) {
-          dispose()
-          return
+      if (desired === 'lead') {
+        installLead({ scoped: installerScope, register, tools, ctx, config, snapshots, roles: rolesReader, ruleStore, agent, playbook: leadPlaybook, gateSummary: gateSummaryFor, turnOf: () => leadTurns.get(agent.id) ?? 0, routeDecisions })
+        // The commands service requires a command-injected child of agent.ctx
+        // for scoped discovery. Injection activates asynchronously, and fiber
+        // teardown is asynchronous too: own the exact registration disposers
+        // so the old commands disappear synchronously on a preset rebind.
+        const commandFiber = scoped.inject?.(['commands'], (commandCtx) => {
+          for (const definition of [teamSpawnCommand, teamTemplateCommand, teamGatesCommand]) {
+            if (!active || !presetMatches()) return
+            register(commandCtx.commands.register(definition))
+          }
+        })
+        if (commandFiber !== undefined) {
+          register(() => {
+            void Promise.resolve(commandFiber.dispose()).catch((error) => {
+              ctx.logger?.warn(`[agent-team-roles] cannot dispose commands for agent ${agent.id}: ${error.message}`)
+            })
+          })
         }
         // Keep the Lead handle so the member-model view can list this Team.
-        // A roster kept by a session on another preset is not a Team surface, so
-        // it stays out of the panel.
-        if (leadAgents !== undefined && isTeamLeadPreset(agent, ctx)) {
-          leadAgents.set(agent.id, agent)
-          register(() => leadAgents.delete(agent.id))
-        }
+        leadAgents.set(agent.id, agent)
+        register(() => leadAgents.delete(agent.id))
       } else {
         installMember({
           agent,
           membership,
-          scoped,
+          scoped: installerScope,
           register,
           tools,
           snapshots,
@@ -725,17 +822,29 @@ export function apply(ctx, config) {
       throw error
     }
 
-    const handle = scoped.effect(() => dispose, 'agent-team-roles:agent')
-    installed.set(agent, handle)
+    const release = scoped.effect(() => dispose, 'agent-team-roles:agent')
+    installed.set(agent, {
+      mode: desired,
+      dispose: () => {
+        if (typeof release === 'function') release()
+        dispose()
+      },
+    })
   }
 
   const onCreated = async ({ agent }) => {
     await snapshots.ready
-    installAgent(agent)
+    reconcileAgent(agent)
   }
   const onDisposed = ({ agent }) => {
-    installed.get(agent)?.()
+    disposedAgents.add(agent)
+    const handle = installed.get(agent)
     installed.delete(agent)
+    try {
+      handle?.dispose()
+    } catch {
+      // The scope is already unwinding.
+    }
     leadTurns.delete(agent.id)
     for (const key of [...routeDecisions]) {
       if (key.startsWith(`${agent.id}:`)) routeDecisions.delete(key)
@@ -745,9 +854,11 @@ export function apply(ctx, config) {
   ctx.on('agent/created', onCreated)
   ctx.on('agent/disposed', onDisposed)
   ctx.effect(() => () => {
-    for (const dispose of [...installed.values()]) {
+    stopped = true
+    for (const [agent, handle] of [...installed]) {
+      installed.delete(agent)
       try {
-        dispose()
+        handle.dispose()
       } catch {
         // Plugin unload is best-effort for already-disposed scopes.
       }
@@ -755,31 +866,44 @@ export function apply(ctx, config) {
     installed.clear()
   }, 'agent-team-roles:installed')
 
-  void snapshots.ready.then(() => {
+  function reconcileLiveAgents() {
+    if (!ready || stopped || reconciling) return
     for (const agent of ctx.agents.list()) {
       try {
-        installAgent(agent)
+        reconcileAgent(agent)
       } catch (error) {
-        ctx.logger?.warn(`[agent-team-roles] cannot install on existing agent ${agent.id}: ${error.message}`)
+        ctx.logger?.warn(`[agent-team-roles] cannot reconcile agent ${agent.id}: ${error.message}`)
       }
     }
+  }
+
+  void snapshots.ready.then(() => {
+    ready = true
+    reconcileLiveAgents()
   })
+
+  // recompose emits tools/change after rebinding a live scope; unlike select,
+  // it does not commit agent-preset/selected. Reconcile synchronously so the
+  // next assembly, command list, or private-skill list uses the new scope.
+  // The notification has no scope argument, so check all live Agents, including
+  // those whose role surface depends on the changed Agent being their root.
+  ctx.on('tools/change', reconcileLiveAgents)
+  ctx.on('agent-preset/selected', reconcileLiveAgents)
 
   ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, messages, turn }, next) => {
     leadTurns.set(agent.id, turn)
-    // Backstop install: a session created while the plugin is already active may
-    // resolve its preset and Team membership only after `agent/created`, so the
-    // first step re-checks and installs the scoped contributions then.
-    if (!installed.has(agent)) {
-      try {
-        await snapshots.ready
-        installAgent(agent)
-      } catch (error) {
-        ctx.logger?.warn(`[agent-team-roles] cannot install on agent ${agent.id} at pre-step: ${error.message}`)
-      }
+    // Backstop reconcile: the preset may resolve after `agent/created`, and a
+    // live composition may be rebound without a selection event. Unresolved
+    // presets therefore retry here instead of installing early.
+    try {
+      await snapshots.ready
+      reconcileAgent(agent)
+    } catch (error) {
+      ctx.logger?.warn(`[agent-team-roles] cannot install on agent ${agent.id} at pre-step: ${error.message}`)
     }
-    const handshake = Array.isArray(messages) && isHandshakeOnly(messages)
-    if (!handshake) return next()
+    if (desiredInstallMode(agent) !== 'lead' || !Array.isArray(messages) || !isHandshakeOnly(messages)) {
+      return next()
+    }
     const decision = await next()
     if (decision.kind !== 'enter') return decision
     return { ...decision, messages: [] }
@@ -787,7 +911,7 @@ export function apply(ctx, config) {
 
   // The Web composer's pull control invokes this command through the existing
   // commands Remote, so a member is created without a model turn.
-  ctx.effect(() => ctx.commands.register({
+  const teamSpawnCommand = {
     name: 'team-spawn',
     description: 'Pull a configured role as a teammate without a model turn.',
     input: { hint: '<role> [task]' },
@@ -796,13 +920,7 @@ export function apply(ctx, config) {
       if (membership?.role !== 'lead') {
         return { kind: 'error', text: 'Only the Team Lead can spawn teammates.' }
       }
-      const presets = ctx.get('agentPresets')
-      const candidates = [
-        presets?.composedPreset?.(agent.ctx),
-        presets?.presetForSession?.(agent.session),
-        agent.session?.header?.agentPreset,
-      ]
-      if (!candidates.includes('team-lead')) {
+      if (!isTeamLeadPreset(agent, ctx)) {
         return {
           kind: 'error',
           text: 'Manual member pull is available only in a session using the Team Lead preset.',
@@ -836,12 +954,12 @@ export function apply(ctx, config) {
         return { kind: 'error', text: error instanceof Error ? error.message : String(error) }
       }
     },
-  }), 'agent-team-roles:team-spawn-command')
+  }
 
   // Team template management: list discovered packs, apply one by upserting its
   // roles into the live catalog, activating its playbook, and merging its
   // private skills. Lead-only, like every catalog mutation.
-  ctx.effect(() => ctx.commands.register({
+  const teamTemplateCommand = {
     name: 'team-template',
     description: 'List or apply team templates (role catalog + Lead playbook).',
     input: { hint: 'list | apply <template id>' },
@@ -851,13 +969,7 @@ export function apply(ctx, config) {
         return { kind: 'error', text: 'Only the Team Lead can manage team templates.' }
       }
       // Align with /team-spawn: template management is a Team-Lead-preset feature.
-      const presets = ctx.get('agentPresets')
-      const presetCandidates = [
-        presets?.composedPreset?.(agent.ctx),
-        presets?.presetForSession?.(agent.session),
-        agent.session?.header?.agentPreset,
-      ]
-      if (!presetCandidates.includes('team-lead')) {
+      if (!isTeamLeadPreset(agent, ctx)) {
         return {
           kind: 'error',
           text: 'Team templates are available only in a session using the Team Lead preset.',
@@ -912,10 +1024,10 @@ export function apply(ctx, config) {
         return { kind: 'error', text: error instanceof Error ? error.message : String(error) }
       }
     },
-  }), 'agent-team-roles:team-template-command')
+  }
 
   // Workflow gates: inspect configured gates, show live key state, toggle them.
-  ctx.effect(() => ctx.commands.register({
+  const teamGatesCommand = {
     name: 'team-gates',
     description: 'Inspect or toggle workflow gates (stateful conditional denial).',
     input: { hint: 'list | status | enable <gate id> | disable <gate id>' },
@@ -924,13 +1036,7 @@ export function apply(ctx, config) {
       if (membership?.role !== 'lead') {
         return { kind: 'error', text: 'Only the Team Lead can manage workflow gates.' }
       }
-      const presets = ctx.get('agentPresets')
-      const presetCandidates = [
-        presets?.composedPreset?.(agent.ctx),
-        presets?.presetForSession?.(agent.session),
-        agent.session?.header?.agentPreset,
-      ]
-      if (!presetCandidates.includes('team-lead')) {
+      if (!isTeamLeadPreset(agent, ctx)) {
         return {
           kind: 'error',
           text: 'Workflow gates are available only in a session using the Team Lead preset.',
@@ -1033,7 +1139,7 @@ export function apply(ctx, config) {
       lines.push('', sessionSummary())
       return { kind: 'success', text: lines.join('\n') }
     },
-  }), 'agent-team-roles:team-gates-command')
+  }
 
   // A dedicated Settings page owns this plugin's form; the generic schema form
   // would duplicate the same volatile fields.
@@ -1114,6 +1220,12 @@ export function apply(ctx, config) {
    * touched, so other Teams and future members keep their configured route.
    */
   function switchMemberModel(request) {
+    // Same preset boundary as the prompt/tool surface: only a live Team Lead
+    // session owns members and their routes. A stale panel or a direct caller
+    // naming another session must not reach a member surface there.
+    if (!leadAgents.has(request.rootId)) {
+      throw new Error(`session "${request.rootId}" is not a Team Lead session`)
+    }
     if (request.clear === true) return clearMemberModel(request)
     const { rootId, member, provider, model, reasoningEffort } = request
     const catalog = mergeRoles(rolesReader.read())
@@ -1218,7 +1330,7 @@ export function apply(ctx, config) {
             try {
               previous()
               memberSkills.delete(key)
-              const next = installRoleSkills(agent, role)
+              const next = installRoleSkills(agent, role, () => teamPresetActive(lead, ctx))
               if (next !== undefined) memberSkills.set(key, next)
               appliedFields.push('skills')
             } catch (error) {
@@ -1262,40 +1374,71 @@ export function apply(ctx, config) {
   })
 }
 
+/** The only Agent preset whose sessions may carry this plugin's Team surface. */
+export const TEAM_LEAD_PRESET = 'team-lead'
+
 /**
- * Whether this session runs the Team Lead preset.
+ * The preset one live Agent actually runs.
  *
- * The session header is written increasingly late; at `agent/created` it may
- * still be missing. The composed preset and the session-preset resolver are
- * consulted too, exactly like the Lead command gates do, so a freshly created
- * Team Lead session is recognized on the first install.
+ * The live composition is authoritative: a Session header records the preset it
+ * was created with, and a blank session may switch before its first turn, so a
+ * stale header must not win over `composedPreset`. The durable selection and,
+ * last, the header cover a composition the preset service cannot report yet.
+ *
+ * @param agent - exact live Agent.
+ * @param ctx - plugin context owning the optional `agentPresets` service.
+ * @returns the preset id, or undefined while no signal has resolved.
  */
-/** Preset identities this session may report for itself. */
-function presetCandidates(agent, ctx) {
+export function effectiveAgentPreset(agent, ctx) {
   const presets = ctx?.get?.('agentPresets')
-  return [
-    agent?.session?.header?.agentPreset,
-    presets?.composedPreset?.(agent?.ctx),
-    presets?.presetForSession?.(agent?.session),
-  ]
+  const resolved = (value) => typeof value === 'string' && value !== ''
+  try {
+    const composed = presets?.composedPreset?.(agent?.ctx)
+    if (resolved(composed)) return composed
+  } catch {
+    // A disposing Agent context cannot report a composition.
+  }
+  try {
+    const selected = presets?.presetForSession?.(agent?.session)
+    if (resolved(selected)) return selected
+  } catch {
+    // A detached Session cannot report a selection.
+  }
+  const initial = agent?.session?.header?.agentPreset
+  return resolved(initial) ? initial : undefined
 }
 
+/** Whether the Agent's effective composition is the Team Lead preset. */
 export function isTeamLeadPreset(agent, ctx) {
-  return presetCandidates(agent, ctx).includes('team-lead')
+  return effectiveAgentPreset(agent, ctx) === TEAM_LEAD_PRESET
 }
 
 /**
- * Whether the session preset is resolved at all.
+ * Whether the preset is resolved at all.
  *
- * The session header is written increasingly late; at `agent/created` it may
- * still be missing. An unresolved preset must retry the install later, while a
- * definitely non-Team preset installs the Lead-memory part and stops there.
+ * An unresolved preset must not receive a Team surface and must retry later,
+ * while any resolved non-Team preset is a definitive "no".
  */
 function hasResolvedPreset(agent, ctx) {
-  return presetCandidates(agent, ctx).some((value) => typeof value === 'string' && value !== '')
+  return effectiveAgentPreset(agent, ctx) !== undefined
 }
 
-/** Lead tools that record, list, and retire Lead memory; not Team-preset features. */
+/**
+ * Whether a scope can resolve a live preset.
+ *
+ * Every live Agent scope exposes `get`; a bare scope handed straight to an
+ * installer (unit tests) cannot, and its guard must stay active there.
+ */
+function presetGateApplies(ctx) {
+  return typeof ctx?.get === 'function'
+}
+
+/** Whether the Agent (or a member's root) may currently carry the Team surface. */
+function teamPresetActive(agent, ctx) {
+  return !presetGateApplies(ctx) || isTeamLeadPreset(agent, ctx)
+}
+
+/** Lead tools that record, list, and retire Lead memory; Team-Lead-preset only. */
 const LEAD_MEMORY_TOOLS = ['record_role_feedback', 'list_role_rules', 'forget_role_rule']
 
 /**
@@ -1315,7 +1458,7 @@ const LEAD_MEMORY_TOOLS = ['record_role_feedback', 'list_role_rules', 'forget_ro
  * instead of reasoning over the code itself. Counters are per turn; a refusal is
  * a model-facing instruction, not a silent failure.
  */
-export function installLeadWorkflow({ scoped, register, agent, config, turnOf }) {
+export function installLeadWorkflow({ scoped, register, agent, config, turnOf, ctx }) {
   const counter = createLeadWorkflowCounter()
   const live = () => leadWorkflowPolicy({
     mode: readConfig(config, 'leadWorkflowMode'),
@@ -1323,6 +1466,7 @@ export function installLeadWorkflow({ scoped, register, agent, config, turnOf })
     preDispatchBudget: readConfig(config, 'leadPreDispatchBudget'),
   })
   register(scoped.tools.guard((exec) => {
+    if (!teamPresetActive(agent, ctx)) return undefined
     const policy = live()
     if (policy.mode === 'off') return undefined
     counter.reset(typeof turnOf === 'function' ? turnOf() : 0)
@@ -1351,7 +1495,7 @@ export function installLeadWorkflow({ scoped, register, agent, config, turnOf })
  * with `routerRequireDecision` on, `spawn_team_member` is refused until a
  * route_task succeeds for the current turn.
  */
-export function installLeadRouter({ scoped, register, agent, config, routeDecisions, turnOf }) {
+export function installLeadRouter({ scoped, register, agent, config, routeDecisions, turnOf, ctx }) {
   const requireDecision = () => readConfig(config, 'routerRequireDecision') !== false
   register(scoped.systemPrompt.section({
     name: 'agent-team-roles:lead-router',
@@ -1362,6 +1506,7 @@ export function installLeadRouter({ scoped, register, agent, config, routeDecisi
   }))
   register(scoped.tools.guard((exec) => {
     if (exec.name !== 'spawn_team_member') return undefined
+    if (!teamPresetActive(agent, ctx)) return undefined
     if (!requireDecision()) return undefined
     const turn = typeof turnOf === 'function' ? turnOf() : 0
     if (routeDecisions !== undefined && routeDecisions.has(`${agent.id}:${turn}`)) return undefined
@@ -1388,6 +1533,7 @@ export function installLeadToolPolicy({ scoped, register, ctx, agent, config }) 
     }
   }
   register(scoped.tools.guard((exec) => {
+    if (!teamPresetActive(agent, ctx)) return undefined
     const policy = live()
     if (policy.mode === 'off' || !policy.names.has(exec.name)) return undefined
     let teammates = []
@@ -1407,13 +1553,19 @@ export function installLeadToolPolicy({ scoped, register, ctx, agent, config }) 
   }))
 }
 
-/** Install the Lead's role catalog, tools, and the official-spawn guard. */
+/**
+ * Install the Team Lead surface.
+ *
+ * The caller runs this only when the Agent's effective preset is
+ * {@link TEAM_LEAD_PRESET}. Nothing here is safe in another preset: the Lead
+ * rules bucket, memory guide and Lead memory tools are Team Lead-only, and a
+ * plain session keeps its project memory tools without them.
+ */
 function installLead({ scoped, register, tools, ctx, config, snapshots, roles, ruleStore, agent, playbook, gateSummary, turnOf, routeDecisions }) {
   // Lead memory: standing rules about how the Lead itself works ("from now on,
-  // ask before deleting"). They apply wherever this Agent is the official Team
-  // Lead, even when the session preset is not `team-lead`: a resumed roster
-  // keeps its Lead and the rules must stay teachable. Rendered per step so a new
-  // rule reaches the next assembly.
+  // ask before deleting"). Rendered per step so a new rule reaches the next
+  // assembly. The stored rules stay in the profile; only their injection into a
+  // non-Team-Lead session is dropped.
   if (ruleStore !== undefined) {
     register(scoped.systemPrompt.section({
       name: 'agent-team-roles:lead-rules',
@@ -1432,17 +1584,13 @@ function installLead({ scoped, register, tools, ctx, config, snapshots, roles, r
   }
 
   // Where "remember this" belongs: global rules vs the workspace memory vault.
-  // Installed for every official Lead, so a session on another preset cannot
-  // silently file a lasting requirement into project-local memory.
+  // Team Lead-only, because a plain session has no role rules to maintain.
   register(scoped.systemPrompt.section({
     name: 'agent-team-roles:lead-memory',
     order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY') + 8,
     text: () => leadMemoryGuide(),
   }))
 
-  // Manual pulls, the roster catalog, and the spawn guard are Team-Lead-preset
-  // features; other presets must not carry them.
-  if (!isTeamLeadPreset(agent, ctx)) return hasResolvedPreset(agent, ctx) ? true : false
   register(scoped.systemPrompt.section({
     name: 'agent-team-roles:lead-catalog',
     order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY') + 10,
@@ -1493,13 +1641,13 @@ function installLead({ scoped, register, tools, ctx, config, snapshots, roles, r
     if (!LEAD_MEMORY_TOOLS.includes(definition.name)) register(scoped.tools.register(definition))
   }
   installLeadToolPolicy({ scoped, register, ctx, agent, config })
-  installLeadWorkflow({ scoped, register, agent, config, turnOf })
-  installLeadRouter({ scoped, register, agent, config, routeDecisions, turnOf })
+  installLeadWorkflow({ scoped, register, agent, config, turnOf, ctx })
+  installLeadRouter({ scoped, register, agent, config, routeDecisions, turnOf, ctx })
   register(scoped.tools.guard((exec) => {
     if (exec.name !== 'spawn_teammate') return undefined
+    if (!teamPresetActive(agent, ctx)) return undefined
     return 'The official spawn_teammate tool is disabled in this Team. Use spawn_team_member with a configured role instead.'
   }))
-  return true
 }
 
 /** Whether every claimed message is a handshake member's READY settlement notice. */
@@ -1585,11 +1733,17 @@ function installMember({ agent, membership, scoped, register, tools, snapshots, 
   // Settings therefore applies to this member on its very next tool call, with
   // no re-spawn and no refresh.
   const liveRoleOf = () => findRole(mergeRoles(roles.read()), roleId) ?? frozen
-  register(scoped.tools.guard((exec) => evaluateDeny(liveRoleOf(), exec.name, exec.arguments)))
+  // The guards read the root's live preset too: a role surface installed for a
+  // Team must stop enforcing role policy the moment the root leaves team-lead,
+  // even before the reconcile removes it.
+  register(scoped.tools.guard((exec) => (
+    teamPresetActive(membership.root, ctx) ? evaluateDeny(liveRoleOf(), exec.name, exec.arguments) : undefined
+  )))
   // Preset tools can register after agent/created. A visibility mask computed
   // here would permanently hide later-registered tools, so visibility is left
   // to the preset and the per-call guard enforces the role allow-list.
   register(scoped.tools.guard((exec) => {
+    if (!teamPresetActive(membership.root, ctx)) return undefined
     const liveRole = liveRoleOf()
     if (liveRole.toolMode !== 'custom') return undefined
     if (nativeMemberAllowList(roleId, liveRole.tools).has(exec.name)) return undefined
@@ -1599,16 +1753,19 @@ function installMember({ agent, membership, scoped, register, tools, snapshots, 
   for (const definition of tools.member) register(scoped.tools.register(definition))
   register(scoped.tools.guard((exec) => {
     if (exec.name !== 'spawn_teammate') return undefined
+    if (!teamPresetActive(membership.root, ctx)) return undefined
     return 'Only the Team Lead can create teammates, and this Team uses spawn_team_member with a configured role.'
   }))
 
   try {
-    const disposeSkills = installRoleSkills(agent, liveRoleOf())
+    const disposeSkills = installRoleSkills(agent, liveRoleOf(), () => teamPresetActive(membership.root, ctx))
     if (disposeSkills !== undefined && memberSkills !== undefined) {
       memberSkills.set(handleKey, disposeSkills)
       register(() => {
+        // A settings refresh can replace the original private-skill install.
+        const current = memberSkills.get(handleKey)
         memberSkills.delete(handleKey)
-        disposeSkills()
+        current?.()
       })
     } else if (disposeSkills !== undefined) {
       register(disposeSkills)
@@ -1625,7 +1782,7 @@ function installMember({ agent, membership, scoped, register, tools, snapshots, 
  * read-only memory and web lookup, and **no** gate participation: no `report_gate_event`, no role tool
  * whitelist, no denyCommands guard, no private skills.
  */
-function installCodexMember({ agent, membership, scoped, register, tools, snapshots, roles }) {
+function installCodexMember({ membership, scoped, register, tools, snapshots, roles, ctx }) {
   const snapshot = snapshots.get(membership.root.id, membership.name)
   const frozen = snapshot?.frozen ?? findRole(mergeRoles(roles.read()), roleForTarget(mergeRoles(roles.read()), membership.name)?.id ?? '')
     ?? findRole(mergeRoles(roles.read()), membership.name)
@@ -1642,6 +1799,7 @@ function installCodexMember({ agent, membership, scoped, register, tools, snapsh
   }))
   const allowed = new Set(CODEX_MEMBER_TOOLS)
   register(scoped.tools.guard((exec) => {
+    if (!teamPresetActive(membership.root, ctx)) return undefined
     if (allowed.has(exec.name)) return undefined
     return `Tool "${exec.name}" is not available to a Codex-backed member; use codex_exec, send_message, or team_task_*.`
   }))

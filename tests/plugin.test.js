@@ -40,7 +40,13 @@ test('automatic fallback retries with its own effort and omits it for legacy rol
       get: () => undefined,
       fiber: {},
       agents: { list: () => [] },
-      agentTeams: { tryMembership: () => ({ role: 'teammate', root: { id: 'root' }, name: member }) },
+      agentTeams: {
+        tryMembership: () => ({
+          role: 'teammate',
+          root: { id: 'root', session: { header: { agentPreset: 'team-lead' } } },
+          name: member,
+        }),
+      },
       on(event, listener) { if (event === 'agent/request-error') requestError = listener },
       effect(register, name) { if (name === 'agent-team-roles:auto-fallback') register() },
       provide() {},

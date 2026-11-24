@@ -281,7 +281,8 @@
           - id: persona
             name: '@deepseek-ai/dsh-persona'
             config:
-              complete: true
+              # Shadow the deployment persona without discarding scoped Lead prompts.
+              complete: false
               includeRuntimeContext: true
               prefix: |-
                 你是这个团队的 Team Lead / 调度者。你的唯一职责是：理解用户目标，把工作拆成清晰任务，分配给合适的成员，传递消息与结果，并向用户说明当前状态和需要决策的事项。

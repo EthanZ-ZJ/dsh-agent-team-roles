@@ -77,10 +77,11 @@ function readSkill(entryPath, fallbackName) {  let file = entryPath
  *
  * @param agent - the created member Agent.
  * @param role - the frozen role snapshot.
- * @returns a disposer for every registered skill, or undefined when the skill
- *   service or the role folder is absent.
+ * @param when - whether the current composition still admits the role skills.
+ * @returns a disposer for the injection and every registered skill, or
+ *   undefined when the role's skill folder is absent.
  */
-export function installRoleSkills(agent, role) {
+export function installRoleSkills(agent, role, when = () => true) {
   const root = path.join(stateDir(), 'skills', role.id)
   if (!fs.existsSync(root)) return undefined
 
@@ -99,27 +100,30 @@ export function installRoleSkills(agent, role) {
   }
 
   const disposers = []
-  const handle = agent.ctx.inject(['skills'], (injected) => {
+  let active = true
+  const fiber = agent.ctx.inject(['skills'], (injected) => {
     for (const definition of definitions) {
+      if (!active || !when()) return
       try {
-        disposers.push(injected.skills.register(definition))
+        const dispose = injected.skills.register(definition)
+        if (active) disposers.push(dispose)
+        else dispose()
       } catch {
         // A malformed role skill is skipped; other role skills stay available.
       }
     }
   })
   return () => {
-    for (const dispose of disposers.reverse()) {
+    if (!active) return
+    active = false
+    // Remove discovery immediately, then cancel/tear down the child fiber.
+    for (const dispose of disposers.splice(0).reverse()) {
       try {
         dispose()
       } catch {
         // The Agent scope is being torn down; individual cleanup is best-effort.
       }
     }
-    try {
-      handle()
-    } catch {
-      // The injection scope may already be disposed.
-    }
+    void Promise.resolve(fiber.dispose()).catch(() => {})
   }
 }
