@@ -268,7 +268,7 @@ export function roleIdForAgent(ctx, snapshots, roles, agent) {
  * @param options - plugin context, live Config readers, stores, and catalog.
  * @returns the Lead and member tool definitions.
  */
-export function createTools({ ctx, config, snapshots, rules, roles, ledger, codexThreads, memberAgents = new Map(), memberRouteOverrides = new Map() }) {
+export function createTools({ ctx, config, snapshots, rules, roles, ledger, codexThreads, memberAgents = new Map(), memberRouteOverrides = new Map(), router }) {
   /** Read the live role catalog. */
   const catalog = () => mergeRoles(roles.read())
 
@@ -421,6 +421,75 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
     if (api === undefined) throw new Error('agentTeamRoles service is unavailable')
     return api
   }
+
+  /** Ask the routing decision model which role should receive a task. */
+  const routeTaskTool = defineTool({
+    name: 'route_task',
+    description:
+      'Lead-only routing decision. Call this BEFORE dispatching a task: the configured routing model (or the keyword rules fallback) picks exactly one role from the role catalog. Dispatch with the returned roleId and do not choose a role yourself. needsSplit lists additional parts when a task genuinely needs several roles. The routing guard rejects spawn_team_member until a route_task succeeds in the current turn.',
+    parameters: {
+      task: {
+        type: 'string',
+        required: true,
+        description: 'The user task to route, in the user\'s own terms; at most 2000 characters.',
+      },
+      context: {
+        type: 'string',
+        description: 'Optional context the router needs (constraints, relevant files, prior decisions); at most 2000 characters.',
+      },
+    },
+    output: jsonOutput({
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        roleId: { type: 'string', required: true },
+        confidence: { type: 'number', required: true },
+        reason: { type: 'string', required: true },
+        suggestedTaskPrompt: { type: 'string', required: true },
+        needsSplit: {
+          type: 'array',
+          required: true,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              roleId: { type: 'string', required: true },
+              task: { type: 'string', required: true },
+            },
+          },
+        },
+        source: { type: 'string', required: true },
+        latencyMs: { type: 'number', required: true },
+        model: { type: 'string' },
+      },
+    }),
+    async execute(args, exec) {
+      if (exec.agent === undefined) throw new Error('route_task requires a calling Agent')
+      if (typeof args.task !== 'string' || args.task.trim() === '') throw new Error('task is required')
+      if (args.task.length > 2000) throw new Error('task must be at most 2000 characters')
+      if (args.context !== undefined && args.context.length > 2000) {
+        throw new Error('context must be at most 2000 characters')
+      }
+      if (router === undefined) throw new Error('routing is unavailable')
+      let members = []
+      try {
+        members = ctx.agentTeams.listMembers(exec.agent)
+          .filter((member) => member.role === 'teammate')
+          .map((member) => member.name)
+      } catch {
+        members = []
+      }
+      const decision = await router.route({
+        task: args.task,
+        context: args.context ?? '',
+        roles: catalog(),
+        members,
+        policy: router.policy(),
+      })
+      if (typeof router.markDecision === 'function') router.markDecision(exec.agent)
+      return decision
+    },
+  })
 
   /** Create or reuse one role-based teammate. */
   const spawnTeamMember = defineTool({
@@ -983,6 +1052,7 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
 
   return {
     lead: [
+      routeTaskTool,
       spawnTeamMember,
       recordRoleFeedback,
       listRoleRules,

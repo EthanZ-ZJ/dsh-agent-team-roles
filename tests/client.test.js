@@ -443,7 +443,7 @@ test('manually adding and editing a gate stays local until engine save', async (
   await findButton(await mounted.harness.render(mounted.page), 'save').props.onClick()
   assert.equal(mounted.state.mutateCalls.length, 1)
   const ops = mounted.state.mutateCalls[0][1]
-  assert.deepEqual(ops.map((op) => op.path[0]), ['leadPlaybook', 'leadWorkflowMode', 'leadSelfWorkBudget', 'leadPreDispatchBudget', 'leadToolMode', 'leadToolDeny', 'activeTemplate', 'freshProvider', 'forkProvider', 'gates', 'gatesDisabled'])
+  assert.deepEqual(ops.map((op) => op.path[0]), ['leadPlaybook', 'leadWorkflowMode', 'leadSelfWorkBudget', 'leadPreDispatchBudget', 'routerMode', 'routerProvider', 'routerModel', 'routerReasoningEffort', 'routerTimeoutMs', 'routerMaxTokens', 'routerRequireDecision', 'leadToolMode', 'leadToolDeny', 'activeTemplate', 'freshProvider', 'forkProvider', 'gates', 'gatesDisabled'])
   const modeOp = ops.find((op) => op.path[0] === 'leadToolMode')
   assert.equal(modeOp.value, 'hide', 'the Lead tool policy defaults to hiding implementation tools')
   const denyOp = ops.find((op) => op.path[0] === 'leadToolDeny')
@@ -457,7 +457,98 @@ test('manually adding and editing a gate stays local until engine save', async (
   assert.equal(ops.find((op) => op.path[0] === 'leadWorkflowMode').value, 'dispatch-first')
   assert.equal(ops.find((op) => op.path[0] === 'leadSelfWorkBudget').value, 3)
   assert.equal(ops.find((op) => op.path[0] === 'leadPreDispatchBudget').value, 1)
+  // Router decision model: every control is labeled and starts on the defaults.
+  const routerModeSelect = findOne(panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'routerMode')
+  assert.deepEqual(routerModeSelect.children.map((option) => option.props.value), ['model', 'rules', 'off'])
+  assert.equal(routerModeSelect.props.value, 'model', 'routing starts on the model decision')
+  for (const label of ['routerMode', 'routerProvider', 'routerModel', 'routerReasoningEffort', 'routerTimeoutMs', 'routerMaxTokens', 'routerRequireDecision']) {
+    assert.ok(
+      findOne(panel, (element) => (element.type === 'input' || element.type === 'select') && element.props?.['aria-label'] === label),
+      `the router control "${label}" must be labeled`,
+    )
+  }
+  assert.ok(findOne(panel, (element) => element.type === 'span' && textOf(element) === 'routerHint'), 'the router hint must be shown')
+  const requireDecision = findOne(panel, (element) => element.type === 'input' && element.props?.['aria-label'] === 'routerRequireDecision')
+  assert.equal(requireDecision.props.checked, true, 'a route decision is required by default')
+  assert.equal(ops.find((op) => op.path[0] === 'routerMode').value, 'model')
+  assert.equal(ops.find((op) => op.path[0] === 'routerProvider').value, '')
+  assert.equal(ops.find((op) => op.path[0] === 'routerModel').value, '')
+  assert.equal(ops.find((op) => op.path[0] === 'routerReasoningEffort').value, '')
+  assert.equal(ops.find((op) => op.path[0] === 'routerTimeoutMs').value, 20000)
+  assert.equal(typeof ops.find((op) => op.path[0] === 'routerTimeoutMs').value, 'number', 'the timeout is saved as a number')
+  assert.equal(ops.find((op) => op.path[0] === 'routerMaxTokens').value, 800)
+  assert.equal(typeof ops.find((op) => op.path[0] === 'routerMaxTokens').value, 'number', 'max tokens are saved as a number')
+  assert.equal(ops.find((op) => op.path[0] === 'routerRequireDecision').value, true)
+  assert.equal(typeof ops.find((op) => op.path[0] === 'routerRequireDecision').value, 'boolean', 'requireDecision is saved as a boolean')
   assert.deepEqual(hostValue.gates, [VALID_GATE, VALID_GATE_2])
+})
+
+test('the engine form adopts the host router settings and saves them unchanged', async () => {
+  let hostValue = baseValue({
+    routerMode: 'rules',
+    routerProvider: 'openai-codex',
+    routerModel: 'gpt-6.2-astra',
+    routerReasoningEffort: 'high',
+    routerTimeoutMs: 35000,
+    routerMaxTokens: 1200,
+    routerRequireDecision: false,
+  })
+  const harness = createReactHarness()
+  const mounted = await mountSection(harness, {
+    describe: () => namespaceView(hostValue, 7),
+    mutate: () => {
+      const ops = mounted.state.mutateCalls.at(-1)[1]
+      for (const op of ops) hostValue = { ...hostValue, [op.path[0]]: op.value }
+      return namespaceView(hostValue, 8)
+    },
+  })
+  const { panel } = await openEngineTab(mounted)
+  const routerMode = findOne(panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'routerMode')
+  assert.equal(routerMode.props.value, 'rules')
+  assert.equal(findOne(panel, (element) => element.type === 'input' && element.props?.['aria-label'] === 'routerProvider').props.value, 'openai-codex')
+  assert.equal(findOne(panel, (element) => element.type === 'input' && element.props?.['aria-label'] === 'routerModel').props.value, 'gpt-6.2-astra')
+  assert.equal(findOne(panel, (element) => element.type === 'input' && element.props?.['aria-label'] === 'routerTimeoutMs').props.value, 35000)
+  assert.equal(findOne(panel, (element) => element.type === 'input' && element.props?.['aria-label'] === 'routerRequireDecision').props.checked, false)
+
+  await findButton(await mounted.harness.render(mounted.page), 'save').props.onClick()
+  const ops = mounted.state.mutateCalls[0][1]
+  assert.equal(ops.find((op) => op.path[0] === 'routerMode').value, 'rules')
+  assert.equal(ops.find((op) => op.path[0] === 'routerProvider').value, 'openai-codex')
+  assert.equal(ops.find((op) => op.path[0] === 'routerModel').value, 'gpt-6.2-astra')
+  assert.equal(ops.find((op) => op.path[0] === 'routerReasoningEffort').value, 'high')
+  assert.equal(ops.find((op) => op.path[0] === 'routerTimeoutMs').value, 35000)
+  assert.equal(ops.find((op) => op.path[0] === 'routerMaxTokens').value, 1200)
+  assert.equal(ops.find((op) => op.path[0] === 'routerRequireDecision').value, false)
+})
+
+test('the engine form falls back to router defaults for invalid host values', async () => {
+  const harness = createReactHarness()
+  const mounted = await mountSection(harness, {
+    describe: () => namespaceView(baseValue({
+      routerMode: 'bogus',
+      routerProvider: 42,
+      routerModel: null,
+      routerReasoningEffort: false,
+      routerTimeoutMs: 0,
+      routerMaxTokens: -5,
+      routerRequireDecision: 'yes',
+    }), 3),
+    mutate: () => namespaceView(baseValue(), 4),
+  })
+  const { panel } = await openEngineTab(mounted)
+  const routerMode = findOne(panel, (element) => element.type === 'select' && element.props?.['aria-label'] === 'routerMode')
+  assert.equal(routerMode.props.value, 'model', 'an unknown mode falls back to the model decision')
+  assert.equal(findOne(panel, (element) => element.type === 'input' && element.props?.['aria-label'] === 'routerProvider').props.value, '')
+  assert.equal(findOne(panel, (element) => element.type === 'input' && element.props?.['aria-label'] === 'routerModel').props.value, '')
+  assert.equal(findOne(panel, (element) => element.type === 'input' && element.props?.['aria-label'] === 'routerTimeoutMs').props.value, 20000)
+  assert.equal(findOne(panel, (element) => element.type === 'input' && element.props?.['aria-label'] === 'routerMaxTokens').props.value, 800)
+  assert.equal(findOne(panel, (element) => element.type === 'input' && element.props?.['aria-label'] === 'routerRequireDecision').props.checked, true)
+
+  await findButton(await mounted.harness.render(mounted.page), 'save').props.onClick()
+  const ops = mounted.state.mutateCalls[0][1]
+  assert.equal(ops.find((op) => op.path[0] === 'routerTimeoutMs').value, 20000)
+  assert.equal(ops.find((op) => op.path[0] === 'routerMaxTokens').value, 800)
+  assert.equal(ops.find((op) => op.path[0] === 'routerRequireDecision').value, true)
 })
 
 test('writeNamespaceFields surfaces the settings error code (cr #11)', async () => {

@@ -273,6 +273,18 @@ A Team Lead orchestrates; it must not edit files, run shells, or execute code it
 
 `run_code` and scoped tools cannot be hidden, so a guard covers them in both modes. The guard also reads the policy live: switching to `deny` or `off` in Settings applies on the next tool call, while the hidden list itself needs a plugin reload. Read-only tools (`read`, `grep`, `glob`) stay available for checking a report or diff. Extra tool names can be appended in Settings → Engine → Lead tool policy; non-Team sessions are unaffected.
 
+## Routing decision model
+
+Before dispatching, the Lead calls `route_task` with the task (and only the minimum context) and dispatches with the `roleId` it returns instead of choosing a role by intuition. The routing model is a separate, single-purpose call: it is not the Lead's conversation, so a long or compressed Lead context does not change which role gets picked — the call sees only the task text, the optional context, the role catalog and the active teammate names.
+
+The router is configured in Settings → Engine → Routing decision model:
+
+- `routerMode`: `model` (default), `rules`, or `off` (`route_task` fails).
+- `routerProvider` / `routerModel` / `routerReasoningEffort` (an empty reasoning effort uses the adapter default), plus `routerTimeoutMs` (default 20000) and `routerMaxTokens` (default 800) for the single call.
+- `routerRequireDecision` (default on): while on, `spawn_team_member` is refused until a `route_task` has succeeded in the current turn.
+
+If the provider or model is empty, the mode is `rules`, or the model call fails, times out or its reply cannot be parsed, `route_task` returns a deterministic keyword/token decision instead (`source: "rules"`) — routing never blocks dispatch. Model decisions report `source: "model"` and the `provider/model` that answered; both return `confidence`, `reason` and `suggestedTaskPrompt`, plus `needsSplit` for tasks that genuinely need several roles.
+
 ## Turn protocol: dispatch first
 
 The Lead's remaining way to drift is investigating the code itself. The plugin enforces a dispatch-first turn protocol on the Lead:
@@ -310,9 +322,10 @@ Learned rules **cannot** change a role's tool policy or model route, and members
 
 ## Private skills
 
-Five skills ship across four roles (PM, SE, DEV and CR), installed under the role skill folders and fully offline:
+Six skills ship across four roles (PM, SE, DEV and CR), installed under the role skill folders and fully offline:
 
 - `product-sense` (PM) — product-manager working method: problem framing, research synthesis, prioritization frameworks, PRD structure and user-story checks; loaded before writing requirements, ranking trade-offs or summarizing research.
+- `design-taste` (PM) — from [Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill) (MIT, license included, pinned to v2.5.1). Visual positioning, concrete reference images and a design spec for frontend work, plus a 10-item review checklist, the landing-page versus in-app-UI split, and the three-width screenshot review flow. It consolidates the upstream judgment, flow and finish gate without vendoring the upstream Node 22+/Chrome assets.
 - `software-architect` (SE) — SE's merged architecture and contracts handbook: leveling (L0–L3), ASR quality scenarios, C4 current-state mapping, decomposition and boundaries, trade-off matrix, ADR, API/event/schema contracts with compatibility windows and versioning, migration and evolution, review and handoff. One skill owns both architecture design and contract duties, so SE intentionally ships a single skill; it is fully offline (seven `references/` checklists, no scripts).
 - `clean-code-guard` (DEV and CR) — from [amElnagdy/guard-skills](https://github.com/amElnagdy/guard-skills) (MIT, license included). Clean Code, SOLID, DRY, KISS, YAGNI and LLM-specific failure-mode checks for generated or changed production code, used before presenting, committing or merging.
 - `frontend-design` (DEV and CR) — from [anthropics/skills](https://github.com/anthropics/skills) (Apache-2.0, license included). Design-direction guidance: distinctive typography, palette, layout, and anti-"AI slop" checks for building or reshaping UI.
@@ -341,6 +354,19 @@ Review this diff...
 ```
 
 Skills are registered only in that member's Agent scope; global skills still come from the deployment's own skill provider. An empty role `skills` list exposes the whole role folder; a non-empty list matches the skill frontmatter `name` (or the file name without frontmatter) and exposes only the listed skills.
+
+## Design taste and visual review
+
+Frontend and UI work carries a design phase, not only a code phase. PM owns it through the private `design-taste` skill, and the team flow is:
+
+1. **PM: references and spec first.** Before DEV starts, PM produces a one-sentence visual positioning, 2–3 concrete reference images with what to borrow from each, and a design spec: palette tokens, type scale, spacing scale, radii, motion rules and prohibitions. "Make it prettier" is not an accepted requirement; every review comment must name a location and a concrete change.
+2. **DEV: implement to the spec.** For any UI change DEV follows the PM spec and uses the design tokens; temporarily hard-coded colors, sizes, spacing or radii are not allowed. Without a spec, DEV asks the Lead instead of inventing one.
+3. **TSE: three-width screenshots.** Every frontend change is captured at desktop (1440), tablet (768/820) and phone (390), and the report includes each screenshot path.
+4. **PM: visual review and `design-approved`.** PM reviews the screenshots with `read_image` against the skill's 10-item checklist and returns three actionable changes. When the review passes, PM reports the `design-approved` gate event with `report_gate_event`.
+
+The `design-approved-before-release` workflow gate blocks the CI/CD role's `git push`, `npm publish` and `deploy` commands until a fresh `design-approved` event from PM exists (8-hour window). A backend-only release can disable this gate for the current session from the Team panel gates view (or `/team-gates`) instead of fabricating an approval.
+
+The `design-taste` skill consolidates the judgment, workflow, checklist and deliverable format of [Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill), pinned to **v2.5.1** (MIT; the upstream copyright notice is included in `skills/pm/design-taste/LICENSE`). It does not vendor the upstream package: the Node 22+ scripts, real-browser checker, asset libraries and reference files stay external, and the skill documents the optional clone-and-run steps for landing and marketing pages (shaders, 3D and scroll scenes only on software, tech and gaming marketing pages). In-app admin and tool UI take the "spec plus checklist" subset with no shader or 3D work.
 
 ## Reusing a model chain
 

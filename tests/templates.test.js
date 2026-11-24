@@ -51,6 +51,45 @@ test('bundled software team requires local verification before release coordinat
   assert.match(cicd.persona, /回退到上一个已验证版本/)
   assert.match(cicd.persona, /缺少关键步骤、执行工具或权限时/)
   assert.match(template.leadPlaybook, /用户明确批准版本和环境后，由 CI\/CD 按项目手册负责发布、部署和上线验证/)
+  const pm = template.roles.find(role => role.id === 'pm')
+  assert.deepEqual(pm.skills, ['product-sense', 'design-taste'])
+  assert.match(pm.description, /视觉与交互设计规格\/评审/)
+  assert.match(pm.persona, /设计负责人/)
+  assert.match(pm.persona, /report_gate_event/)
+  assert.match(template.roles.find(role => role.id === 'dev').persona, /设计 token/)
+  assert.match(tse.persona, /三档/)
+  const designGate = template.gates.find(gate => gate.id === 'design-approved-before-release')
+  assert.ok(designGate, 'the design-approved-before-release gate must exist')
+  assert.equal(designGate.deny.role, 'cicd')
+  assert.deepEqual([...designGate.deny.tool].sort(), ['bash', 'pwsh'])
+  const designCommand = new RegExp(designGate.deny.commandPattern)
+  for (const command of ['git push origin main', 'npm publish', 'deploy production']) {
+    assert.ok(designCommand.test(command), `the design gate must block "${command}"`)
+  }
+  for (const command of ['git status', 'pnpm test', 'npm install']) {
+    assert.ok(!designCommand.test(command), `the design gate must not block "${command}"`)
+  }
+  assert.equal(designGate.require.event, 'design-approved')
+  assert.deepEqual(designGate.require.byRoles, ['pm'])
+  assert.equal(designGate.require.freshFor, 28800)
+})
+
+test('the bundled PM design-taste skill ships its checklist, provenance and MIT license', async () => {
+  const dir = fileURLToPath(new URL('../templates/software-dev/skills/pm/design-taste/', import.meta.url))
+  const raw = await fs.readFile(path.join(dir, 'SKILL.md'), 'utf8')
+  assert.match(raw, /^---\r?\n/)
+  assert.match(raw, /^name: design-taste$/m)
+  assert.match(raw, /^description: .+/m)
+  assert.match(raw, /10 条评审清单/)
+  assert.match(raw, /再好看点/)
+  assert.match(raw, /design-taste-frontend/)
+  const upstream = await fs.readFile(path.join(dir, 'UPSTREAM.md'), 'utf8')
+  assert.match(upstream, /Leonxlnx\/taste-skill/)
+  assert.match(upstream, /v2\.5\.1/)
+  assert.match(upstream, /MIT/)
+  const license = await fs.readFile(path.join(dir, 'LICENSE'), 'utf8')
+  assert.match(license, /MIT License/)
+  assert.match(license, /Copyright \(c\) 2026 Leonxlnx/)
 })
 
 async function makeRoot() {

@@ -30,6 +30,17 @@ window.__ModuleLoader__.load({
       leadWorkflowOff: '不限制',
       leadSelfWorkBudget: '每轮自查上限',
       leadPreDispatchBudget: '派发前自查上限',
+      routerMode: '路由决策模型',
+      routerModeModel: '模型决策（推荐）',
+      routerModeRules: '仅规则路由',
+      routerModeOff: '关闭路由',
+      routerProvider: '路由模型 Provider',
+      routerModel: '路由模型 ID',
+      routerReasoningEffort: '路由模型推理强度',
+      routerTimeoutMs: '路由超时（毫秒）',
+      routerMaxTokens: '路由最大 token 数',
+      routerRequireDecision: '派发前必须先路由',
+      routerHint: '模型决策：Lead 派发前先调用独立的路由模型选择角色；provider/model 留空，或调用失败、超时、解析失败时，自动回退规则路由。仅规则路由：不调用模型，按关键词直接选角色。关闭路由：route_task 直接报错。',
       leadToolMode: 'Lead 工具策略',
       leadToolModeHint: 'hide：从 Lead 的工具清单里移除实现类工具（write/edit/pwsh 等），模型看不到；deny：保留可见但调用时拒绝并提醒交给对应角色；off：不限制。改 hide/deny 需重载插件后完全生效。',
       leadToolModeHide: '隐藏实现工具（推荐）',
@@ -289,6 +300,17 @@ window.__ModuleLoader__.load({
       leadWorkflowOff: 'Unrestricted',
       leadSelfWorkBudget: 'Self-checks per turn',
       leadPreDispatchBudget: 'Self-checks before dispatch',
+      routerMode: 'Router decision model',
+      routerModeModel: 'Model decision (recommended)',
+      routerModeRules: 'Rules only',
+      routerModeOff: 'Routing off',
+      routerProvider: 'Router provider',
+      routerModel: 'Router model id',
+      routerReasoningEffort: 'Router reasoning effort',
+      routerTimeoutMs: 'Router timeout (ms)',
+      routerMaxTokens: 'Router max tokens',
+      routerRequireDecision: 'Require routing before dispatch',
+      routerHint: 'Model decision: before dispatching, the Lead calls the separate router model to pick a role; an empty provider/model, a failed call, a timeout, or an unparseable reply falls back to rules routing. Rules only: pick a role by keyword without a model call. Off: route_task fails with an error.',
       leadToolMode: 'Lead tool policy',
       leadToolModeHint: 'hide removes implementation tools (write/edit/pwsh, ...) from the Lead\'s tool list; deny keeps them visible but refuses each call with a routing reminder; off disables the policy. Reload the plugin for hide/deny to take full effect.',
       leadToolModeHide: 'Hide implementation tools (recommended)',
@@ -1119,6 +1141,13 @@ window.__ModuleLoader__.load({
           leadWorkflowMode: 'dispatch-first',
           leadSelfWorkBudget: 3,
           leadPreDispatchBudget: 1,
+          routerMode: 'model',
+          routerProvider: '',
+          routerModel: '',
+          routerReasoningEffort: '',
+          routerTimeoutMs: 20000,
+          routerMaxTokens: 800,
+          routerRequireDecision: true,
           leadToolMode: 'hide',
           leadToolDeny: '',
           activeTemplate: '',
@@ -1145,6 +1174,13 @@ window.__ModuleLoader__.load({
             leadWorkflowMode: ['dispatch-first', 'off'].includes(view.value?.leadWorkflowMode) ? view.value.leadWorkflowMode : 'dispatch-first',
             leadSelfWorkBudget: Number.isSafeInteger(view.value?.leadSelfWorkBudget) ? view.value.leadSelfWorkBudget : 3,
             leadPreDispatchBudget: Number.isSafeInteger(view.value?.leadPreDispatchBudget) ? view.value.leadPreDispatchBudget : 1,
+            routerMode: ['model', 'rules', 'off'].includes(view.value?.routerMode) ? view.value.routerMode : 'model',
+            routerProvider: typeof view.value?.routerProvider === 'string' ? view.value.routerProvider : '',
+            routerModel: typeof view.value?.routerModel === 'string' ? view.value.routerModel : '',
+            routerReasoningEffort: typeof view.value?.routerReasoningEffort === 'string' ? view.value.routerReasoningEffort : '',
+            routerTimeoutMs: Number.isSafeInteger(view.value?.routerTimeoutMs) && view.value.routerTimeoutMs > 0 ? view.value.routerTimeoutMs : 20000,
+            routerMaxTokens: Number.isSafeInteger(view.value?.routerMaxTokens) && view.value.routerMaxTokens > 0 ? view.value.routerMaxTokens : 800,
+            routerRequireDecision: typeof view.value?.routerRequireDecision === 'boolean' ? view.value.routerRequireDecision : true,
             leadToolMode: ['hide', 'deny', 'off'].includes(view.value?.leadToolMode) ? view.value.leadToolMode : 'hide',
             leadToolDeny: Array.isArray(view.value?.leadToolDeny) ? view.value.leadToolDeny.join(', ') : '',
             activeTemplate: typeof view.value?.activeTemplate === 'string' ? view.value.activeTemplate : '',
@@ -1356,6 +1392,31 @@ window.__ModuleLoader__.load({
           setNotice('')
           const gateList = Array.isArray(engine.gates) ? engine.gates : []
           const gatesChanged = JSON.stringify(gateList) !== gatesBaselineRef.current
+          // The field list is prepared before gate validation: validation only
+          // decides whether the write runs, so the values never depend on it.
+          const gateIds = new Set(gateList.map((gate) => gate.id))
+          const keptDisabled = (Array.isArray(engine.gatesDisabled) ? engine.gatesDisabled : [])
+            .filter((id) => gateIds.has(id))
+          const fields = [
+            { field: 'leadPlaybook', value: engine.leadPlaybook },
+            { field: 'leadWorkflowMode', value: ['dispatch-first', 'off'].includes(engine.leadWorkflowMode) ? engine.leadWorkflowMode : 'dispatch-first' },
+            { field: 'leadSelfWorkBudget', value: Number.isSafeInteger(Number(engine.leadSelfWorkBudget)) ? Math.max(0, Number(engine.leadSelfWorkBudget)) : 3 },
+            { field: 'leadPreDispatchBudget', value: Number.isSafeInteger(Number(engine.leadPreDispatchBudget)) ? Math.max(0, Number(engine.leadPreDispatchBudget)) : 1 },
+            { field: 'routerMode', value: ['model', 'rules', 'off'].includes(engine.routerMode) ? engine.routerMode : 'model' },
+            { field: 'routerProvider', value: String(engine.routerProvider ?? '').trim() },
+            { field: 'routerModel', value: String(engine.routerModel ?? '').trim() },
+            { field: 'routerReasoningEffort', value: String(engine.routerReasoningEffort ?? '').trim() },
+            { field: 'routerTimeoutMs', value: Number.isSafeInteger(Number(engine.routerTimeoutMs)) && Number(engine.routerTimeoutMs) > 0 ? Number(engine.routerTimeoutMs) : 20000 },
+            { field: 'routerMaxTokens', value: Number.isSafeInteger(Number(engine.routerMaxTokens)) && Number(engine.routerMaxTokens) > 0 ? Number(engine.routerMaxTokens) : 800 },
+            { field: 'routerRequireDecision', value: engine.routerRequireDecision === true },
+            { field: 'leadToolMode', value: ['hide', 'deny', 'off'].includes(engine.leadToolMode) ? engine.leadToolMode : 'hide' },
+            { field: 'leadToolDeny', value: String(engine.leadToolDeny ?? '').split(',').map((name) => name.trim()).filter((name) => name !== '') },
+            { field: 'activeTemplate', value: engine.activeTemplate },
+            { field: 'freshProvider', value: engine.freshProvider.trim() || 'spawn' },
+            { field: 'forkProvider', value: engine.forkProvider.trim() || 'fork' },
+            { field: 'gates', value: engine.gates },
+            { field: 'gatesDisabled', value: keptDisabled },
+          ]
           let legacyWarning = ''
           const describeProblem = (gate, problem) =>
             `${fill(t('gateErrLegacyGate'), { id: gate?.id || '?' })} ${problem.params === undefined ? t(problem.key) : fill(t(problem.key), problem.params)}`
@@ -1398,22 +1459,6 @@ window.__ModuleLoader__.load({
           }
           setBusy(true)
           try {
-            const gateIds = new Set(gateList.map((gate) => gate.id))
-            const keptDisabled = (Array.isArray(engine.gatesDisabled) ? engine.gatesDisabled : [])
-              .filter((id) => gateIds.has(id))
-            const fields = [
-              { field: 'leadPlaybook', value: engine.leadPlaybook },
-              { field: 'leadWorkflowMode', value: ['dispatch-first', 'off'].includes(engine.leadWorkflowMode) ? engine.leadWorkflowMode : 'dispatch-first' },
-              { field: 'leadSelfWorkBudget', value: Number.isSafeInteger(Number(engine.leadSelfWorkBudget)) ? Math.max(0, Number(engine.leadSelfWorkBudget)) : 3 },
-              { field: 'leadPreDispatchBudget', value: Number.isSafeInteger(Number(engine.leadPreDispatchBudget)) ? Math.max(0, Number(engine.leadPreDispatchBudget)) : 1 },
-              { field: 'leadToolMode', value: ['hide', 'deny', 'off'].includes(engine.leadToolMode) ? engine.leadToolMode : 'hide' },
-              { field: 'leadToolDeny', value: String(engine.leadToolDeny ?? '').split(',').map((name) => name.trim()).filter((name) => name !== '') },
-              { field: 'activeTemplate', value: engine.activeTemplate },
-              { field: 'freshProvider', value: engine.freshProvider.trim() || 'spawn' },
-              { field: 'forkProvider', value: engine.forkProvider.trim() || 'fork' },
-              { field: 'gates', value: engine.gates },
-              { field: 'gatesDisabled', value: keptDisabled },
-            ]
             const view = await writeNamespaceFields(ctx, revision, fields)
             setRevision(view.revision)
             // Adopt the Host's canonical shape (schema defaults filled) into the
@@ -1625,6 +1670,92 @@ window.__ModuleLoader__.load({
             }),
           ]),
           h('span', { key: 'hint', style: { ...small, gridColumn: '1 / -1' } }, t('leadWorkflowHint')),
+        ]),
+        h('div', { key: 'router', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)', gap: 12 } }, [
+          h('label', { key: 'mode', style: label }, [
+            h('span', { key: 'l' }, t('routerMode')),
+            h('select', {
+              key: 'i',
+              style: input,
+              value: engine.routerMode,
+              'aria-label': t('routerMode'),
+              onChange: (event) => edit({ routerMode: event.target.value }),
+            }, [
+              h('option', { key: 'model', value: 'model' }, t('routerModeModel')),
+              h('option', { key: 'rules', value: 'rules' }, t('routerModeRules')),
+              h('option', { key: 'off', value: 'off' }, t('routerModeOff')),
+            ]),
+          ]),
+          h('label', { key: 'provider', style: label }, [
+            h('span', { key: 'l' }, t('routerProvider')),
+            h('input', {
+              key: 'i',
+              style: input,
+              placeholder: 'openai-codex',
+              value: engine.routerProvider,
+              'aria-label': t('routerProvider'),
+              onChange: (event) => edit({ routerProvider: event.target.value }),
+            }),
+          ]),
+          h('label', { key: 'model', style: label }, [
+            h('span', { key: 'l' }, t('routerModel')),
+            h('input', {
+              key: 'i',
+              style: input,
+              placeholder: 'gpt-6.2-astra',
+              value: engine.routerModel,
+              'aria-label': t('routerModel'),
+              onChange: (event) => edit({ routerModel: event.target.value }),
+            }),
+          ]),
+          h('label', { key: 'effort', style: label }, [
+            h('span', { key: 'l' }, t('routerReasoningEffort')),
+            h('input', {
+              key: 'i',
+              style: input,
+              value: engine.routerReasoningEffort,
+              'aria-label': t('routerReasoningEffort'),
+              onChange: (event) => edit({ routerReasoningEffort: event.target.value }),
+            }),
+          ]),
+          h('label', { key: 'timeout', style: label }, [
+            h('span', { key: 'l' }, t('routerTimeoutMs')),
+            h('input', {
+              key: 'i',
+              type: 'number',
+              min: 1,
+              style: input,
+              value: engine.routerTimeoutMs,
+              'aria-label': t('routerTimeoutMs'),
+              onChange: (event) => edit({ routerTimeoutMs: event.target.value }),
+            }),
+          ]),
+          h('label', { key: 'tokens', style: label }, [
+            h('span', { key: 'l' }, t('routerMaxTokens')),
+            h('input', {
+              key: 'i',
+              type: 'number',
+              min: 1,
+              style: input,
+              value: engine.routerMaxTokens,
+              'aria-label': t('routerMaxTokens'),
+              onChange: (event) => edit({ routerMaxTokens: event.target.value }),
+            }),
+          ]),
+          h('label', {
+            key: 'require-decision',
+            style: { ...label, flexDirection: 'row', alignItems: 'center', gap: 8, gridColumn: '1 / -1' },
+          }, [
+            h('input', {
+              key: 'i',
+              type: 'checkbox',
+              checked: engine.routerRequireDecision === true,
+              'aria-label': t('routerRequireDecision'),
+              onChange: (event) => edit({ routerRequireDecision: event.target.checked === true }),
+            }),
+            h('span', { key: 'l' }, t('routerRequireDecision')),
+          ]),
+          h('span', { key: 'hint', style: { ...small, gridColumn: '1 / -1' } }, t('routerHint')),
         ]),
         h('div', { key: 'lead-tools', style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 12 } }, [
           h('label', { key: 'mode', style: label }, [

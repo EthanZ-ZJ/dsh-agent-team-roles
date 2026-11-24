@@ -28,6 +28,7 @@ test('the Lead tool set uses standard JSON Schema for arguments and output', () 
     'list_role_rules',
     'list_team_roles',
     'record_role_feedback',
+    'route_task',
     'spawn_team_member',
     'switch_member_model',
     'update_team_role',

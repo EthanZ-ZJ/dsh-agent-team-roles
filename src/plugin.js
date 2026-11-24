@@ -27,6 +27,7 @@ import {
   preDispatchRefusal,
   selfWorkRefusal,
 } from './lead-workflow.js'
+import { routeTask, routerPolicy } from './router.js'
 import { evaluateDeny } from './policy.js'
 import {
   GateSchema,
@@ -205,6 +206,20 @@ export const Config = z.object({
     .description('Team Lead tool policy: hide (remove implementation tools), deny (keep them visible but refuse with a routing reminder), or off.'),
   leadToolDeny: z.array(z.string()).default([]).volatile()
     .description('Extra tool names the Team Lead may not call, appended to the built-in implementation list.'),
+  routerMode: z.string().default('model').volatile()
+    .description('Routing decision mode: model (call the dedicated router model), rules (keyword routing only), or off (route_task fails).'),
+  routerProvider: z.string().default('').volatile()
+    .description('Provider for the routing decision model; empty means no model call and rule routing is used.'),
+  routerModel: z.string().default('').volatile()
+    .description('Model id for the routing decision model; empty means no model call and rule routing is used.'),
+  routerReasoningEffort: z.string().default('').volatile()
+    .description('Reasoning effort for the routing decision model; empty uses the adapter default.'),
+  routerTimeoutMs: z.number().default(20000).volatile()
+    .description('Timeout for one routing model call in milliseconds; invalid values fall back to 20000.'),
+  routerMaxTokens: z.number().default(800).volatile()
+    .description('Maximum output tokens for one routing model call; invalid values fall back to 800.'),
+  routerRequireDecision: z.boolean().default(true).volatile()
+    .description('Require a successful route_task in the current turn before spawn_team_member is allowed.'),
   freshProvider: z.string().default('spawn').volatile().description('Subagent backend for fresh teammates.'),
   forkProvider: z.string().default('fork').volatile().description('Subagent backend for forked teammates.'),
   leadPlaybook: z.string().default('').volatile()
@@ -296,10 +311,53 @@ export function apply(ctx, config) {
   // Current turn per Lead Agent: the workflow guard resets its per-turn budget
   // when this changes, so no turn-end event is needed.
   const leadTurns = new Map()
+  // Successful route decisions per Lead turn, keyed "<agentId>:<turn>". The
+  // routing guard reads this set to require route_task before spawn_team_member.
+  const routeDecisions = new Set()
   // Session-scoped gate enable/disable overlay: teamId -> Map<gateId, disabled>.
   // The global Config list stays the policy default; this overlay is a per-Team
   // operational decision and dies with the process, like the gate ledger.
   const sessionGateOverrides = new Map()
+
+  /**
+   * Call the dedicated routing model once and return its text.
+   *
+   * The router is optional infrastructure: an unavailable `llm` service or an
+   * empty provider/model throws, which makes routeTask fall back to rule
+   * routing. The stream is aborted after policy.timeoutMs.
+   */
+  const routerCall = async ({ system, messages, policy }) => {
+    if (policy.provider === '' || policy.model === '') throw new Error('router provider/model is not configured')
+    const llm = ctx.get('llm')
+    if (llm === undefined) throw new Error('llm service is unavailable')
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), Math.max(1, policy.timeoutMs))
+    if (typeof timer.unref === 'function') timer.unref()
+    try {
+      let text = ''
+      let finish
+      for await (const chunk of llm.stream({
+        provider: policy.provider,
+        model: policy.model,
+        ...(policy.reasoningEffort === '' ? {} : { reasoningEffort: policy.reasoningEffort }),
+        messages,
+        system,
+        maxTokens: policy.maxTokens,
+        temperature: 0,
+        signal: controller.signal,
+      })) {
+        if (chunk?.type === 'text-delta' && typeof chunk.text === 'string') text += chunk.text
+        else if (chunk?.type === 'finish') finish = chunk.reason
+      }
+      if (finish !== undefined && finish.kind !== 'stop' && finish.kind !== 'max-tokens') {
+        throw new Error(`router model call ended with ${finish.kind}${finish.failure?.code ? ` (${finish.failure.code})` : ''}`)
+      }
+      return text
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
   const tools = createTools({
     ctx,
     config,
@@ -310,6 +368,27 @@ export function apply(ctx, config) {
     codexThreads,
     memberAgents,
     memberRouteOverrides,
+    router: {
+      policy: () => routerPolicy({
+        mode: readConfig(config, 'routerMode'),
+        provider: readConfig(config, 'routerProvider'),
+        model: readConfig(config, 'routerModel'),
+        reasoningEffort: readConfig(config, 'routerReasoningEffort'),
+        timeoutMs: readConfig(config, 'routerTimeoutMs'),
+        maxTokens: readConfig(config, 'routerMaxTokens'),
+      }),
+      route: (request) => routeTask({ ...request, callModel: routerCall }),
+      markDecision: (agent) => {
+        if (agent?.id === undefined) return
+        const key = `${agent.id}:${leadTurns.get(agent.id) ?? 0}`
+        // Only the current turn can satisfy the guard; drop earlier turns so a
+        // long-lived Lead does not accumulate one key per turn.
+        for (const entry of [...routeDecisions]) {
+          if (entry.startsWith(`${agent.id}:`) && entry !== key) routeDecisions.delete(entry)
+        }
+        routeDecisions.add(key)
+      },
+    },
   })
 
   // Team templates: built-ins are seeded into the state dir once (missing dirs
@@ -610,7 +689,7 @@ export function apply(ctx, config) {
 
     try {
       if (membership.role === 'lead') {
-        const applied = installLead({ scoped, register, tools, ctx, config, snapshots, roles: rolesReader, ruleStore, agent, playbook: leadPlaybook, gateSummary: gateSummaryFor, turnOf: () => leadTurns.get(agent.id) ?? 0 })
+        const applied = installLead({ scoped, register, tools, ctx, config, snapshots, roles: rolesReader, ruleStore, agent, playbook: leadPlaybook, gateSummary: gateSummaryFor, turnOf: () => leadTurns.get(agent.id) ?? 0, routeDecisions })
         // A Lead whose session preset is not resolved yet (early `agent/created`)
         // installs nothing; do not mark it installed, so the pre-step backstop
         // retries once the session context is complete.
@@ -658,6 +737,9 @@ export function apply(ctx, config) {
     installed.get(agent)?.()
     installed.delete(agent)
     leadTurns.delete(agent.id)
+    for (const key of [...routeDecisions]) {
+      if (key.startsWith(`${agent.id}:`)) routeDecisions.delete(key)
+    }
   }
 
   ctx.on('agent/created', onCreated)
@@ -1261,6 +1343,32 @@ export function installLeadWorkflow({ scoped, register, agent, config, turnOf })
   }))
 }
 
+/**
+ * Routing discipline: route before dispatching.
+ *
+ * The router itself is a tool (`route_task`); this installer adds the prompt
+ * instruction and the per-turn guard that makes the instruction structural:
+ * with `routerRequireDecision` on, `spawn_team_member` is refused until a
+ * route_task succeeds for the current turn.
+ */
+export function installLeadRouter({ scoped, register, agent, config, routeDecisions, turnOf }) {
+  const requireDecision = () => readConfig(config, 'routerRequireDecision') !== false
+  register(scoped.systemPrompt.section({
+    name: 'agent-team-roles:lead-router',
+    order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY') + 13,
+    text: () => (requireDecision()
+      ? 'Before dispatching, call `route_task` with the task and the minimum context. Dispatch with the roleId it returns and do not choose a role yourself. When `needsSplit` is non-empty, dispatch each returned item.'
+      : 'When you are unsure which role should receive a task, call `route_task`; do not choose a role by guesswork.'),
+  }))
+  register(scoped.tools.guard((exec) => {
+    if (exec.name !== 'spawn_team_member') return undefined
+    if (!requireDecision()) return undefined
+    const turn = typeof turnOf === 'function' ? turnOf() : 0
+    if (routeDecisions !== undefined && routeDecisions.has(`${agent.id}:${turn}`)) return undefined
+    return 'Call route_task before spawn_team_member: put the task through the router and dispatch with the roleId it returns. Do not choose a role yourself.'
+  }))
+}
+
 export function installLeadToolPolicy({ scoped, register, ctx, agent, config }) {
   const live = () => leadToolPolicy({
     mode: readConfig(config, 'leadToolMode'),
@@ -1300,7 +1408,7 @@ export function installLeadToolPolicy({ scoped, register, ctx, agent, config }) 
 }
 
 /** Install the Lead's role catalog, tools, and the official-spawn guard. */
-function installLead({ scoped, register, tools, ctx, config, snapshots, roles, ruleStore, agent, playbook, gateSummary, turnOf }) {
+function installLead({ scoped, register, tools, ctx, config, snapshots, roles, ruleStore, agent, playbook, gateSummary, turnOf, routeDecisions }) {
   // Lead memory: standing rules about how the Lead itself works ("from now on,
   // ask before deleting"). They apply wherever this Agent is the official Team
   // Lead, even when the session preset is not `team-lead`: a resumed roster
@@ -1386,6 +1494,7 @@ function installLead({ scoped, register, tools, ctx, config, snapshots, roles, r
   }
   installLeadToolPolicy({ scoped, register, ctx, agent, config })
   installLeadWorkflow({ scoped, register, agent, config, turnOf })
+  installLeadRouter({ scoped, register, agent, config, routeDecisions, turnOf })
   register(scoped.tools.guard((exec) => {
     if (exec.name !== 'spawn_teammate') return undefined
     return 'The official spawn_teammate tool is disabled in this Team. Use spawn_team_member with a configured role instead.'

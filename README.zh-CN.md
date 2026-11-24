@@ -269,6 +269,20 @@ Team Lead 只做编排，不应自己改文件、跑命令或执行代码。插�
 
 `run_code` 和 scoped 工具无法隐藏，两种模式下都由 guard 兜住。guard 实时读取策略：在设置里切到 `deny` 或 `off` 下一次工具调用就生效，而隐藏清单本身需要重载插件。`read`、`grep`、`glob` 等只读工具保留，用于核对报告或 diff。可在 设置 → 引擎 → Lead 工具策略 里追加额外工具名；非 Team 会话不受影响。
 
+## 路由决策模型
+
+Lead 派发前先调用 `route_task`：把任务（以及最少的必要上下文）交给路由，拿返回的 `roleId` 去派发，不靠自己猜角色。
+
+路由模型是**独立的一次性调用**，不携带 Lead 的对话历史——它只看到任务文本、可选上下文、角色目录和当前成员名。所以 Lead 的上下文再长、被压缩或只剩摘要，也不会影响选角色。
+
+在 设置 → 引擎 → 路由决策模型 里配置：
+
+- `routerMode`：`model`（默认）/ `rules` / `off`（`route_task` 直接报错）。
+- `routerProvider` / `routerModel` / `routerReasoningEffort`（留空用适配器默认），以及这次调用专用的 `routerTimeoutMs`（默认 20000）与 `routerMaxTokens`（默认 800）。
+- `routerRequireDecision`（默认开启）：开启时，本轮没有一次成功的 `route_task`，`spawn_team_member` 会被拒绝。
+
+provider 或 model 留空、模式为 `rules`，或模型调用失败、超时、回复无法解析时，`route_task` 会自动回退到确定性的关键词/词元规则路由（`source: "rules"`），**不会阻塞派发**。模型决策返回 `source: "model"` 与应答的 `provider/model`；两种情况都会给出 `confidence`、`reason` 和 `suggestedTaskPrompt`，任务确实需要多个角色时还有 `needsSplit`。
+
 ## 回合协议：先派发
 
 Lead 剩下的跑偏方式是亲自排查代码。插件在 Lead 上强制「先派发」的回合协议：
@@ -306,9 +320,10 @@ Team Lead 有自己的规则桶，id 为 `lead`。对 Lead 说「以后都 X」�
 
 ## 私有技能
 
-随包提供 5 个角色技能，分布在 4 个角色（PM、SE、DEV、CR）的技能目录下，全部离线：
+随包提供 6 个角色技能，分布在 4 个角色（PM、SE、DEV、CR）的技能目录下，全部离线：
 
 - `product-sense`（PM）：产品经理工作方法——问题框定、调研综合、优先级排序、PRD 撰写与用户故事；写需求文档、做取舍排序或整理调研结论前加载。
+- `design-taste`（PM）：来自 [Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill)（MIT，含许可证，固定 v2.5.1）；前端需求的视觉定位、参考图与设计规格，配 10 条评审清单、营销页/应用内界面的适用判定与三档截图评审流程。只封装上游的判断、流程与收尾闸门，不 vendoring 其 Node 22+/Chrome 资产。
 - `software-architect`（SE）：SE 唯一的架构与契约工作手册——L0–L3 定级、ASR 质量属性场景、C4 现状测绘、拆分与边界、trade-off 矩阵、ADR、接口/事件/Schema 契约与兼容性及版本演进、迁移与演进、评审与交接。架构设计与契约职责已合并到这一个技能，内容全部离线（7 个 `references/` 清单，无脚本）；SE 的角色 `skills` 列表为空且目录中只有它，所以设置页只显示一个技能 chip。
 - `clean-code-guard`（DEV、CR）：对生成或改动后的生产代码做 Clean Code / SOLID / DRY / KISS / YAGNI 与 LLM 典型失效模式检查，在展示、提交或合并前使用；来自 [amElnagdy/guard-skills](https://github.com/amElnagdy/guard-skills)（MIT，含许可证）。
 - `frontend-design`（DEV、CR）：来自 [anthropics/skills](https://github.com/anthropics/skills)（Apache-2.0，含许可证）；界面设计方向、字体、配色与布局指导，避免读起来像模板默认值。
@@ -335,6 +350,19 @@ whenToUse: 改动准备进入审查时。
 ```
 
 技能只会注册到该成员的 Agent 作用域；全局技能仍由部署自身的 skill provider 提供。角色 `skills` 列表为空时暴露整个角色目录；非空时按技能 frontmatter 的 `name` 匹配（没有 frontmatter 时用文件名），只暴露列出的技能。
+
+## 审美能力与设计评审
+
+前端/UI 需求先过设计阶段，再进实现。PM 通过私有技能 `design-taste` 负责这一段，团队流程是：
+
+1. **PM：先给参考图 + 设计规格。** DEV 动手前，PM 产出 1 句视觉定位、2–3 张具体参考图（注明每张借什么）和设计规格（配色 token、字体与字号阶梯、间距尺度、圆角、动效规则、禁止项）。“再好看点”不算需求；每条评审意见必须指出位置并给出具体改法。
+2. **DEV：按规格实现。** 有 UI 改动时严格按 PM 规格、只用设计 token，不允许临时硬编码颜色、字号、间距或圆角；没有规格先向 Lead 要，不自行发挥。
+3. **TSE：三档截图。** 前端改动必须在桌面 1440、平板 768/820、手机 390 三档截图，报告里附上每张截图路径。
+4. **PM：视觉评审 + `design-approved`。** PM 用 `read_image` 看截图、按技能的 10 条清单评审，给出 3 条可执行修改意见；评审通过时用 `report_gate_event` 报 `design-approved`。
+
+工序闸门 `design-approved-before-release`：没有 PM 新鲜的 `design-approved` 事件（8 小时窗口）时，CI/CD 的 `git push`、`npm publish`、`deploy` 命令会被拒绝。纯后端发布不必伪造评审，可在团队面板的闸门视图（或 `/team-gates`）里把该门禁临时停用（只对当前会话生效）。
+
+`design-taste` 的判定、流程、清单与产出格式参考 [Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill)，固定 **v2.5.1**（MIT；上游版权声明见 `skills/pm/design-taste/LICENSE`）。不整仓 vendoring：上游的 Node 22+ 脚本、真实浏览器检查器、素材库与参考文件留在外部；营销/落地页的 clone 与运行步骤写在技能里（shader、3D、滚动场景只用于 software/tech/gaming 营销页）。应用内后台与工具界面只走“规格 + 清单”子集，不做 shader/3D。
 
 ## 复用模型调用链
 
