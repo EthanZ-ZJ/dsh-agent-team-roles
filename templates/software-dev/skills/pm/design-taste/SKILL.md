@@ -6,9 +6,9 @@ description: PM 的审美与设计评审方法：先给参考图与设计规格�
 # 审美与设计评审（design-taste）
 
 封装自 [Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill) v2.5.1
-（MIT，上游技能名 `design-taste-frontend`）。上游面向公司站点 / 落地页，自带 Node 22+ 脚本与
-真实浏览器检查器；本技能**不整仓 vendoring**，只保留 PM 可执行的部分：页面类型判定、流程、
-评审清单、交付物格式与反馈纪律。上游资产与更新方式见 [UPSTREAM.md](UPSTREAM.md)。
+（MIT，上游技能名 `design-taste-frontend`）。团队模板另附[完整上游技能](../taste-skill/SKILL.md)，
+含 Node 22+ 脚本和真实浏览器检查器。本技能只保留 PM 可执行的部分：页面类型判定、流程、
+评审清单、交付物格式与反馈纪律。上游资产、授权与更新方式见 [UPSTREAM.md](UPSTREAM.md)。
 
 本技能是**判断与规格**，不是执行器：PM 没有 shell 工具。需要跑上游脚本或截图时，把命令与
 验收标准写进任务交给 Lead / DEV / TSE 执行，并让他们回传原始输出与截图路径。
@@ -32,11 +32,9 @@ description: PM 的审美与设计评审方法：先给参考图与设计规格�
 
 ## 二、使用上游（仅营销页需要，可选）
 
-项目里还没有上游时，由 Lead / DEV 执行等价步骤（PM 只提供命令与验收标准）：
+优先用团队模板随附的固定版本，不在项目里重复克隆。需要自动化检查时，PM 只提供验收标准；由具备权限的 Lead / DEV 在确认执行范围后，从上游技能目录手动运行所需命令，不安装 hook：
 
 ```bash
-git clone --depth 1 --branch v2.5.1 https://github.com/Leonxlnx/taste-skill .taste-skill
-cd .taste-skill/skills/taste-skill
 node scripts/start.mjs deal --page <kind>          # 发牌：配色 + 字体配对 + hero 版式
 node scripts/consistency.mjs <url-or-file> --page <kind>   # 真实浏览器检查，逐条 PASS/WARN/FAIL
 node scripts/gate.mjs                               # 收尾闸门：还有可修 FAIL 就不算完成

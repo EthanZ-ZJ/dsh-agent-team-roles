@@ -15,6 +15,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { normalizeRole, validateRole } from './config.js'
 import { MAX_GATES, normalizeGate, validateGate } from './gates.js'
+import { scanRoleSkills } from './skills.js'
 
 /** Filename of the template descriptor inside a template directory. */
 export const TEMPLATE_FILE = 'template.json'
@@ -187,8 +188,8 @@ export async function seedTemplates(root, builtinRoot) {
 /**
  * Merge a template's private skills into the live skills root.
  *
- * Copies `skills/<roleId>/` subtrees into `skillsRoot/<roleId>/`; existing
- * files are overwritten, unrelated files are never deleted.
+ * Copies new entries into `skillsRoot/<roleId>/`. An existing bundle or flat
+ * skill with the same entry name is left intact, including its resources.
  */
 export async function copyTemplateSkills(templateDir, skillsRoot) {
   const source = path.join(templateDir, 'skills')
@@ -201,9 +202,25 @@ export async function copyTemplateSkills(templateDir, skillsRoot) {
   const copied = []
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
-    await fs.mkdir(path.join(skillsRoot, entry.name), { recursive: true })
-    await fs.cp(path.join(source, entry.name), path.join(skillsRoot, entry.name), { recursive: true })
-    copied.push(entry.name)
+    const roleSource = path.join(source, entry.name)
+    const roleTarget = path.join(skillsRoot, entry.name)
+    await fs.mkdir(roleTarget, { recursive: true })
+    if (!(await fs.lstat(roleTarget)).isDirectory()) continue
+    const stem = (name) => name.replace(/\.md$/i, '').toLowerCase()
+    const existing = new Set((await fs.readdir(roleTarget)).map(stem))
+    const existingNames = scanRoleSkills(skillsRoot, entry.name)
+    const shadowedEntries = new Set([...scanRoleSkills(source, entry.name)]
+      .filter(([name]) => existingNames.has(name))
+      .map(([, { entryName }]) => entryName))
+    let wrote = false
+    for (const skill of await fs.readdir(roleSource, { withFileTypes: true })) {
+      if (!skill.isDirectory() && !skill.isFile()) continue
+      if (existing.has(stem(skill.name)) || shadowedEntries.has(skill.name)) continue
+      await fs.cp(path.join(roleSource, skill.name), path.join(roleTarget, skill.name), { recursive: true, force: false })
+      existing.add(stem(skill.name))
+      wrote = true
+    }
+    if (wrote) copied.push(entry.name)
   }
   return { copied }
 }
@@ -258,6 +275,9 @@ export function mergeTemplateRole(existing, incoming) {
       else patch[field] = existing[field]
     }
   }
+  // Applying a template is not an instruction to replace an explicit role
+  // skill allow-list, even if this version of the template has new defaults.
+  if (Array.isArray(existing.skills) && existing.skills.length > 0) patch.skills = existing.skills
   return patch
 }
 

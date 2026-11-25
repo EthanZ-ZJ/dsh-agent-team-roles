@@ -11,59 +11,19 @@
  * to reveal the returned path after a click.
  */
 
-import fs from 'node:fs/promises'
-import path from 'node:path'
-import { stateDir } from './store.js'
+import { ROLE_ID } from './config.js'
+import { resolveRoleSkills, SKILL_NAME } from './skills.js'
 
-/** Same grammar as role ids and skill names: lowercase kebab-case. */
-const NAME = /^[a-z][a-z0-9-]{0,63}$/
-
-/** Resolve the skill folder of one role. */
-function roleSkillDir(roleId) {
-  return path.resolve(stateDir(), 'skills', roleId)
+/** List all available names so Settings can edit the role's selection. */
+export function listRoleSkills(roleId) {
+  if (!ROLE_ID.test(roleId)) return null
+  return { skills: [...resolveRoleSkills(roleId).keys()].sort() }
 }
 
-/** Reject role and skill entries that resolve outside their expected directories. */
-async function resolvedRoleDir(roleId) {
-  const root = await fs.realpath(path.resolve(stateDir(), 'skills'))
-  const dir = await fs.realpath(roleSkillDir(roleId))
-  return path.relative(root, dir) === roleId ? dir : null
-}
-
-/** List installed skill names for one role; [] when the folder is absent. */
-export async function listRoleSkills(roleId) {
-  if (!NAME.test(roleId)) return null
-  try {
-    const dir = await resolvedRoleDir(roleId)
-    if (dir === null) return { skills: [] }
-    const entries = await fs.readdir(dir, { withFileTypes: true })
-    const names = new Set()
-    for (const entry of entries) {
-      if (entry.isDirectory() && NAME.test(entry.name)) names.add(entry.name)
-      if (entry.isFile() && entry.name.endsWith('.md') && NAME.test(entry.name.slice(0, -3))) names.add(entry.name.slice(0, -3))
-    }
-    return { skills: [...names].sort() }
-  } catch {
-    return { skills: [] }
-  }
-}
-
-/** Read one installed skill; null when neither <skill>/SKILL.md nor <skill>.md exists. */
-export async function readRoleSkill(roleId, skill) {
-  if (!NAME.test(roleId) || !NAME.test(skill)) return null
-  const dir = await resolvedRoleDir(roleId).catch(() => null)
-  if (dir === null) return null
-  for (const relative of [path.join(skill, 'SKILL.md'), `${skill}.md`]) {
-    try {
-      const filePath = await fs.realpath(path.join(dir, relative))
-      if (path.relative(dir, filePath) !== relative || !(await fs.stat(filePath)).isFile()) continue
-      const content = await fs.readFile(filePath, 'utf8')
-      return { name: skill, content, filePath }
-    } catch {
-      // Try the next layout.
-    }
-  }
-  return null
+/** Preview and reveal the same file that the member runtime would load. */
+export function readRoleSkill(roleId, skill) {
+  const record = resolveRoleSkills(roleId).get(skill)
+  return record === undefined ? null : { name: skill, content: record.raw, filePath: record.filePath }
 }
 
 /** Read one JSON request body, bounded so a stray client cannot exhaust memory. */
@@ -108,7 +68,7 @@ export function skillRevealRoute(getController) {
         const body = await readJsonBody(req)
         const role = body?.role
         const skill = body?.skill
-        if (typeof role !== 'string' || typeof skill !== 'string' || !NAME.test(role) || !NAME.test(skill)) {
+        if (typeof role !== 'string' || typeof skill !== 'string' || !ROLE_ID.test(role) || !SKILL_NAME.test(skill)) {
           return sendJson(res, 400, { error: 'expected a role and skill id' })
         }
         const installed = await readRoleSkill(role, skill)

@@ -43,6 +43,9 @@
 
               写需求文档、做优先级排序或整理调研结论前，先加载私有技能 product-sense
               （问题框定 / 调研综合 / 多框架排序 / PRD 结构 / 用户故事 INVEST 自检）。
+
+              前端/UI 需求先加载私有技能 design-taste-frontend，制定设计规格并评审实现；
+              由 DEV/TSE 执行超出 PM 只读权限的实现、浏览器检查和脚本。
             provider: ''
             model: ''
             reasoningEffort: ''
@@ -59,6 +62,7 @@
               - skill
             skills:
               - product-sense
+              - design-taste-frontend
             color: '#f7a86a'
           - id: se
             name: SE

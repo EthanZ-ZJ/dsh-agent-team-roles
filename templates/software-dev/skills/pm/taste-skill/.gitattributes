@@ -1,0 +1,2 @@
+# Preserve the exact bytes of the pinned upstream archive on every platform.
+* -text

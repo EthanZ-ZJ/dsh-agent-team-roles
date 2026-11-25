@@ -1,8 +1,8 @@
 /**
  * Contract tests for role-private skills (`src/skills.js`).
  *
- * `installRoleSkills` scans `$DSH_HOME/agent-team-roles/skills/<roleId>/` and
- * registers every direct child bundle or flat file in the member's Agent scope.
+ * `installRoleSkills` merges packaged and local skills for one role and
+ * registers the allowed definitions in that member's Agent scope.
  * These tests use a temporary DSH_HOME and a fake Agent so the real scanner is
  * exercised without touching the installed state directory.
  *
@@ -51,7 +51,7 @@ function fakeAgent() {
 }
 
 /** Point DSH_HOME at a fresh temp directory for one test. */
-async function makeHome(t) {
+async function makeHome(t, roleId = 'se') {
   const home = await fsp.mkdtemp(path.join(os.tmpdir(), 'dsh-role-skills-'))
   const originalHome = process.env.DSH_HOME
   process.env.DSH_HOME = home
@@ -62,7 +62,7 @@ async function makeHome(t) {
   })
   return {
     home,
-    roleDir: path.join(home, 'agent-team-roles', 'skills', 'se'),
+    roleDir: path.join(home, 'agent-team-roles', 'skills', roleId),
   }
 }
 
@@ -94,7 +94,7 @@ test('installRoleSkills exposes every skill in the role folder when role.skills 
 
   const registered = await installFor([])
 
-  assert.deepEqual(registered.map((definition) => definition.name).sort(), ['alpha', 'beta', 'gamma'])
+  assert.deepEqual(registered.map((definition) => definition.name).sort(), ['alpha', 'beta', 'gamma', 'software-architect'])
   for (const definition of registered) {
     assert.equal(definition.source, 'runtime')
     assert.equal(definition.provider, 'agent-team-roles')
@@ -125,15 +125,13 @@ test('a malformed role skill is skipped without dropping the others', async (t) 
 
   const registered = await installFor([])
 
-  assert.deepEqual(registered.map((definition) => definition.name), ['good'])
+  assert.deepEqual(registered.map((definition) => definition.name).sort(), ['good', 'software-architect'])
 })
 
-test('the merged SE architect skill registers with its merged frontmatter name and description', async (t) => {
-  const { roleDir } = await makeHome(t)
-  const source = path.join(shippedSeDir, 'software-architect')
-  const bundle = path.join(roleDir, 'software-architect')
-  await fsp.mkdir(roleDir, { recursive: true })
-  await fsp.cp(source, bundle, { recursive: true })
+test('a fresh state discovers the packaged SE handbook and keeps its references', async (t) => {
+  const { home } = await makeHome(t)
+  const bundle = await fsp.realpath(path.join(shippedSeDir, 'software-architect'))
+  assert.deepEqual(await fsp.readdir(home), [])
 
   const registered = await installFor([])
 
@@ -164,10 +162,74 @@ test('the merged SE architect skill registers with its merged frontmatter name a
 
   // The parser takes the name from frontmatter, so the raw header must agree
   // with the directory or the settings chip and whitelist would disagree.
-  const raw = await fsp.readFile(path.join(source, 'SKILL.md'), 'utf8')
+  const raw = await fsp.readFile(path.join(bundle, 'SKILL.md'), 'utf8')
   assert.match(raw, /^---\r?\n/)
   assert.match(raw, /^name: software-architect$/m)
   assert.match(raw, /^description: .+/m)
+})
+
+test('bundled defaults are scoped per role and do not register outside the Team Lead preset', async (t) => {
+  await makeHome(t)
+  const cases = {
+    pm: ['design-taste', 'design-taste-frontend', 'product-sense'],
+    se: ['software-architect'],
+    dev: ['clean-code-guard', 'frontend-design', 'web-interface-guidelines'],
+    cr: ['clean-code-guard', 'frontend-design', 'web-interface-guidelines'],
+    general: [],
+    tse: [],
+    cicd: [],
+    lead: [],
+  }
+  for (const [id, names] of Object.entries(cases)) {
+    const { agent, registered } = fakeAgent()
+    const dispose = installRoleSkills(agent, { id, skills: [] })
+    await Promise.resolve()
+    assert.deepEqual(registered.map((skill) => skill.name).sort(), names, id)
+    for (const skill of registered) {
+      assert.equal(path.basename(path.dirname(skill.resourceBase.path)), id)
+    }
+    dispose?.()
+    assert.deepEqual(registered, [], `removed ${id} registrations on disposal`)
+  }
+  const { agent, registered } = fakeAgent()
+  assert.equal(installRoleSkills(agent, { id: 'pm', skills: [] }, () => false), undefined)
+  let admitted = true
+  const dispose = installRoleSkills(agent, { id: 'pm', skills: [] }, () => admitted)
+  admitted = false
+  await Promise.resolve()
+  assert.deepEqual(registered, [])
+  dispose()
+})
+
+test('a same-role local definition overrides the packaged name without widening selections', async (t) => {
+  const { roleDir } = await makeHome(t, 'dev')
+  const bundle = await writeBundle(roleDir, 'local-guide', { name: 'frontend-design', description: 'Local override.' })
+  await writeBundle(roleDir, 'other')
+  const skills = ['frontend-design']
+  const dev = fakeAgent()
+  const cr = fakeAgent()
+  installRoleSkills(dev.agent, { id: 'dev', skills })
+  installRoleSkills(cr.agent, { id: 'cr', skills })
+  await Promise.resolve()
+  assert.deepEqual(dev.registered.map((skill) => skill.name), skills)
+  assert.deepEqual(cr.registered.map((skill) => skill.name), skills)
+  assert.equal(dev.registered[0].description, 'Local override.')
+  assert.equal(dev.registered[0].resourceBase.path, await fsp.realpath(bundle))
+  assert.notEqual(cr.registered[0].description, 'Local override.')
+})
+
+test('folded description keeps the body and does not consume invocation metadata', async (t) => {
+  const { roleDir } = await makeHome(t, 'general')
+  await fsp.mkdir(roleDir, { recursive: true })
+  await fsp.writeFile(path.join(roleDir, 'sample.md'), '\uFEFF---\r\ndescription: >-\r\n  First line.\r\n  A second line: yes.\r\ndisable-model-invocation: true\r\nuser-invocable: false\r\nhooks:\r\n  Stop: ignored\r\n---\r\n# Body\r\n')
+  const { agent, registered } = fakeAgent()
+  installRoleSkills(agent, { id: 'general', skills: [] })
+  await Promise.resolve()
+  assert.equal(registered.length, 1)
+  assert.equal(registered[0].description, 'First line. A second line: yes.')
+  assert.equal(registered[0].content, '# Body\r\n')
+  assert.deepEqual(registered[0].invocation, { modelInvocable: false, userInvocable: false })
+  assert.equal(registered[0].hooks, undefined)
 })
 
 test('the shipped SE role folder holds exactly one merged architect skill', async () => {

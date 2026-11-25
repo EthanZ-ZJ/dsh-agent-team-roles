@@ -48,7 +48,7 @@ After installation, open **Settings → Agent team roles**; a `general` role alr
 | Role prompt | The member's standing persona; at most 12000 characters. |
 | Provider / model / effort | Optional member route; provider and model must be filled together or left empty, and empty means inherit the current session route. |
 | Tool policy | `all`, or a custom allow-list. A custom policy also rejects scoped Team tools that are not listed. |
-| Private skills | Skill names inside the role skill folder; empty exposes the whole folder. |
+| Private skills | Available bundled and local skill names for the role; empty exposes all of them. |
 | Accent color | Role color in the roster. |
 
 The Lead's prompt shows the current role catalog and expects:
@@ -150,7 +150,7 @@ In a Team Lead session:
 /team-template apply software-dev
 ```
 
-`apply` does four things: it **upserts** the template roles into the role catalog (update existing, create missing); it sets `activeTemplate` and copies the template playbook into the editable `leadPlaybook` config (visible and editable in Settings; the config wins when non-empty, otherwise the template playbook is used); it merges the template `gates` into the current gate list (same id overwrites and reports `replaced`; only the template's own gates are validated, and if the merged list would exceed 50 entries or a template gate is invalid the whole apply is rejected without writing; invalid gates already in the list are kept as-is, counted toward the limit, and reported as `warnings:` in the success text); it merges and copies `skills/<role id>/` into `stateDir/skills/<role id>/` (overwriting same-named files, never deleting others). Gate validation happens before any write.
+`apply` does four things: it **upserts** the template roles into the role catalog (update existing, create missing, preserve non-empty skill selections); it sets `activeTemplate` and copies the template playbook into the editable `leadPlaybook` config (visible and editable in Settings; the config wins when non-empty, otherwise the template playbook is used); it merges the template `gates` into the current gate list (same id overwrites and reports `replaced`; only the template's own gates are validated, and if the merged list would exceed 50 entries or a template gate is invalid the whole apply is rejected without writing; invalid gates already in the list are kept as-is, counted toward the limit, and reported as `warnings:` in the success text); it merges and copies `skills/<role id>/` into `stateDir/skills/<role id>/` (copying new entries without replacing existing bundles or flat files). Gate validation happens before any write.
 
 ## denyCommands: command-level policy
 
@@ -324,10 +324,10 @@ Learned rules **cannot** change a role's tool policy or model route, and members
 
 ## Private skills
 
-Six skills ship across four roles (PM, SE, DEV and CR), installed under the role skill folders and fully offline:
+Native teammates in `team-lead` discover these packaged skills as soon as the bundle is installed; no template reapply is needed:
 
 - `product-sense` (PM) — product-manager working method: problem framing, research synthesis, prioritization frameworks, PRD structure and user-story checks; loaded before writing requirements, ranking trade-offs or summarizing research.
-- `design-taste` (PM) — from [Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill) (MIT, license included, pinned to v2.5.1). Visual positioning, concrete reference images and a design spec for frontend work, plus a 10-item review checklist, the landing-page versus in-app-UI split, and the three-width screenshot review flow. It consolidates the upstream judgment, flow and finish gate without vendoring the upstream Node 22+/Chrome assets.
+- `design-taste-frontend` (PM) — the complete [Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill) v2.5.1 bundle (MIT), including scripts and reference assets. PM uses the design and review guidance within its read-only tool policy.
 - `software-architect` (SE) — SE's merged architecture and contracts handbook: leveling (L0–L3), ASR quality scenarios, C4 current-state mapping, decomposition and boundaries, trade-off matrix, ADR, API/event/schema contracts with compatibility windows and versioning, migration and evolution, review and handoff. One skill owns both architecture design and contract duties, so SE intentionally ships a single skill; it is fully offline (seven `references/` checklists, no scripts).
 - `clean-code-guard` (DEV and CR) — from [amElnagdy/guard-skills](https://github.com/amElnagdy/guard-skills) (MIT, license included). Clean Code, SOLID, DRY, KISS, YAGNI and LLM-specific failure-mode checks for generated or changed production code, used before presenting, committing or merging.
 - `frontend-design` (DEV and CR) — from [anthropics/skills](https://github.com/anthropics/skills) (Apache-2.0, license included). Design-direction guidance: distinctive typography, palette, layout, and anti-"AI slop" checks for building or reshaping UI.
@@ -335,7 +335,7 @@ Six skills ship across four roles (PM, SE, DEV and CR), installed under the role
 
 ### Role skill folders
 
-Role skills live in:
+The package ships no private skills for General, TSE or CI/CD. To add a skill or override a packaged definition, use the local role folder:
 
 ```text
 $DSH_HOME/agent-team-roles/skills/<role id>/
@@ -355,20 +355,22 @@ whenToUse: When a change is about to enter review.
 Review this diff...
 ```
 
-Skills are registered only in that member's Agent scope; global skills still come from the deployment's own skill provider. An empty role `skills` list exposes the whole role folder; a non-empty list matches the skill frontmatter `name` (or the file name without frontmatter) and exposes only the listed skills.
+A valid local skill with the same frontmatter `name` replaces the packaged skill for that role, including its resource directory. The description is required; when only `name` is omitted, the directory or filename supplies it. An empty `skills` list exposes all available skills for that role; a non-empty list remains an allow-list. The legacy `design-taste` wrapper remains available for existing PM selections. To opt into the full upstream skill, add `design-taste-frontend` in Settings; existing local files and selections are not migrated.
+
+Private skills are registered only in the native teammate's Agent scope while the root uses `team-lead`. The Lead, other roles, other presets and Codex-backed teammates do not receive them. Global skills still come from the deployment's own providers; this bundle does not register skills with the external Codex CLI.
 
 ## Design taste and visual review
 
-Frontend and UI work carries a design phase, not only a code phase. PM owns it through the private `design-taste` skill, and the team flow is:
+Frontend and UI work carries a design phase, not only a code phase. PM owns it through the private `design-taste-frontend` skill, and the team flow is:
 
 1. **PM: references and spec first.** Before DEV starts, PM produces a one-sentence visual positioning, 2–3 concrete reference images with what to borrow from each, and a design spec: palette tokens, type scale, spacing scale, radii, motion rules and prohibitions. "Make it prettier" is not an accepted requirement; every review comment must name a location and a concrete change.
 2. **DEV: implement to the spec.** For any UI change DEV follows the PM spec and uses the design tokens; temporarily hard-coded colors, sizes, spacing or radii are not allowed. Without a spec, DEV asks the Lead instead of inventing one.
 3. **TSE: three-width screenshots.** Every frontend change is captured at desktop (1440), tablet (768/820) and phone (390), and the report includes each screenshot path.
-4. **PM: visual review and `design-approved`.** PM reviews the screenshots with `read_image` against the skill's 10-item checklist and returns three actionable changes. When the review passes, PM reports the `design-approved` gate event with `report_gate_event`.
+4. **PM: visual review and `design-approved`.** PM reviews the screenshots with `read_image` against the skill's design guidance and returns three actionable changes. When the review passes, PM reports the `design-approved` gate event with `report_gate_event`.
 
 The `design-approved-before-release` workflow gate blocks the CI/CD role's `git push`, `npm publish` and `deploy` commands until a fresh `design-approved` event from PM exists (8-hour window). A backend-only release can disable this gate for the current session from the Team panel gates view (or `/team-gates`) instead of fabricating an approval.
 
-The `design-taste` skill consolidates the judgment, workflow, checklist and deliverable format of [Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill), pinned to **v2.5.1** (MIT; the upstream copyright notice is included in `skills/pm/design-taste/LICENSE`). It does not vendor the upstream package: the Node 22+ scripts, real-browser checker, asset libraries and reference files stay external, and the skill documents the optional clone-and-run steps for landing and marketing pages (shaders, 3D and scroll scenes only on software, tech and gaming marketing pages). In-app admin and tool UI take the "spec plus checklist" subset with no shader or 3D work.
+Bundling the Taste resources does not run them. DSH loads the skill body and provides its directory for relative references; it does not install or invoke upstream Claude/Codex hooks. Running the upstream checker separately requires Node.js 22+ and Chrome, Edge or Chromium, and remains subject to the executing role's tool policy, sandbox and user authorization. PM does not run scripts or write code; it hands off implementation and browser checks to DEV/TSE via the Lead.
 
 ## Reusing a model chain
 

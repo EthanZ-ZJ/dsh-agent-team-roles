@@ -1,26 +1,10 @@
 # Upstream provenance
 
-- Repository: `Leonxlnx/taste-skill` (GitHub).
-- Version: `v2.5.1` (git tag; the upstream README calls it `tasteskill 2.5.1`).
-- Package: `skills/taste-skill` in the repository (skill name `design-taste-frontend`).
-- License: MIT; the upstream copyright and license are included in [LICENSE](LICENSE).
-- Requirements: Node 22+, Chrome / Edge / Chromium (ffmpeg optional, for WebP output and the phone crop).
+- Repository: [Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill).
+- Version: `v2.5.1`, commit `f6b76575f949707b4e3c37cd86cb44b0b98643e8`.
+- Upstream package: `skills/taste-skill`; skill name `design-taste-frontend`.
+- The original work is MIT; see [LICENSE](LICENSE). The separate vendored skill records [its provenance and third-party asset notices](../taste-skill/UPSTREAM.md).
 
-Referenced, not vendored: the local `design-taste` skill condenses the upstream judgment, page-kind
-classification, workflow, review checklist and deliverable format into a form PM (a read-only role
-without shell tools) can own. The upstream package is intentionally not copied in: it ships the
-Node 22+ scripts (`scripts/start.mjs`, `consistency.mjs`, `gate.mjs`, `shoot.mjs`, `photos.mjs`, …),
-a large `assets/` and `library/` set, and long `references/`; `consistency.mjs` alone is roughly 1 MB,
-which is too heavy for a role-private skill and would rot without an updater.
+`design-taste` is the DSH workflow for a read-only PM. It keeps page-kind classification, design specifications and review criteria. The sibling [design-taste-frontend](../taste-skill/SKILL.md) is the complete pinned upstream skill and includes the resources and tools for the broader frontend workflow. PM does not run its scripts or install its hooks; use the wrapper's manual review unless an authorized teammate is available to perform browser verification.
 
-Local changes: no upstream file is copied. `SKILL.md` keeps the 10-item review checklist, the
-landing-page versus in-app-UI split (shaders / 3D / scroll scenes for software, tech and gaming
-marketing pages only), the three-width screenshot review flow, the design-spec deliverable format
-and the "no vague feedback" rule. `UPSTREAM.md` and `LICENSE` record provenance; the mandatory
-clone-and-run steps are documented there because PM cannot execute shell commands itself.
-
-Updating: the local copy is pinned to `v2.5.1`. To bump it, clone the same tag range
-(`git clone --depth 1 --branch <tag> https://github.com/Leonxlnx/taste-skill`), read the upstream
-`skills/taste-skill/SKILL.md` and `skills/taste-skill/references/gate.md`, then update this file,
-the checklist in `SKILL.md` if upstream rules changed, and the version assertions in
-`tests/templates.test.js`. Do not vendor the scripts without an owner for upgrades.
+For updates, keep the wrapper and vendored release in sync. Compare the pinned upstream skill and gate reference, then revise the wrapper only where review guidance changed. The upstream skill's own provenance file records the distribution checks.

@@ -48,7 +48,7 @@ dsh plugin --profile desktop add /absolute/path/to/dsh-agent-team-roles
 | 角色提示词 | 成员的常驻人设（persona）；最长 12000 字符。 |
 | 提供方 / 模型 / 推理强度 | 可选成员路由；提供方和模型必须同时填写或同时留空，都留空则继承当前会话路由。 |
 | 工具策略 | `all` 或自定义白名单。自定义策略也会拒绝未列出的作用域 Team 工具。 |
-| 私有技能 | 角色技能目录中的技能名；留空表示整个目录全部暴露。 |
+| 私有技能 | 该角色可用的随包技能和本地技能名；留空表示全部可用。 |
 | 强调色 | 成员名册（roster）中的角色颜色。 |
 
 Lead 的提示词里会看到当前角色目录，并应使用：
@@ -150,7 +150,7 @@ Team Lead 会话中使用命令：
 /team-template apply software-dev
 ```
 
-`apply` 做四件事：把模板 roles **upsert** 进角色目录（已有的更新、缺失的创建）；设置 `activeTemplate`，并把模板 playbook 复制进可编辑的 `leadPlaybook` 配置（设置页可见可改；配置非空时生效，配置为空时回退模板 playbook）；把模板 `gates` 合并进现有闸门列表（同 id 覆盖并回报 `replaced`；只校验模板自身 gates，合并后超过 50 条或模板 gate 非法则整次拒绝、不写入；现有列表里的非法 gate 原样保留、计入上限并在成功文本里以 `warnings:` 回报）；把模板 `skills/<角色 id>/` 合并复制到 `stateDir/skills/<角色 id>/`（覆盖同名文件，不删除其它文件）。gates 校验在任何写操作之前完成。
+`apply` 做四件事：把模板 roles **upsert** 进角色目录（已有的更新、缺失的创建，并保留非空技能选择列表）；设置 `activeTemplate`，并把模板 playbook 复制进可编辑的 `leadPlaybook` 配置（设置页可见可改；配置非空时生效，配置为空时回退模板 playbook）；把模板 `gates` 合并进现有闸门列表（同 id 覆盖并回报 `replaced`；只校验模板自身 gates，合并后超过 50 条或模板 gate 非法则整次拒绝、不写入；现有列表里的非法 gate 原样保留、计入上限并在成功文本里以 `warnings:` 回报）；把模板 `skills/<角色 id>/` 合并复制到 `stateDir/skills/<角色 id>/`（只补充新条目，不覆盖已有技能包或单文件技能）。gates 校验在任何写操作之前完成。
 
 ## denyCommands：命令级策略
 
@@ -322,16 +322,16 @@ Team Lead 有自己的规则桶，id 为 `lead`。对 Lead 说「以后都 X」�
 
 ## 私有技能
 
-随包提供 6 个角色技能，分布在 4 个角色（PM、SE、DEV、CR）的技能目录下，全部离线：
+安装后，`team-lead` 下的原生成员可直接发现以下随包技能，无需重新应用模板：
 
 - `product-sense`（PM）：产品经理工作方法——问题框定、调研综合、优先级排序、PRD 撰写与用户故事；写需求文档、做取舍排序或整理调研结论前加载。
-- `design-taste`（PM）：来自 [Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill)（MIT，含许可证，固定 v2.5.1）；前端需求的视觉定位、参考图与设计规格，配 10 条评审清单、营销页/应用内界面的适用判定与三档截图评审流程。只封装上游的判断、流程与收尾闸门，不 vendoring 其 Node 22+/Chrome 资产。
+- `design-taste-frontend`（PM）：完整内置 [Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill) v2.5.1（MIT），保留脚本及参考素材。PM 在只读工具权限内使用其设计与评审指导。
 - `software-architect`（SE）：SE 唯一的架构与契约工作手册——L0–L3 定级、ASR 质量属性场景、C4 现状测绘、拆分与边界、trade-off 矩阵、ADR、接口/事件/Schema 契约与兼容性及版本演进、迁移与演进、评审与交接。架构设计与契约职责已合并到这一个技能，内容全部离线（7 个 `references/` 清单，无脚本）；SE 的角色 `skills` 列表为空且目录中只有它，所以设置页只显示一个技能 chip。
 - `clean-code-guard`（DEV、CR）：对生成或改动后的生产代码做 Clean Code / SOLID / DRY / KISS / YAGNI 与 LLM 典型失效模式检查，在展示、提交或合并前使用；来自 [amElnagdy/guard-skills](https://github.com/amElnagdy/guard-skills)（MIT，含许可证）。
 - `frontend-design`（DEV、CR）：来自 [anthropics/skills](https://github.com/anthropics/skills)（Apache-2.0，含许可证）；界面设计方向、字体、配色与布局指导，避免读起来像模板默认值。
 - `web-interface-guidelines`（DEV、CR）：来自 [vercel-labs/web-interface-guidelines](https://github.com/vercel-labs/web-interface-guidelines)（MIT，含许可证）；本地内置 Vercel Web Interface Guidelines 全文，DEV 实现 UI 后自查，CR 用同一套规则以 `file:line` 检视前端改动。
 
-角色技能放在：
+General、TSE 和 CI/CD 不随包提供私有技能。如需新增技能或覆盖随包版本，使用本地角色目录：
 
 ```text
 $DSH_HOME/agent-team-roles/skills/<角色 ID>/
@@ -351,20 +351,22 @@ whenToUse: 改动准备进入审查时。
 审查这个 diff……
 ```
 
-技能只会注册到该成员的 Agent 作用域；全局技能仍由部署自身的 skill provider 提供。角色 `skills` 列表为空时暴露整个角色目录；非空时按技能 frontmatter 的 `name` 匹配（没有 frontmatter 时用文件名），只暴露列出的技能。
+同一角色下，有效的本地技能按 frontmatter 的 `name` 覆盖随包技能，并使用本地资源目录。`description` 必填；只省略 `name` 时，使用目录名或文件名。角色 `skills` 列表为空表示该角色的技能全部可用，非空则仍按白名单过滤。旧版 `design-taste` 仍可供已有 PM 白名单使用。如需启用完整上游技能，请在设置中新增 `design-taste-frontend`；插件不会迁移现有文件和选择。
+
+私有技能仅注册到 `team-lead` 根会话下的原生成员 Agent 作用域；Lead、其他角色、其他预设和 Codex 后端成员不会获得这些技能。全局技能仍由部署自身的 provider 提供；本插件不会向外部 Codex CLI 注册技能。
 
 ## 审美能力与设计评审
 
-前端/UI 需求先过设计阶段，再进实现。PM 通过私有技能 `design-taste` 负责这一段，团队流程是：
+前端/UI 需求先过设计阶段，再进实现。PM 通过私有技能 `design-taste-frontend` 负责这一段，团队流程是：
 
 1. **PM：先给参考图 + 设计规格。** DEV 动手前，PM 产出 1 句视觉定位、2–3 张具体参考图（注明每张借什么）和设计规格（配色 token、字体与字号阶梯、间距尺度、圆角、动效规则、禁止项）。“再好看点”不算需求；每条评审意见必须指出位置并给出具体改法。
 2. **DEV：按规格实现。** 有 UI 改动时严格按 PM 规格、只用设计 token，不允许临时硬编码颜色、字号、间距或圆角；没有规格先向 Lead 要，不自行发挥。
 3. **TSE：三档截图。** 前端改动必须在桌面 1440、平板 768/820、手机 390 三档截图，报告里附上每张截图路径。
-4. **PM：视觉评审 + `design-approved`。** PM 用 `read_image` 看截图、按技能的 10 条清单评审，给出 3 条可执行修改意见；评审通过时用 `report_gate_event` 报 `design-approved`。
+4. **PM：视觉评审 + `design-approved`。** PM 用 `read_image` 看截图、按技能中的设计标准评审，给出 3 条可执行修改意见；评审通过时用 `report_gate_event` 报 `design-approved`。
 
 工序闸门 `design-approved-before-release`：没有 PM 新鲜的 `design-approved` 事件（8 小时窗口）时，CI/CD 的 `git push`、`npm publish`、`deploy` 命令会被拒绝。纯后端发布不必伪造评审，可在团队面板的闸门视图（或 `/team-gates`）里把该门禁临时停用（只对当前会话生效）。
 
-`design-taste` 的判定、流程、清单与产出格式参考 [Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill)，固定 **v2.5.1**（MIT；上游版权声明见 `skills/pm/design-taste/LICENSE`）。不整仓 vendoring：上游的 Node 22+ 脚本、真实浏览器检查器、素材库与参考文件留在外部；营销/落地页的 clone 与运行步骤写在技能里（shader、3D、滚动场景只用于 software/tech/gaming 营销页）。应用内后台与工具界面只走“规格 + 清单”子集，不做 shader/3D。
+随包分发 Taste 资源不等于执行。DSH 加载技能正文，并提供目录用于解析相对路径；不会安装或调用上游 Claude/Codex 钩子。单独执行上游检查器需要 Node.js 22+ 和 Chrome、Edge 或 Chromium，且仍受执行角色的工具权限、沙箱和用户授权限制。PM 不运行脚本或写码，由 Lead 协调 DEV/TSE 实现与执行浏览器检查。
 
 ## 复用模型调用链
 

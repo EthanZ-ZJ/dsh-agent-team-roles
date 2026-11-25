@@ -1325,17 +1325,15 @@ export function apply(ctx, config) {
               ctxWarn(agent, `cannot apply the role route for "${name}": ${error.message}`)
             }
           }
-          const previous = memberSkills.get(key)
-          if (previous !== undefined) {
-            try {
-              previous()
-              memberSkills.delete(key)
-              const next = installRoleSkills(agent, role, () => teamPresetActive(lead, ctx))
-              if (next !== undefined) memberSkills.set(key, next)
-              appliedFields.push('skills')
-            } catch (error) {
-              ctxWarn(agent, `cannot reinstall private skills for "${name}": ${error.message}`)
-            }
+          try {
+            const previous = memberSkills.get(key)
+            memberSkills.delete(key)
+            previous?.()
+            const next = installRoleSkills(agent, role, () => teamPresetActive(lead, ctx))
+            if (next !== undefined) memberSkills.set(key, next)
+            if (previous !== undefined || next !== undefined) appliedFields.push('skills')
+          } catch (error) {
+            ctxWarn(agent, `cannot reinstall private skills for "${name}": ${error.message}`)
           }
         } else {
           // Idle member: rebase the snapshot it will activate from.
@@ -1757,16 +1755,18 @@ function installMember({ agent, membership, scoped, register, tools, snapshots, 
     return 'Only the Team Lead can create teammates, and this Team uses spawn_team_member with a configured role.'
   }))
 
+  if (memberSkills !== undefined) {
+    register(() => {
+      // A settings refresh can add or replace a private-skill install.
+      const current = memberSkills.get(handleKey)
+      memberSkills.delete(handleKey)
+      current?.()
+    })
+  }
   try {
     const disposeSkills = installRoleSkills(agent, liveRoleOf(), () => teamPresetActive(membership.root, ctx))
     if (disposeSkills !== undefined && memberSkills !== undefined) {
       memberSkills.set(handleKey, disposeSkills)
-      register(() => {
-        // A settings refresh can replace the original private-skill install.
-        const current = memberSkills.get(handleKey)
-        memberSkills.delete(handleKey)
-        current?.()
-      })
     } else if (disposeSkills !== undefined) {
       register(disposeSkills)
     }

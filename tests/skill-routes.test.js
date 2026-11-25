@@ -6,6 +6,8 @@ import test from 'node:test'
 import { skillRevealRoute, skillRoute } from '../src/skill-routes.js'
 
 const base = 'http://localhost/agent-team-roles/role-skills'
+const bundleContent = '---\nname: check-code\ndescription: Verify code.\n---\n# Bundled skill'
+const flatContent = '---\nname: quick-check\ndescription: Verify code quickly.\n---\n# Flat skill'
 
 test('skill detail supplies a verified file to reveal for both installed layouts', async (t) => {
   const originalHome = process.env.DSH_HOME
@@ -21,14 +23,20 @@ test('skill detail supplies a verified file to reveal for both installed layouts
   const bundleFile = path.join(bundle, 'SKILL.md')
   const flatFile = path.join(roleDir, 'quick-check.md')
   await fs.mkdir(bundle, { recursive: true })
-  await fs.writeFile(bundleFile, '# Bundled skill')
-  await fs.writeFile(flatFile, '# Flat skill')
+  await fs.writeFile(bundleFile, bundleContent)
+  await fs.writeFile(flatFile, flatContent)
 
   const route = skillRoute()
   const get = (suffix, options) => route.resource(new Request(base + suffix, options))
-  assert.deepEqual(await (await get('/dev')).json(), { skills: ['check-code', 'quick-check'] })
+  assert.deepEqual(await (await get('/dev')).json(), {
+    skills: ['check-code', 'clean-code-guard', 'frontend-design', 'quick-check', 'web-interface-guidelines'],
+  })
+  const packaged = await (await get('/pm/design-taste-frontend')).json()
+  assert.equal(packaged.name, 'design-taste-frontend')
+  assert.match(packaged.content, /^description: >-\r?$/m)
+  assert.equal((await get('/dev/design-taste-frontend')).status, 404)
   for (const [name, file, content] of [
-    ['check-code', bundleFile, '# Bundled skill'], ['quick-check', flatFile, '# Flat skill'],
+    ['check-code', bundleFile, bundleContent], ['quick-check', flatFile, flatContent],
   ]) {
     assert.deepEqual(await (await get(`/dev/${name}`)).json(), { name, content, filePath: await fs.realpath(file) })
   }
@@ -53,7 +61,7 @@ test('skill reveal resolves the installed path and refuses anything else', async
   const roleDir = path.join(home, 'agent-team-roles', 'skills', 'dev')
   await fs.mkdir(path.join(roleDir, 'check-code'), { recursive: true })
   const file = path.join(roleDir, 'check-code', 'SKILL.md')
-  await fs.writeFile(file, '# Bundled skill')
+  await fs.writeFile(file, bundleContent)
 
   const calls = []
   const controller = {

@@ -4,6 +4,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { resolveRoleSkills } from '../src/skills.js'
 import {
   copyTemplateSkills,
   discoverTemplates,
@@ -52,7 +53,7 @@ test('bundled software team requires local verification before release coordinat
   assert.match(cicd.persona, /缺少关键步骤、执行工具或权限时/)
   assert.match(template.leadPlaybook, /用户明确批准版本和环境后，由 CI\/CD 按项目手册负责发布、部署和上线验证/)
   const pm = template.roles.find(role => role.id === 'pm')
-  assert.deepEqual(pm.skills, ['product-sense', 'design-taste'])
+  assert.deepEqual(pm.skills, ['product-sense', 'design-taste-frontend'])
   assert.match(pm.description, /视觉风格和设计规范|评审页面样式与截图/)
   assert.match(pm.persona, /设计负责人/)
   assert.match(pm.persona, /report_gate_event/)
@@ -74,22 +75,26 @@ test('bundled software team requires local verification before release coordinat
   assert.equal(designGate.require.freshFor, 28800)
 })
 
-test('the bundled PM design-taste skill ships its checklist, provenance and MIT license', async () => {
-  const dir = fileURLToPath(new URL('../templates/software-dev/skills/pm/design-taste/', import.meta.url))
-  const raw = await fs.readFile(path.join(dir, 'SKILL.md'), 'utf8')
-  assert.match(raw, /^---\r?\n/)
-  assert.match(raw, /^name: design-taste$/m)
-  assert.match(raw, /^description: .+/m)
-  assert.match(raw, /10 条评审清单/)
-  assert.match(raw, /再好看点/)
-  assert.match(raw, /design-taste-frontend/)
-  const upstream = await fs.readFile(path.join(dir, 'UPSTREAM.md'), 'utf8')
-  assert.match(upstream, /Leonxlnx\/taste-skill/)
-  assert.match(upstream, /v2\.5\.1/)
-  assert.match(upstream, /MIT/)
-  const license = await fs.readFile(path.join(dir, 'LICENSE'), 'utf8')
-  assert.match(license, /MIT License/)
-  assert.match(license, /Copyright \(c\) 2026 Leonxlnx/)
+test('the bundled PM Taste v2.5.1 skill exposes its folded description and local resources', async (t) => {
+  const home = await makeRoot()
+  const previousHome = process.env.DSH_HOME
+  process.env.DSH_HOME = home
+  t.after(async () => {
+    if (previousHome === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = previousHome
+    await fs.rm(home, { recursive: true, force: true })
+  })
+  const record = resolveRoleSkills('pm').get('design-taste-frontend')
+  assert.ok(record)
+  assert.match(record.raw, /^description: >-\r?$/m)
+  assert.match(record.definition.description, /^tasteskill 2\.5\.1, the anti-slop frontend skill\./)
+  assert.match(record.definition.description, /a page looks generic/)
+  assert.match(record.definition.content, /# tasteskill 2\.5/)
+  assert.equal(record.definition.hooks, undefined, 'upstream hooks are not registered')
+  const root = record.definition.resourceBase.path
+  await fs.access(path.join(root, 'scripts/gate.mjs'))
+  await fs.access(path.join(root, 'references/layout-v4.md'))
+  assert.match(await fs.readFile(path.join(root, 'LICENSE'), 'utf8'), /MIT License/)
 })
 
 async function makeRoot() {
@@ -203,10 +208,13 @@ test('seedTemplates copies missing dirs and never overwrites existing ones', asy
   assert.match(await fs.readFile(path.join(target, 'software-dev', 'template.json'), 'utf8'), /edited/)
 })
 
-test('copyTemplateSkills merges role skill dirs without deleting unrelated files', async () => {
+test('copyTemplateSkills adds missing entries and preserves existing role skills', async () => {
   const templateDir = await makeRoot()
   await fs.mkdir(path.join(templateDir, 'skills', 'dev'), { recursive: true })
   await fs.writeFile(path.join(templateDir, 'skills', 'dev', 'SKILL.md'), 'v2')
+  const packaged = path.join(templateDir, 'skills', 'dev', 'packaged-guide')
+  await fs.mkdir(packaged)
+  await fs.writeFile(path.join(packaged, 'SKILL.md'), '---\nname: guide\ndescription: Packaged guide.\n---\nGuide.')
   await fs.mkdir(path.join(templateDir, 'skills', 'qa'), { recursive: true })
   await fs.writeFile(path.join(templateDir, 'skills', 'qa', 'SKILL.md'), 'qa')
 
@@ -214,10 +222,11 @@ test('copyTemplateSkills merges role skill dirs without deleting unrelated files
   await fs.mkdir(path.join(skillsRoot, 'dev'), { recursive: true })
   await fs.writeFile(path.join(skillsRoot, 'dev', 'SKILL.md'), 'v1')
   await fs.writeFile(path.join(skillsRoot, 'dev', 'KEEP.md'), 'keep me')
+  await fs.writeFile(path.join(skillsRoot, 'dev', 'local.md'), '---\nname: guide\ndescription: Local guide.\n---\nGuide.')
 
   const { copied } = await copyTemplateSkills(templateDir, skillsRoot)
-  assert.deepEqual(copied.sort(), ['dev', 'qa'])
-  assert.equal(await fs.readFile(path.join(skillsRoot, 'dev', 'SKILL.md'), 'utf8'), 'v2')
+  assert.deepEqual(copied.sort(), ['qa'])
+  assert.equal(await fs.readFile(path.join(skillsRoot, 'dev', 'SKILL.md'), 'utf8'), 'v1')
   assert.equal(await fs.readFile(path.join(skillsRoot, 'dev', 'KEEP.md'), 'utf8'), 'keep me')
   assert.equal(await fs.readFile(path.join(skillsRoot, 'qa', 'SKILL.md'), 'utf8'), 'qa')
 })
@@ -258,7 +267,7 @@ test('a template update never erases a configured model route or policy', async 
     fallbackModel: '',
     fallbackReasoningEffort: '',
     fallbacks: [],
-    skills: [],
+    skills: ['new-default'],
     denyCommands: [],
     color: '',
     tools: ['read', 'glob', 'grep'],
