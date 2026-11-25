@@ -8,6 +8,7 @@
 
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { teamApi } from './team-compat.js'
 import {
   DESCRIPTION_LIMIT,
   ROLE_ID,
@@ -121,7 +122,7 @@ function requireRole(roles, id) {
 
 /** Find a healthy existing member of one role and executor in caller's Team. */
 function existingRoleMember({ ctx, snapshots, roles, caller, roleId, executor }) {
-  const members = ctx.agentTeams.listMembers(caller)
+  const members = teamApi(ctx).listMembers(caller)
     .filter((member) => member.role === 'teammate' && member.status !== 'failed')
     .map((member) => {
       const snapshot = snapshots.get(caller.id, member.name)
@@ -178,6 +179,10 @@ export async function spawnRoleMember({
   }
   const codex = executor === 'codex' ? await precheckCodex({ config, role, caller }) : undefined
 
+  // The subagent runtime answers its roster asynchronously; refresh before the
+  // reuse check so a member created in an earlier step is not spawned twice.
+  await teamApi(ctx).refreshMembers(caller)
+
   const existing = existingRoleMember({
     ctx,
     snapshots,
@@ -191,7 +196,7 @@ export async function spawnRoleMember({
     const shared = await resolveSharedImages(caller, images)
     const taskText = withImageNote(prompt, shared)
     if (!handshake) {
-      await ctx.agentTeams.sendMessage(caller, {
+      await teamApi(ctx).sendMessage(caller, {
         target: existing.member.name,
         content: [{ type: 'text', text: taskText }],
         signal: signal ?? new AbortController().signal,
@@ -214,7 +219,7 @@ export async function spawnRoleMember({
     }
   }
 
-  const used = new Set(ctx.agentTeams.listMembers(caller).map((member) => member.name))
+  const used = new Set(teamApi(ctx).listMembers(caller).map((member) => member.name))
   const requested = typeof name === 'string' && name.trim() !== ''
     ? name.trim().toLowerCase()
     : role.id
@@ -238,35 +243,18 @@ export async function spawnRoleMember({
     frozen,
   })
 
-  // Members must not inherit a minimal Leader-only composition. Give every
-  // managed member the standard worker preset; the role policy still limits
-  // what that member may call. A handshake spawn additionally uses caller
-  // delivery so its READY settlement is not injected into the Lead.
+  // Members must not inherit a minimal Leader-only composition. The compat
+  // layer asks for the standard worker preset on fresh children; the role
+  // policy still limits what that member may call. A handshake spawn
+  // additionally uses caller delivery so its READY settlement is not injected
+  // into the Lead.
   const handshake = prompt.includes('[[TEAM_HANDSHAKE]]')
   const shared = handshake ? [] : await resolveSharedImages(caller, images)
   const spawnPrompt = withImageNote(prompt, shared)
-  const subagents = ctx.get('subagents')
-  const originalStart = subagents?.startActivation
-  let restoreStart = false
-  if (typeof originalStart === 'function') {
-    try {
-      subagents.startActivation = async (spec) => originalStart.call(subagents, {
-        ...spec,
-        ...(handshake ? { delivery: 'caller' } : {}),
-        request: {
-          ...(spec.request ?? {}),
-          agentPreset: 'standard',
-        },
-      })
-      restoreStart = true
-    } catch {
-      // A non-writable service keeps the role and pre-step fallbacks.
-    }
-  }
 
   let result
   try {
-    result = await ctx.agentTeams.spawnTeammate(caller, {
+    result = await teamApi(ctx).spawnTeammate(caller, {
       name: target,
       description: label,
       prompt: [{ type: 'text', text: spawnPrompt }],
@@ -277,14 +265,6 @@ export async function spawnRoleMember({
   } catch (error) {
     await snapshots.remove(caller.id, target).catch(() => undefined)
     throw error
-  } finally {
-    if (restoreStart) {
-      try {
-        subagents.startActivation = originalStart
-      } catch {
-        // The service will be recreated with the plugin scope.
-      }
-    }
   }
 
   return {

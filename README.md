@@ -21,7 +21,7 @@ This is a **companion plugin**: `@deepseek-ai/dsh-experimental-agent-team` keeps
 ## Requirements
 
 - DeepSeek Harness `>=0.2.2-rc.1 <0.3.0`.
-- The Agent Teams profile bundle enabled (`@deepseek-ai/dsh-experimental-agent-team-profile`), which provides the Team services and tools this plugin composes with.
+- A Team-enabled profile. Both Team runtimes are supported: the retired `@deepseek-ai/dsh-experimental-agent-team-profile` composition and the subagent-based `@deepseek-ai/dsh-agent-team` used by current DSH. When the legacy `ctx.agentTeams.tryMembership` API is absent, the plugin maps membership, spawning, and messaging onto `ctx.subagents` (`rootOf`, `namesOf`, `startActivation`, `resolveName`, `sendMessage`).
 - A Web or Desktop profile with Settings and the required Client services.
 
 The plugin does not fork or modify the official packages, and does not depend on `dsh-agent-team-presets`.
@@ -402,7 +402,7 @@ Role configuration can be edited from the Settings page, the Lead tools, and the
 - Member snapshots live in `$DSH_HOME/agent-team-roles/members.json`; they survive a member's end so a cold resume can rebuild its configuration.
 - The Settings page does not yet enforce the description and role-prompt length limits; over-long content may save but fails validation when a member is spawned.
 - The skill-folder hint in Settings always shows `~/.dsh/agent-team-roles/...`; with a custom `DSH_HOME`, use the `$DSH_HOME` paths from this document.
-- Official Agent Teams is still experimental; this plugin pins its compatibility window to the `0.2.2-rc.1` line.
+- Official Agent Teams is still experimental; this plugin tracks the `0.2.2-rc` line and adapts to the subagent-based Team runtime introduced there.
 - **`config.roles` in `cordis.patch.yml` only applies to a fresh install**. An installed profile keeps the role catalog in volatile Config and the patch does not overwrite it; update the built-in catalog in Settings, or uninstall and reinstall the bundle.
 - Members, the Lead, and the plugin share the working directory; rules and role configuration provide no filesystem isolation.
 

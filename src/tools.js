@@ -11,6 +11,7 @@ import { LEAD_ROLE_ID, findRole, mergeRoles, roleFallbacks, roleForTarget } from
 import { modelSelection } from './member-models.js'
 import { ruleView } from './rules.js'
 import { spawnRoleMember } from './spawn.js'
+import { teamApi } from './team-compat.js'
 import {
   CODEX_CODES,
   buildCodexPrompt,
@@ -254,7 +255,7 @@ async function roleView(role) {
 
 /** Resolve the role a member Agent runs as. */
 export function roleIdForAgent(ctx, snapshots, roles, agent) {
-  const membership = ctx.agentTeams.tryMembership(agent)
+  const membership = teamApi(ctx).tryMembership(agent)
   if (membership === undefined || membership.role !== 'teammate') return undefined
   const snapshot = snapshots.get(membership.root.id, membership.name)
   if (snapshot !== undefined) return snapshot.roleId
@@ -278,7 +279,7 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
   /** Resolve the caller's Codex membership/snapshot or throw. */
   const codexMember = (agent) => {
     if (agent === undefined) throw new Error('codex_exec requires a calling Agent')
-    const membership = ctx.agentTeams.tryMembership(agent)
+    const membership = teamApi(ctx).tryMembership(agent)
     if (membership === undefined || membership.role !== 'teammate') {
       throw codexError(CODEX_CODES.DENIED_BY_CONFIG, 'disabled', 'codex_exec is available only to a Codex-backed teammate')
     }
@@ -473,7 +474,7 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
       if (router === undefined) throw new Error('routing is unavailable')
       let members = []
       try {
-        members = ctx.agentTeams.listMembers(exec.agent)
+        members = teamApi(ctx).listMembers(exec.agent)
           .filter((member) => member.role === 'teammate')
           .map((member) => member.name)
       } catch {
@@ -770,7 +771,7 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
 
   /** Read the caller's own rule bucket: its role id, or 'lead' for the Lead. */
   const ownRole = (agent) => {
-    const membership = ctx.agentTeams.tryMembership(agent)
+    const membership = teamApi(ctx).tryMembership(agent)
     if (membership?.role === 'lead') return LEAD_ROLE_ID
     const roleId = roleIdForAgent(ctx, snapshots, catalog(), agent)
     if (roleId === undefined) throw new Error('this member has no managed role')
@@ -811,7 +812,7 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
     async execute(args, exec) {
       if (exec.agent === undefined) throw new Error('remember_role_rule requires a calling Agent')
       const roleId = ownRole(exec.agent)
-      const membership = ctx.agentTeams.tryMembership(exec.agent)
+      const membership = teamApi(ctx).tryMembership(exec.agent)
       const scope = ['permanent', 'candidate', 'session'].includes(args.scope)
         ? args.scope
         : 'permanent'
@@ -877,7 +878,7 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
       if (!/^[a-z][a-z0-9-]{0,63}$/.test(args.event)) {
         throw new Error('event must be lowercase kebab-case (letters, digits, hyphens; at most 64 characters)')
       }
-      const membership = ctx.agentTeams.tryMembership(exec.agent)
+      const membership = teamApi(ctx).tryMembership(exec.agent)
       if (membership === undefined) throw new Error('report_gate_event requires a Team member')
       const role = roleIdForAgent(ctx, snapshots, catalog(), exec.agent)
       if (role === undefined) throw new Error('this member has no managed role')
@@ -928,11 +929,11 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
     async execute(args, exec) {
       if (exec.agent === undefined) throw new Error('switch_member_model requires a calling Agent')
       const caller = exec.agent
-      const membership = ctx.agentTeams.tryMembership(caller)
+      const membership = teamApi(ctx).tryMembership(caller)
       if (membership === undefined || membership.role !== 'lead') {
         throw new Error('Only the Team Lead can switch a member model.')
       }
-      const target = ctx.agentTeams.listMembers(caller)
+      const target = teamApi(ctx).listMembers(caller)
         .filter((item) => item.role === 'teammate')
         .find((item) => item.name === args.member)
       if (target === undefined) throw new Error(`no teammate named "${args.member}" in this Team`)
@@ -984,7 +985,7 @@ export function createTools({ ctx, config, snapshots, rules, roles, ledger, code
         ? args.message.trim()
         : `Your model route is now ${routeName} (${route.provider}/${route.model}). Continue the task you were working on from where you stopped; do not restart it.`
       try {
-        await ctx.agentTeams.sendMessage(caller, {
+        await teamApi(ctx).sendMessage(caller, {
           target: target.name,
           content: [{ type: 'text', text }],
           signal: new AbortController().signal,

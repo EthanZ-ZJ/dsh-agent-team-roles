@@ -18,6 +18,7 @@ import z from '@deepseek-ai/schemastery'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { LEAD_ROLE_ID, findRole, mergeRoles, readConfig, roleFallbacks, roleForTarget } from './config.js'
+import { teamApi } from './team-compat.js'
 import { activeMembers, leadCatalog, leadMemoryGuide, leadRoutingGuide, leadWorkflowGuide, memberPersona } from './prompts.js'
 import { leadDelegateReason, leadToolPolicy } from './lead-policy.js'
 import {
@@ -443,7 +444,7 @@ export function apply(ctx, config) {
   /** Resolve the gate caller's team and role; undefined for non-members. */
   const gateCaller = (agent) => {
     if (agent === undefined) return undefined
-    const membership = ctx.agentTeams.tryMembership(agent)
+    const membership = teamApi(ctx).tryMembership(agent)
     if (membership === undefined) return undefined
     // Gates are a Team Lead preset workflow: a plain session's official roster
     // must not be governed by the configured Team gates.
@@ -462,7 +463,7 @@ export function apply(ctx, config) {
   const rosterRoles = (agent) => {
     const catalog = mergeRoles(rolesReader.read())
     const live = new Set()
-    for (const member of ctx.agentTeams.listMembers(agent)) {
+    for (const member of teamApi(ctx).listMembers(agent)) {
       if (member.role !== 'teammate') continue
       const snapshot = snapshots.get(agent.id, member.name)
       const roleId = snapshot !== undefined ? snapshot.roleId : roleForTarget(catalog, member.name)?.id
@@ -595,7 +596,7 @@ export function apply(ctx, config) {
       if (!(readConfig(config, 'autoFallback') ?? true)) return next()
       const agent = payload?.agent
       if (agent === undefined) return next()
-      const membership = ctx.agentTeams.tryMembership(agent)
+      const membership = teamApi(ctx).tryMembership(agent)
       if (membership === undefined || membership.role !== 'teammate') return next()
       // Role fallback chains are role configuration: only a Team Lead preset
       // root gives its teammates the configured Team roles.
@@ -690,7 +691,7 @@ export function apply(ctx, config) {
   function desiredInstallMode(agent) {
     let membership
     try {
-      membership = ctx.agentTeams.tryMembership(agent)
+      membership = teamApi(ctx).tryMembership(agent)
     } catch {
       return 'none'
     }
@@ -727,7 +728,7 @@ export function apply(ctx, config) {
     if (desired === 'none' || desired === 'defer') return
     const scoped = agent.ctx
     if (scoped === undefined) return
-    const membership = ctx.agentTeams.tryMembership(agent)
+    const membership = teamApi(ctx).tryMembership(agent)
     if (membership === undefined) return
 
     const disposers = []
@@ -916,7 +917,7 @@ export function apply(ctx, config) {
     description: 'Pull a configured role as a teammate without a model turn.',
     input: { hint: '<role> [task]' },
     handler: async ({ agent, rawInput, signal }) => {
-      const membership = ctx.agentTeams.tryMembership(agent)
+      const membership = teamApi(ctx).tryMembership(agent)
       if (membership?.role !== 'lead') {
         return { kind: 'error', text: 'Only the Team Lead can spawn teammates.' }
       }
@@ -964,7 +965,7 @@ export function apply(ctx, config) {
     description: 'List or apply team templates (role catalog + Lead playbook).',
     input: { hint: 'list | apply <template id>' },
     handler: async ({ agent, rawInput }) => {
-      const membership = ctx.agentTeams.tryMembership(agent)
+      const membership = teamApi(ctx).tryMembership(agent)
       if (membership?.role !== 'lead') {
         return { kind: 'error', text: 'Only the Team Lead can manage team templates.' }
       }
@@ -1032,7 +1033,7 @@ export function apply(ctx, config) {
     description: 'Inspect or toggle workflow gates (stateful conditional denial).',
     input: { hint: 'list | status | enable <gate id> | disable <gate id>' },
     handler: async ({ agent, rawInput }) => {
-      const membership = ctx.agentTeams.tryMembership(agent)
+      const membership = teamApi(ctx).tryMembership(agent)
       if (membership?.role !== 'lead') {
         return { kind: 'error', text: 'Only the Team Lead can manage workflow gates.' }
       }
@@ -1187,7 +1188,7 @@ export function apply(ctx, config) {
     for (const [rootId, lead] of leadAgents) {
       let roster = []
       try {
-        roster = ctx.agentTeams.listMembers(lead)
+        roster = teamApi(ctx).listMembers(lead)
           .filter((member) => member.role === 'teammate')
           .map((member) => ({ name: member.name, status: member.status }))
       } catch {
@@ -1302,7 +1303,7 @@ export function apply(ctx, config) {
       if (rootId !== undefined && teamRootId !== rootId) continue
       let roster = []
       try {
-        roster = ctx.agentTeams.listMembers(lead)
+        roster = teamApi(ctx).listMembers(lead)
           .filter((member) => member.role === 'teammate')
           .map((member) => member.name)
       } catch {
@@ -1536,7 +1537,7 @@ export function installLeadToolPolicy({ scoped, register, ctx, agent, config }) 
     if (policy.mode === 'off' || !policy.names.has(exec.name)) return undefined
     let teammates = []
     try {
-      teammates = ctx.agentTeams.listMembers(agent)
+      teammates = teamApi(ctx).listMembers(agent)
         .filter((member) => member.role === 'teammate')
         .map((member) => member.name)
     } catch {
@@ -1615,7 +1616,7 @@ function installLead({ scoped, register, tools, ctx, config, snapshots, roles, r
     text: () => {
       try {
         const catalog = mergeRoles(roles.read())
-        const rows = ctx.agentTeams.listMembers(agent)
+        const rows = teamApi(ctx).listMembers(agent)
           .filter((member) => member.role === 'teammate')
           .map((member) => {
             const snapshot = snapshots.get(agent.id, member.name)

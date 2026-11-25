@@ -21,7 +21,7 @@
 ## 环境要求
 
 - DeepSeek Harness `>=0.2.2-rc.1 <0.3.0`。
-- 已启用 Agent Teams profile bundle（`@deepseek-ai/dsh-experimental-agent-team-profile`），它提供本插件组合使用的 Team 服务与工具。
+- 已启用 Agent Teams 的 profile。两种 Team 运行时都支持：已停用的 `@deepseek-ai/dsh-experimental-agent-team-profile` 组合，以及当前 DSH 使用的、基于 subagent 的 `@deepseek-ai/dsh-agent-team`。当旧版 `ctx.agentTeams.tryMembership` API 不存在时，插件会把成员关系、创建成员与消息转发映射到 `ctx.subagents`（`rootOf`、`namesOf`、`startActivation`、`resolveName`、`sendMessage`）。
 - 具备 Settings 与所需 Client 服务的 Web 或 Desktop profile。
 
 本插件不 fork、不修改官方包，也不依赖 `dsh-agent-team-presets`。
@@ -398,7 +398,7 @@ whenToUse: 改动准备进入审查时。
 - 成员快照保存在 `$DSH_HOME/agent-team-roles/members.json`；成员结束后仍保留，供冷恢复重建配置。
 - 设置页当前不校验职责描述与角色提示词的长度上限；超长内容可能保存成功，但召唤成员时会因校验失败而报错。
 - 设置页的技能目录提示固定显示 `~/.dsh/agent-team-roles/...`；若自定义了 `DSH_HOME`，请以本文档中的 `$DSH_HOME` 路径为准。
-- 官方 Agent Teams 仍是实验功能；本插件把兼容窗口锁定在 `0.2.2-rc.1` 线。
+- 官方 Agent Teams 仍是实验功能；本插件跟随 `0.2.2-rc` 线，并适配该线引入的、基于 subagent 的 Team 运行时。
 - **`cordis.patch.yml` 的 `config.roles` 只在全新安装时生效**。已安装 profile 的角色目录存在 volatile Config 里，patch 不会覆盖它；更新内置目录需要通过设置页修改，或卸载后重装 bundle。
 - 成员、Lead 与插件共享工作目录；规则和角色配置不提供文件系统隔离。
 
