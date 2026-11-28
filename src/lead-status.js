@@ -65,7 +65,7 @@ export function createLeadStatusTool(canUpdate) {
     output: {
       schema: {
         type: 'object',
-        properties: { kind: { type: 'string', const: STATUS_KIND }, ...parameters },
+        properties: { kind: { type: 'string', enum: [STATUS_KIND] }, ...parameters },
         required: ['kind', ...Object.keys(FIELDS)],
         additionalProperties: false,
       },
