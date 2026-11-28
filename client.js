@@ -221,6 +221,8 @@ window.__ModuleLoader__.load({
       leadDecisionStale: '此问题已无法接收此回答。请在对话中查看最新状态。',
       leadDecisionError: '未能确认回答是否发送。请检查连接，或在对话中查看后重试。',
       leadStatusOnlyLead: '此面板仅用于 Team Lead 会话。',
+      leadStatusEmptyHint: 'Lead 会在每轮结束时更新这里。',
+      leadDecisionEmptyHint: '需要你拍板时，问题会出现在这里。',
       leadStatusGuide: '当前目标、本轮进展与待你决定的事项。',
       leadDecisionChoose: '选择一个选项',
       leadDecisionOpen: '此问题正在等待你在对话中作答。',
@@ -540,6 +542,8 @@ window.__ModuleLoader__.load({
       leadDecisionStale: 'This question can no longer take this answer. Check the conversation for the latest state.',
       leadDecisionError: 'Could not confirm delivery. Check your connection or look in the conversation before trying again.',
       leadStatusOnlyLead: 'This panel belongs to Team Lead sessions.',
+      leadStatusEmptyHint: 'The Lead updates this at the end of each turn.',
+      leadDecisionEmptyHint: 'Questions that need your call will appear here.',
       leadStatusGuide: 'Current goal, latest progress, and decisions waiting for you.',
       leadDecisionChoose: 'Choose one option',
       leadDecisionOpen: 'This question is waiting for you in the conversation.',
@@ -3915,61 +3919,66 @@ window.__ModuleLoader__.load({
       }
     }
 
-    const statusStyles = {
-      wrap: { display: 'flex', flexDirection: 'column', gap: 14, padding: 14, minWidth: 0 },
-      section: { display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 },
-      eyebrow: { color: 'var(--dsw-alias-label-tertiary)', fontSize: 11, letterSpacing: '0.04em' },
-      goal: { color: 'var(--dsw-alias-label-primary)', fontSize: 15, fontWeight: 600, lineHeight: 1.45 },
-      body: { color: 'var(--dsw-alias-label-primary)', fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap' },
-      quiet: { color: 'var(--dsw-alias-label-secondary)', fontSize: 12, lineHeight: 1.55 },
-      meta: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
-      dot: (tone) => ({
-        width: 6, height: 6, borderRadius: 3, flex: 'none',
-        background: `var(--dsw-alias-state-${tone}-primary)`,
-      }),
-      question: {
-        display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0,
-        border: '1px solid var(--dsw-alias-border-l1)',
-        background: 'var(--dsw-alias-bg-layer-1)',
-        borderRadius: 10,
-        padding: 12,
-      },
-      option: (selected) => ({
-        display: 'flex', flexDirection: 'column', gap: 4, width: '100%',
-        textAlign: 'left', font: 'inherit', cursor: 'pointer',
-        border: `1px solid var(--dsw-alias-${selected ? 'brand-primary' : 'border-l1'})`,
-        background: selected ? 'var(--dsw-alias-bg-layer-2)' : 'var(--dsw-alias-bg-base)',
-        color: 'var(--dsw-alias-label-primary)',
-        borderRadius: 8, padding: '8px 10px',
-      }),
-      optionLabel: { display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 13, lineHeight: 1.5 },
-      tradeoff: { display: 'flex', gap: 6, fontSize: 12, lineHeight: 1.5 },
-      pro: { color: 'var(--dsw-alias-state-success-primary)', flex: 'none', fontWeight: 600 },
-      con: { color: 'var(--dsw-alias-state-warn-primary)', flex: 'none', fontWeight: 600 },
-      field: {
-        width: '100%', boxSizing: 'border-box', font: 'inherit', fontSize: 13,
-        border: '1px solid var(--dsw-alias-border-l1)',
-        borderRadius: 8, padding: '7px 9px',
-        background: 'var(--dsw-alias-bg-base)',
-        color: 'var(--dsw-alias-label-primary)',
-        resize: 'vertical', minHeight: 34,
-      },
-      actions: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' },
-      primary: {
-        border: '1px solid var(--dsw-alias-brand-primary)',
-        background: 'var(--dsw-alias-brand-primary)',
-        color: 'var(--dsw-alias-bg-base)',
-        borderRadius: 8, padding: '6px 11px', font: 'inherit', fontSize: 13,
-        fontWeight: 600, cursor: 'pointer',
-      },
-      quietButton: {
-        border: '1px solid var(--dsw-alias-border-l1)',
-        background: 'transparent',
-        color: 'var(--dsw-alias-label-secondary)',
-        borderRadius: 8, padding: '6px 10px', font: 'inherit', fontSize: 12,
-        cursor: 'pointer',
-      },
-    }
+    /** Panel styling lives in one scoped block so hover, focus and reduced motion stay out of inline styles. */
+    const LEAD_PANEL_CSS = `
+.atr-lp { display:flex; flex-direction:column; gap:18px; padding:16px 16px 24px; font-family:inherit; color:var(--dsw-alias-label-primary); }
+.atr-lp__status { display:flex; flex-direction:column; gap:11px; }
+.atr-lp__meta { display:flex; align-items:center; gap:7px; min-width:0; font-size:11.5px; line-height:1.4; color:var(--dsw-alias-label-tertiary); font-variant-numeric:tabular-nums; }
+.atr-lp__dot { width:7px; height:7px; border-radius:50%; flex:none; background:var(--dsw-alias-state-idle-primary); }
+.atr-lp__dot--live { background:var(--dsw-alias-state-business-primary); }
+.atr-lp__dot--done { background:var(--dsw-alias-state-success-primary); }
+.atr-lp__dot--stale { background:var(--dsw-alias-state-warn-primary); }
+.atr-lp__goal { margin:0; padding-left:12px; border-left:2px solid var(--dsw-alias-brand-primary); font-size:15.5px; line-height:1.5; font-weight:600; letter-spacing:-0.005em; overflow-wrap:anywhere; }
+.atr-lp__goal--empty { border-left-color:var(--dsw-alias-border-l2); font-weight:500; color:var(--dsw-alias-label-secondary); }
+.atr-lp__hint { margin:0; font-size:12px; line-height:1.55; color:var(--dsw-alias-label-tertiary); }
+.atr-lp__block { display:flex; flex-direction:column; gap:4px; }
+.atr-lp__eyebrow { font-size:11.5px; line-height:1.4; color:var(--dsw-alias-label-tertiary); }
+.atr-lp__body { margin:0; font-size:13px; line-height:1.62; white-space:pre-wrap; overflow-wrap:anywhere; }
+.atr-lp__rule { height:1px; margin:0; border:0; background:var(--dsw-alias-border-l1); }
+.atr-lp__section { display:flex; flex-direction:column; gap:11px; }
+.atr-lp__sectionhead { display:flex; align-items:baseline; gap:8px; }
+.atr-lp__count { font-size:11.5px; line-height:1.4; color:var(--dsw-alias-label-secondary); font-variant-numeric:tabular-nums; }
+.atr-lp__empty { margin:0; font-size:12px; line-height:1.6; color:var(--dsw-alias-label-tertiary); }
+.atr-lp-card { display:flex; flex-direction:column; gap:13px; padding:13px; border:1px solid var(--dsw-alias-border-l1); border-radius:12px; background:var(--dsw-alias-bg-layer-1); }
+.atr-lp-card__head { display:flex; align-items:center; gap:7px; font-size:11.5px; line-height:1.4; color:var(--dsw-alias-label-tertiary); }
+.atr-lp-q { display:flex; flex-direction:column; gap:7px; }
+.atr-lp-q__text { margin:0; font-size:13px; line-height:1.6; font-weight:500; }
+.atr-lp-q__hint { font-size:11.5px; line-height:1.45; color:var(--dsw-alias-label-tertiary); }
+.atr-lp-opts { display:flex; flex-direction:column; gap:2px; }
+.atr-lp-opt { display:flex; gap:9px; align-items:flex-start; width:100%; box-sizing:border-box; text-align:left; font:inherit; color:inherit; cursor:pointer; border:1px solid transparent; background:transparent; border-radius:9px; padding:8px 9px; transition:background-color 120ms ease, border-color 120ms ease; }
+.atr-lp-opt:hover { background:var(--dsw-alias-interactive-bg-hover); }
+.atr-lp-opt:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:1px; }
+.atr-lp-opt[aria-checked="true"] { border-color:var(--dsw-alias-border-l2); background:var(--dsw-alias-bg-layer-2); }
+.atr-lp-opt__mark { flex:none; width:15px; height:15px; margin-top:2px; border-radius:50%; border:1.5px solid var(--dsw-alias-border-l2); position:relative; box-sizing:border-box; }
+.atr-lp-opt--multi .atr-lp-opt__mark { border-radius:4px; }
+.atr-lp-opt[aria-checked="true"] .atr-lp-opt__mark { border-color:var(--dsw-alias-brand-primary); }
+.atr-lp-opt[aria-checked="true"] .atr-lp-opt__mark::after { content:""; position:absolute; inset:3px; border-radius:50%; background:var(--dsw-alias-brand-primary); }
+.atr-lp-opt--multi[aria-checked="true"] .atr-lp-opt__mark::after { border-radius:2px; }
+.atr-lp-opt__body { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.atr-lp-opt__label { font-size:13px; line-height:1.5; }
+.atr-lp-trade { display:flex; gap:6px; font-size:11.5px; line-height:1.5; color:var(--dsw-alias-label-secondary); }
+.atr-lp-trade__key { flex:none; font-weight:600; }
+.atr-lp-trade__key--pro { color:var(--dsw-alias-state-success-primary); }
+.atr-lp-trade__key--con { color:var(--dsw-alias-state-warn-primary); }
+.atr-lp-note { font-size:11.5px; line-height:1.5; color:var(--dsw-alias-label-tertiary); }
+.atr-lp-field { width:100%; box-sizing:border-box; font:inherit; font-size:13px; line-height:1.5; color:var(--dsw-alias-label-primary); background:var(--dsw-alias-bg-base); border:1px solid var(--dsw-alias-border-l1); border-radius:9px; padding:8px 10px; resize:vertical; min-height:38px; }
+.atr-lp-field:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:0; }
+.atr-lp-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.atr-lp-actions__end { margin-left:auto; }
+.atr-lp-btn { border:1px solid var(--dsw-alias-border-l1); background:transparent; color:var(--dsw-alias-label-secondary); border-radius:9px; padding:6px 11px; font:inherit; font-size:12px; line-height:1.4; cursor:pointer; transition:background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.atr-lp-btn:hover { background:var(--dsw-alias-interactive-bg-hover); color:var(--dsw-alias-label-primary); }
+.atr-lp-btn:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:1px; }
+.atr-lp-btn:disabled { opacity:.5; cursor:not-allowed; }
+.atr-lp-btn--on { border-color:var(--dsw-alias-border-l2); background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-primary); }
+.atr-lp-btn--primary { border-color:var(--dsw-alias-brand-primary); background:var(--dsw-alias-brand-primary); color:var(--dsw-alias-bg-base); font-weight:600; }
+.atr-lp-feedback { margin:0; font-size:11.5px; line-height:1.5; color:var(--dsw-alias-label-secondary); }
+.atr-lp-feedback--error { color:var(--dsw-alias-state-error-primary); }
+.atr-lp-review { display:flex; flex-direction:column; gap:9px; }
+.atr-lp-review__row { display:flex; flex-direction:column; gap:2px; }
+.atr-lp-review__q { font-size:11.5px; line-height:1.45; color:var(--dsw-alias-label-tertiary); }
+.atr-lp-review__a { font-size:13px; line-height:1.5; }
+@media (prefers-reduced-motion: reduce) { .atr-lp-opt, .atr-lp-btn { transition:none; } }
+`
 
     /** Split one option's one-sentence tradeoff into its labelled parts. */
     function splitTradeoff(description) {
@@ -4172,31 +4181,41 @@ window.__ModuleLoader__.load({
         }
 
         if (preset !== undefined && preset !== 'team-lead') {
-          return h('div', { style: statusStyles.wrap }, [h('div', { key: 'only', style: statusStyles.quiet }, t('leadStatusOnlyLead'))])
+          return h('div', { className: 'atr-lp' }, [h('p', { key: 'only', className: 'atr-lp__empty' }, t('leadStatusOnlyLead')), h('style', { key: 'style' }, LEAD_PANEL_CSS)])
         }
 
+        const metaTime = status === null || status === undefined || typeof status.updatedAt !== 'number'
+          ? ''
+          : new Date(status.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        const isCurrent = status !== null && status !== undefined && status.currentTurn > 0 && status.updatedTurn === status.currentTurn
         const statusLabel = status === null || status === undefined
           ? (running === true ? t('leadStatusWorkingFirst') : t('leadStatusFirst'))
-          : status.updatedTurn === status.currentTurn && status.currentTurn > 0
+          : isCurrent
             ? t('leadStatusCurrent')
             : t('leadStatusPrevious').replace('{turn}', String(status.updatedTurn))
         const goalText = status?.goal ?? sessionGoal?.objective ?? ''
-        const firstUpdate = goalText === '' && status === null
-        const statusTone = running === true ? 'business' : firstUpdate ? 'idle' : 'success'
-
-        const statusCard = h('section', { key: 'goal', style: statusStyles.section }, [
-          h('div', { key: 'meta', style: statusStyles.meta }, [
-            h('span', { key: 'dot', style: statusStyles.dot(statusTone), 'aria-hidden': true }),
-            h('span', { key: 'label', style: statusStyles.quiet }, statusLabel),
+        const waitingFirst = status === null || status === undefined
+        const tone = running === true
+          ? (isCurrent ? 'live' : 'stale')
+          : isCurrent ? 'done' : 'idle'
+        const statusCard = h('section', { key: 'status', className: 'atr-lp__status' }, [
+          h('div', { key: 'meta', className: 'atr-lp__meta' }, [
+            h('span', { key: 'dot', className: `atr-lp__dot atr-lp__dot--${tone}`, 'aria-hidden': true }),
+            h('span', { key: 'label' }, statusLabel),
+            metaTime === '' ? null : h('span', { key: 'time' }, `· ${metaTime}`),
           ]),
-          h('div', { key: 'goal', style: statusStyles.goal }, goalText === '' ? t('leadStatusNoGoal') : goalText),
-          status?.summary ? h('div', { key: 'summary', style: statusStyles.section }, [
-            h('div', { key: 'eyebrow', style: statusStyles.eyebrow }, t('leadStatusUpdate')),
-            h('div', { key: 'text', style: statusStyles.body }, status.summary),
+          h('h2', {
+            key: 'goal',
+            className: goalText === '' ? 'atr-lp__goal atr-lp__goal--empty' : 'atr-lp__goal',
+          }, goalText === '' ? t('leadStatusNoGoal') : goalText),
+          waitingFirst && goalText === '' ? h('p', { key: 'hint', className: 'atr-lp__hint' }, t('leadStatusEmptyHint')) : null,
+          status?.summary ? h('div', { key: 'summary', className: 'atr-lp__block' }, [
+            h('span', { key: 'eyebrow', className: 'atr-lp__eyebrow' }, t('leadStatusUpdate')),
+            h('p', { key: 'text', className: 'atr-lp__body' }, status.summary),
           ]) : null,
-          status?.next ? h('div', { key: 'next', style: statusStyles.section }, [
-            h('div', { key: 'eyebrow', style: statusStyles.eyebrow }, t('leadStatusNext')),
-            h('div', { key: 'text', style: statusStyles.body }, status.next),
+          status?.next ? h('div', { key: 'next', className: 'atr-lp__block' }, [
+            h('span', { key: 'eyebrow', className: 'atr-lp__eyebrow' }, t('leadStatusNext')),
+            h('p', { key: 'text', className: 'atr-lp__body' }, status.next),
           ]) : null,
         ])
 
@@ -4213,42 +4232,43 @@ window.__ModuleLoader__.load({
                 ? (entry.custom === '' ? t('leadDecisionCustom') : entry.custom)
                 : entry.selected.join('、')
             if (draft.reviewing) {
-              return h('div', { key: question.id, style: statusStyles.section }, [
-                h('div', { key: 'q', style: statusStyles.quiet }, question.question),
-                h('div', { key: 'a', style: statusStyles.body }, chosen === '' ? t('leadDecisionChoose') : chosen),
+              return h('div', { key: question.id, className: 'atr-lp-review__row' }, [
+                h('span', { key: 'q', className: 'atr-lp-review__q' }, question.question),
+                h('span', { key: 'a', className: 'atr-lp-review__a' }, chosen === '' ? t('leadDecisionChoose') : chosen),
               ])
             }
-            return h('div', { key: question.id, style: statusStyles.section }, [
-              h('div', { key: 'q', style: statusStyles.body }, question.question),
-              question.multiSelect === true ? h('div', { key: 'multi', style: statusStyles.quiet }, t('leadDecisionMulti')) : null,
-              ...options.map((option) => {
+            return h('div', { key: question.id, className: 'atr-lp-q' }, [
+              h('p', { key: 'text', className: 'atr-lp-q__text' }, question.question),
+              question.multiSelect === true
+                ? h('span', { key: 'multi', className: 'atr-lp-q__hint' }, t('leadDecisionMulti'))
+                : null,
+              options.length === 0 ? null : h('div', { key: 'opts', className: 'atr-lp-opts' }, options.map((option) => {
                 const selected = entry.mode !== 'custom' && entry.selected.includes(option.label)
                 const tradeoff = splitTradeoff(option.description)
-                const parts = [h('span', { key: 'label', style: statusStyles.optionLabel }, [
-                  h('span', { key: 'marks', style: statusStyles.quiet, 'aria-hidden': true }, selected ? '●' : '○'),
-                  h('span', { key: 'text' }, option.label),
-                ])]
-                if (tradeoff.pro !== '' || tradeoff.con !== '') {
-                  parts.push(h('div', { key: 'pro', style: statusStyles.tradeoff }, [
-                    h('span', { key: 'k', style: statusStyles.pro }, t('leadDecisionPro')),
-                    h('span', { key: 'v' }, tradeoff.pro),
-                  ]))
-                  parts.push(h('div', { key: 'con', style: statusStyles.tradeoff }, [
-                    h('span', { key: 'k', style: statusStyles.con }, t('leadDecisionCon')),
-                    h('span', { key: 'v' }, tradeoff.con),
-                  ]))
-                }
-                if (tradeoff.rest !== '') parts.push(h('div', { key: 'rest', style: statusStyles.quiet }, tradeoff.rest))
                 return h('button', {
                   key: option.label,
                   type: 'button',
                   role: question.multiSelect === true ? 'checkbox' : 'radio',
                   'aria-checked': selected,
                   onClick: () => chooseOption(row, question, option.label),
-                  style: statusStyles.option(selected),
-                }, parts)
-              }),
-              h('div', { key: 'custom', style: statusStyles.actions }, [
+                  className: `atr-lp-opt${question.multiSelect === true ? ' atr-lp-opt--multi' : ''}`,
+                }, [
+                  h('span', { key: 'mark', className: 'atr-lp-opt__mark', 'aria-hidden': true }),
+                  h('span', { key: 'body', className: 'atr-lp-opt__body' }, [
+                    h('span', { key: 'label', className: 'atr-lp-opt__label' }, option.label),
+                    tradeoff.pro === '' ? null : h('span', { key: 'pro', className: 'atr-lp-trade' }, [
+                      h('span', { key: 'k', className: 'atr-lp-trade__key atr-lp-trade__key--pro' }, t('leadDecisionPro')),
+                      h('span', { key: 'v' }, tradeoff.pro),
+                    ]),
+                    tradeoff.con === '' ? null : h('span', { key: 'con', className: 'atr-lp-trade' }, [
+                      h('span', { key: 'k', className: 'atr-lp-trade__key atr-lp-trade__key--con' }, t('leadDecisionCon')),
+                      h('span', { key: 'v' }, tradeoff.con),
+                    ]),
+                    tradeoff.rest === '' ? null : h('span', { key: 'rest', className: 'atr-lp-note' }, tradeoff.rest),
+                  ]),
+                ])
+              })),
+              h('div', { key: 'custom', className: 'atr-lp-actions' }, [
                 h('button', {
                   key: 'custom-toggle',
                   type: 'button',
@@ -4263,13 +4283,13 @@ window.__ModuleLoader__.load({
                     next.reviewing = false
                     return next
                   }),
-                  style: entry.mode === 'custom' ? statusStyles.primary : statusStyles.quietButton,
+                  className: `atr-lp-btn${entry.mode === 'custom' ? ' atr-lp-btn--on' : ''}`,
                 }, t('leadDecisionCustom')),
                 h('button', {
                   key: 'skip',
                   type: 'button',
                   onClick: () => markSkip(row, question),
-                  style: entry.mode === 'skip' ? statusStyles.primary : statusStyles.quietButton,
+                  className: `atr-lp-btn${entry.mode === 'skip' ? ' atr-lp-btn--on' : ''}`,
                   'aria-pressed': entry.mode === 'skip',
                 }, t('leadDecisionSkip')),
               ]),
@@ -4284,57 +4304,62 @@ window.__ModuleLoader__.load({
                     next.answers[question.id] = { ...current, custom: event.target.value }
                     return next
                   }),
-                  style: statusStyles.field,
+                  className: 'atr-lp-field',
                   rows: 2,
                 })
                 : null,
             ])
           })
           const ready = completeBatch(row.questions, draft) !== undefined
-          return h('section', { key: row.callId, style: statusStyles.question }, [
-            h('div', { key: 'head', style: statusStyles.meta }, [
-              h('span', { key: 'dot', style: statusStyles.dot(late ? 'warn' : 'business'), 'aria-hidden': true }),
-              h('span', { key: 'state', style: statusStyles.quiet }, late ? t('leadDecisionLate') : t('leadDecisionOpen')),
+          return h('article', { key: row.callId, className: 'atr-lp-card' }, [
+            h('div', { key: 'head', className: 'atr-lp-card__head' }, [
+              h('span', { key: 'dot', className: `atr-lp__dot atr-lp__dot--${late ? 'stale' : 'live'}`, 'aria-hidden': true }),
+              h('span', { key: 'state' }, late ? t('leadDecisionLate') : t('leadDecisionOpen')),
             ]),
-            ...rows,
-            feedbackForRow === undefined ? null : h('div', {
+            draft.reviewing
+              ? h('div', { key: 'review', className: 'atr-lp-review' }, rows)
+              : rows,
+            feedbackForRow === undefined ? null : h('p', {
               key: 'feedback',
-              style: {
-                color: feedbackForRow.kind === 'error' ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-label-secondary)',
-                fontSize: 12,
-                lineHeight: 1.5,
-              },
+              className: `atr-lp-feedback${feedbackForRow.kind === 'error' ? ' atr-lp-feedback--error' : ''}`,
             }, feedbackForRow.text),
-            h('div', { key: 'actions', style: statusStyles.actions }, draft.reviewing
+            h('div', { key: 'actions', className: 'atr-lp-actions' }, draft.reviewing
               ? [
+                h('button', {
+                  key: 'edit',
+                  type: 'button',
+                  onClick: () => edit(row),
+                  className: 'atr-lp-btn',
+                }, t('leadDecisionEdit')),
                 h('button', {
                   key: 'confirm',
                   type: 'button',
                   disabled: busy !== '' || !ready,
                   onClick: () => { void submit(row) },
-                  style: { ...statusStyles.primary, opacity: busy !== '' || !ready ? 0.55 : 1 },
+                  className: 'atr-lp-btn atr-lp-btn--primary atr-lp-actions__end',
                 }, busy === row.callId ? t('leadDecisionSending') : (late ? t('leadDecisionConfirmLate') : t('leadDecisionConfirm'))),
-                h('button', { key: 'edit', type: 'button', onClick: () => edit(row), style: statusStyles.quietButton }, t('leadDecisionEdit')),
               ]
               : h('button', {
                 key: 'review',
                 type: 'button',
                 disabled: !ready,
                 onClick: () => review(row),
-                style: { ...statusStyles.quietButton, opacity: ready ? 1 : 0.55 },
+                className: 'atr-lp-btn atr-lp-actions__end',
               }, t('leadDecisionReview'))),
           ])
         })
 
-        return h('div', { style: statusStyles.wrap }, [
+        return h('div', { className: 'atr-lp' }, [
+          h('style', { key: 'style' }, LEAD_PANEL_CSS),
           statusCard,
-          h('section', { key: 'decisions', style: statusStyles.section }, [
-            h('div', { key: 'title', style: statusStyles.meta }, [
-              h('span', { key: 'label', style: statusStyles.eyebrow }, t('leadDecisionTitle')),
-              active.length === 0 ? null : h('span', { key: 'count', style: statusStyles.quiet }, t('leadDecisionCount').replace('{count}', String(active.length))),
+          h('hr', { key: 'rule', className: 'atr-lp__rule' }),
+          h('section', { key: 'decisions', className: 'atr-lp__section' }, [
+            h('div', { key: 'title', className: 'atr-lp__sectionhead' }, [
+              h('span', { key: 'label', className: 'atr-lp__eyebrow' }, t('leadDecisionTitle')),
+              active.length === 0 ? null : h('span', { key: 'count', className: 'atr-lp__count' }, String(active.length)),
             ]),
             active.length === 0
-              ? h('div', { key: 'empty', style: statusStyles.quiet }, t('leadDecisionNone'))
+              ? h('p', { key: 'empty', className: 'atr-lp__empty' }, `${t('leadDecisionNone')} ${t('leadDecisionEmptyHint')}`)
               : decisionCards,
           ]),
         ])
@@ -4392,13 +4417,12 @@ window.__ModuleLoader__.load({
 
     /** Register the tab type and body; profiles without the right sidebar keep the rest working. */
     function installLeadStatus(ctx, t) {
-      if (typeof ctx.inject !== 'function') return
-      ctx.effect(() => {
-        const disposers = []
-        const fiber = ctx.inject(['slots', 'sidebarRightTabs'], (scope) => {
-          const tabs = scope.sidebarRightTabs
-          if (tabs === undefined || typeof tabs.register !== 'function') return
-          const dispose = tabs.register({
+      const setup = (slots, tabs) => {
+        try {
+          if (tabs === undefined || typeof tabs.register !== 'function') {
+            return undefined
+          }
+          const disposeTab = tabs.register({
             id: LEAD_TAB_ID,
             kind: LEAD_TAB_KIND,
             title: () => t('leadStatusTab'),
@@ -4409,20 +4433,54 @@ window.__ModuleLoader__.load({
               description: () => t('leadStatusGuide'),
             }],
           })
-          disposers.push(() => { try { dispose() } catch { /* tab type already gone */ } })
+          let disposeBody
           try {
-            const disposeBody = scope.slots.inject('sidebar.right.pane.tab', () => scope.slots.register({
+            disposeBody = slots.inject('sidebar.right.pane.tab', () => slots.register({
               name: 'sidebar.right.pane.tab',
               key: LEAD_TAB_ID,
               locale: NS,
             }, createLeadStatusBody(ctx, t)))
-            if (typeof disposeBody === 'function') disposers.push(disposeBody)
-          } catch {
-            // The sidebar's body seat is unavailable in this host.
+          } catch (error) {
           }
+          return () => {
+            try {
+              disposeBody?.()
+            } catch {
+              // The sidebar seat may already be gone.
+            }
+            try {
+              disposeTab()
+            } catch {
+              // The tab type may already be gone.
+            }
+          }
+        } catch (error) {
+          return undefined
+        }
+      }
+      const directSlots = clientService(ctx, 'slots')
+      const directTabs = clientService(ctx, 'sidebarRightTabs')
+      if (directSlots !== undefined && directTabs !== undefined) {
+        const dispose = setup(directSlots, directTabs)
+        if (dispose !== undefined) {
+          ctx.effect(() => dispose, 'agent-team-roles:lead-status-tab')
+          return
+        }
+      }
+      if (typeof ctx.inject !== 'function') {
+        return
+      }
+      ctx.effect(() => {
+        let dispose
+        const fiber = ctx.inject(['slots', 'sidebarRightTabs'], (scope) => {
+          dispose = setup(scope.slots, scope.sidebarRightTabs)
         })
         return () => {
-          for (const dispose of disposers.splice(0).reverse()) dispose()
+          try {
+            dispose?.()
+          } catch {
+            // The tab type may already be gone.
+          }
           try {
             void fiber?.dispose?.()
           } catch {
