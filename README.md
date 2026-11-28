@@ -17,6 +17,7 @@ This is a **companion plugin**: `@deepseek-ai/dsh-experimental-agent-team` keeps
 - **`general` fallback role**: shipped, editable, handles tasks that match no specialized role; it keeps dispatch working after the official ephemeral exit is removed.
 - **Removing the ephemeral exit**: the official `spawn_teammate` is blocked by a tool guard, and the Lead is explicitly told to use role-based `spawn_team_member`.
 - **Team Lead preset**: the plugin ships a `team-lead` Agent preset (a scheduling leader) and exposes an **Agent team roles** entry in the main navigation. Manual member pulling is available only in Team Lead preset sessions.
+- **Lead status panel**: a right-sidebar panel for Team Lead sessions shows the current objective, the latest round's progress and next step, and every decision waiting for the user. Options keep their named upside and tradeoff, the user confirms the whole batch in the panel, and the Lead's status is refreshed each turn. It reads Harness's native timed questions, so chat and panel share one answer path.
 
 ## Requirements
 
@@ -37,6 +38,14 @@ dsh plugin --profile desktop add /absolute/path/to/dsh-agent-team-roles
 Or in the GUI: **Plugins → Add plugin**, enter this directory's absolute path, and install. The bundle patch registers an `agent-team-roles` row.
 
 After installation, open **Settings → Agent team roles**; a `general` role already exists.
+
+## Lead status panel
+
+In a root **Team Lead** session, select **Lead status** to open the right sidebar beside the conversation. It shows the current objective, latest progress, next step, and decisions waiting for you. The view belongs to that session. If the Lead has not reported an update for the current turn, the last report stays visible and is labeled accordingly.
+
+For a decision, the Lead uses Harness's native question flow and describes the upside and tradeoff of each option. Compare the options in the panel, select your answer, and confirm it there. Chat and the panel share the same question and answer, so there is no need to submit twice. A timeout or an explicit skip is never approval.
+
+The panel requires a Harness client with the right sidebar and timed user questions. An open Team Lead session may retain its previous preset after an upgrade; if new questions do not appear in the panel, start a new Team Lead session.
 
 ## Configure roles
 

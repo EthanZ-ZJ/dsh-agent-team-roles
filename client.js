@@ -5,6 +5,10 @@ window.__ModuleLoader__.load({
     const h = React.createElement
 
     const NS = 'agent-team-roles'
+    const LEAD_TAB_ID = 'dsh-agent-team-roles/team-lead-status'
+    const LEAD_TAB_KIND = 'team-lead-status'
+    const QUESTION_ANSWER = 'userQuestions/answer'
+    const EMPTY_DECISIONS = Object.freeze([])
     const TABS = [
       { id: 'roles', label: 'roles' },
       { id: 'rules', label: 'rules' },
@@ -176,6 +180,50 @@ window.__ModuleLoader__.load({
       membersHint: '打开时刷新一次，可点「刷新」再取最新状态；「备用·自动」表示额度失败后由插件自动切换。',
       membersRefresh: '刷新',
       teamPanel: '团队',
+      leadStatusTab: 'Lead 状态',
+      leadStatusLauncherCount: 'Lead 状态：{count} 项待决定',
+      leadStatusOpenFailed: '无法打开 Lead 状态。请重试。',
+      leadStatusGoal: '当前目标',
+      leadStatusNoGoal: 'Lead 尚未记录目标。',
+      leadStatusFirst: '等待 Lead 首次更新。',
+      leadStatusWorkingFirst: 'Lead 正在工作，尚未发布首条进展。',
+      leadStatusCurrent: '本轮更新',
+      leadStatusPrevious: '第 {turn} 轮更新',
+      leadStatusWorking: '进行中',
+      leadStatusUpdate: '最新进展',
+      leadStatusNext: '下一步',
+      leadDecisionTitle: '待决定事项',
+      leadDecisionNone: '目前没有待决定事项。',
+      leadDecisionCount: '{count} 项待决定',
+      leadDecisionMulti: '可选择多项。',
+      leadDecisionPro: '优点：',
+      leadDecisionCon: '代价：',
+      leadDecisionCustom: '自行填写',
+      leadDecisionCustomText: '你的回答',
+      leadDecisionSkip: '跳过此问题',
+      leadDecisionSkipped: '不作答（跳过）',
+      leadDecisionReview: '核对回答',
+      leadDecisionIncomplete: '请回答或明确跳过每个问题。',
+      leadDecisionConfirm: '确认发送',
+      leadDecisionConfirmLate: '确认发送补充回答',
+      leadDecisionEdit: '返回修改',
+      leadDecisionReviewLate: 'Lead 已继续工作，会在可以接收补充回答时读取。',
+      leadDecisionNeedsReveal: '请先在对话中显示此问题。',
+      leadDecisionReveal: '在对话中显示',
+      leadDecisionRevealBlocked: '此问题尚未可答。如果对话中有其他请求，请先处理。',
+      leadDecisionRouteChanged: '此问题的回答方式已变更。可保留草稿，重新核对后发送。',
+      leadDecisionPermission: '你没有发送补充回答的权限。',
+      leadDecisionSending: '正在发送…',
+      leadDecisionSent: '回答已发送，等待确认。',
+      leadDecisionQueued: '回答已排队，尚未由 Lead 读取。',
+      leadDecisionAnswered: '回答已记录。',
+      leadDecisionClosed: '问题已关闭，未确认有回答。',
+      leadDecisionStale: '此问题已无法接收此回答。请在对话中查看最新状态。',
+      leadDecisionError: '未能确认回答是否发送。请检查连接，或在对话中查看后重试。',
+      leadStatusOnlyLead: '此面板仅用于 Team Lead 会话。',
+      leadDecisionChoose: '选择一个选项',
+      leadDecisionOpen: '此问题正在等待你在对话中作答。',
+      leadDecisionLate: '此问题已超时，仍可补充回答。',
       teamTitle: '本群团队', teamMembers: '成员', teamClose: '关闭',
       gatesModel: '闸门',
       gatesTitle: '闸门（本群）',
@@ -450,6 +498,50 @@ window.__ModuleLoader__.load({
       membersHint: 'Fetches once when opened; click Refresh for the latest state. "fallback·auto" means the plugin switched after a quota failure.',
       membersRefresh: 'Refresh',
       teamPanel: 'Team',
+      leadStatusTab: 'Lead status',
+      leadStatusLauncherCount: 'Lead status: {count} awaiting a decision',
+      leadStatusOpenFailed: 'Could not open Lead status. Try again.',
+      leadStatusGoal: 'Current goal',
+      leadStatusNoGoal: 'The Lead hasn’t recorded a goal yet.',
+      leadStatusFirst: 'Waiting for the Lead’s first update.',
+      leadStatusWorkingFirst: 'The Lead is working and hasn’t posted an update yet.',
+      leadStatusCurrent: 'Updated this turn',
+      leadStatusPrevious: 'Updated in turn {turn}',
+      leadStatusWorking: 'Working',
+      leadStatusUpdate: 'Latest progress',
+      leadStatusNext: 'Next step',
+      leadDecisionTitle: 'Pending decisions',
+      leadDecisionNone: 'No decisions are waiting.',
+      leadDecisionCount: '{count} awaiting a decision',
+      leadDecisionMulti: 'You can choose more than one.',
+      leadDecisionPro: 'Pro:',
+      leadDecisionCon: 'Con:',
+      leadDecisionCustom: 'Write my own answer',
+      leadDecisionCustomText: 'Your answer',
+      leadDecisionSkip: 'Skip this question',
+      leadDecisionSkipped: 'Skipped (no answer)',
+      leadDecisionReview: 'Review answers',
+      leadDecisionIncomplete: 'Answer or explicitly skip every question.',
+      leadDecisionConfirm: 'Confirm and send',
+      leadDecisionConfirmLate: 'Confirm and send follow-up',
+      leadDecisionEdit: 'Back to editing',
+      leadDecisionReviewLate: 'The Lead has continued and will read this follow-up when it can.',
+      leadDecisionNeedsReveal: 'Show this question in the conversation before answering here.',
+      leadDecisionReveal: 'Show in conversation',
+      leadDecisionRevealBlocked: 'This question is not ready to answer. If there is another request in the conversation, handle it first.',
+      leadDecisionRouteChanged: 'How this question receives answers changed. Your draft is still here; review it before sending.',
+      leadDecisionPermission: 'You don’t have permission to send a follow-up answer.',
+      leadDecisionSending: 'Sending answer…',
+      leadDecisionSent: 'Answer sent. Waiting for confirmation.',
+      leadDecisionQueued: 'Answer queued. The Lead hasn’t read it yet.',
+      leadDecisionAnswered: 'Answer recorded.',
+      leadDecisionClosed: 'Question closed without a confirmed answer.',
+      leadDecisionStale: 'This question can no longer take this answer. Check the conversation for the latest state.',
+      leadDecisionError: 'Could not confirm delivery. Check your connection or look in the conversation before trying again.',
+      leadStatusOnlyLead: 'This panel belongs to Team Lead sessions.',
+      leadDecisionChoose: 'Choose one option',
+      leadDecisionOpen: 'This question is waiting for you in the conversation.',
+      leadDecisionLate: 'This question timed out and still accepts a follow-up.',
       teamTitle: 'This team', teamMembers: 'Members', teamClose: 'Close',
       gatesModel: 'Gates',
       gatesTitle: 'Gates (this Team)',
@@ -3802,9 +3894,536 @@ window.__ModuleLoader__.load({
       }
       return function TeamControl({ sessionId, useSessions }) {
         const preset = useSessions?.(state => state.byId?.[sessionId]?.projectionValues?.agentPreset)
-        return preset === 'team-lead' ? h(TeamButton, { key: sessionId, sessionId }) : null
+        if (preset !== 'team-lead') return null
+        const LeadStatusLauncher = createLeadStatusLauncher(ctx, t)
+        return h(React.Fragment, null, [
+          h(TeamButton, { key: 'team', sessionId }),
+          h(LeadStatusLauncher, { key: 'lead-status', sessionId }),
+        ])
       }
     }
+    /** Read one client service without assuming a particular context shape. */
+    function clientService(ctx, name) {
+      try {
+        const direct = ctx?.[name]
+        if (direct !== undefined && direct !== null) return direct
+        return typeof ctx?.get === 'function' ? ctx.get(name) : undefined
+      } catch {
+        return undefined
+      }
+    }
+
+    const statusStyles = {
+      wrap: { display: 'flex', flexDirection: 'column', gap: 14, padding: 14, minWidth: 0 },
+      section: { display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 },
+      eyebrow: { color: 'var(--dsw-alias-label-tertiary)', fontSize: 11, letterSpacing: '0.04em' },
+      goal: { color: 'var(--dsw-alias-label-primary)', fontSize: 15, fontWeight: 600, lineHeight: 1.45 },
+      body: { color: 'var(--dsw-alias-label-primary)', fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap' },
+      quiet: { color: 'var(--dsw-alias-label-secondary)', fontSize: 12, lineHeight: 1.55 },
+      meta: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
+      dot: (tone) => ({
+        width: 6, height: 6, borderRadius: 3, flex: 'none',
+        background: `var(--dsw-alias-state-${tone}-primary)`,
+      }),
+      question: {
+        display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0,
+        border: '1px solid var(--dsw-alias-border-l1)',
+        background: 'var(--dsw-alias-bg-layer-1)',
+        borderRadius: 10,
+        padding: 12,
+      },
+      option: (selected) => ({
+        display: 'flex', flexDirection: 'column', gap: 4, width: '100%',
+        textAlign: 'left', font: 'inherit', cursor: 'pointer',
+        border: `1px solid var(--dsw-alias-${selected ? 'brand-primary' : 'border-l1'})`,
+        background: selected ? 'var(--dsw-alias-bg-layer-2)' : 'var(--dsw-alias-bg-base)',
+        color: 'var(--dsw-alias-label-primary)',
+        borderRadius: 8, padding: '8px 10px',
+      }),
+      optionLabel: { display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 13, lineHeight: 1.5 },
+      tradeoff: { display: 'flex', gap: 6, fontSize: 12, lineHeight: 1.5 },
+      pro: { color: 'var(--dsw-alias-state-success-primary)', flex: 'none', fontWeight: 600 },
+      con: { color: 'var(--dsw-alias-state-warn-primary)', flex: 'none', fontWeight: 600 },
+      field: {
+        width: '100%', boxSizing: 'border-box', font: 'inherit', fontSize: 13,
+        border: '1px solid var(--dsw-alias-border-l1)',
+        borderRadius: 8, padding: '7px 9px',
+        background: 'var(--dsw-alias-bg-base)',
+        color: 'var(--dsw-alias-label-primary)',
+        resize: 'vertical', minHeight: 34,
+      },
+      actions: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' },
+      primary: {
+        border: '1px solid var(--dsw-alias-brand-primary)',
+        background: 'var(--dsw-alias-brand-primary)',
+        color: 'var(--dsw-alias-bg-base)',
+        borderRadius: 8, padding: '6px 11px', font: 'inherit', fontSize: 13,
+        fontWeight: 600, cursor: 'pointer',
+      },
+      quietButton: {
+        border: '1px solid var(--dsw-alias-border-l1)',
+        background: 'transparent',
+        color: 'var(--dsw-alias-label-secondary)',
+        borderRadius: 8, padding: '6px 10px', font: 'inherit', fontSize: 12,
+        cursor: 'pointer',
+      },
+    }
+
+    /** Split one option's one-sentence tradeoff into its labelled parts. */
+    function splitTradeoff(description) {
+      const text = typeof description === 'string' ? description.trim() : ''
+      if (text === '') return { pro: '', con: '', rest: '' }
+      let pro = ''
+      let con = ''
+      const rest = []
+      for (const line of text.split(/\r?\n/)) {
+        const trimmed = line.trim()
+        if (trimmed === '') continue
+        const proMatch = /^(?:优点|好处|pros?)\s*[:：]\s*(.*)$/i.exec(trimmed)
+        const conMatch = /^(?:代价|缺点|cons?)\s*[:：]\s*(.*)$/i.exec(trimmed)
+        if (proMatch !== null && pro === '') pro = proMatch[1].trim()
+        else if (conMatch !== null && con === '') con = conMatch[1].trim()
+        else rest.push(trimmed)
+      }
+      return { pro, con, rest: rest.join(' ') }
+    }
+
+    function emptyQuestionDraft(questions) {
+      const answers = {}
+      for (const question of questions) {
+        answers[question.id] = { selected: [], custom: '', mode: '', customOpen: false }
+      }
+      return { answers, reviewing: false }
+    }
+
+    /** One model question answered or explicitly skipped; undefined when incomplete. */
+    function answerItem(question, entry) {
+      const value = entry ?? { selected: [], custom: '', mode: '' }
+      if (value.mode === 'skip') return { id: question.id, selected: [] }
+      if (value.mode === 'custom') {
+        const custom = String(value.custom ?? '').trim()
+        return custom === '' ? undefined : { id: question.id, selected: [], custom }
+      }
+      if (!Array.isArray(value.selected) || value.selected.length === 0) return undefined
+      return { id: question.id, selected: [...value.selected] }
+    }
+
+    /** Every question answered or skipped, in request order. */
+    function completeBatch(questions, draft) {
+      const answers = []
+      for (const question of questions) {
+        const item = answerItem(question, draft.answers[question.id])
+        if (item === undefined) return undefined
+        answers.push(item)
+      }
+      return answers
+    }
+
+    /** Answer labels queued as a late follow-up for one call. */
+    function queuedReply(inbox, callId) {
+      const lists = [inbox?.['next-step'], inbox?.['next-turn']]
+      for (const list of lists) {
+        if (!Array.isArray(list)) continue
+        for (const message of list) {
+          if (message?.source?.kind === 'user-question-reply' && message.source.callId === callId) return true
+        }
+      }
+      return false
+    }
+
+    /** One right-sidebar tab body: Lead status plus every answerable decision. */
+    function createLeadStatusBody(ctx, t) {
+      return function LeadStatusBody(props) {
+        const sessionId = props.sessionId
+        const projection = typeof props.useProjection === 'function' ? props.useProjection : () => undefined
+        const useSessions = props.useSessions
+        const useSessionStatus = props.useSessionStatus
+        const useAccess = props.useAccess
+        const status = projection('agentTeamLeadStatus', (value) => value)
+        const preset = projection('agentPreset', (value) => value)
+        const questions = projection('userQuestions', (value) => value)
+        const inbox = projection('inbox', (value) => value)
+        const sessionGoal = projection('goal', (value) => value)
+        const running = typeof useSessions === 'function'
+          ? useSessions((state) => state?.byId?.[sessionId]?.running)
+          : undefined
+        const pending = typeof useSessionStatus === 'function'
+          ? useSessionStatus((map) => map?.get?.(sessionId)?.pendingInteraction)
+          : undefined
+        const canAnswerLate = typeof useAccess === 'function' ? useAccess(QUESTION_ANSWER) : undefined
+        const [drafts, setDrafts] = React.useState(() => ({}))
+        const [busy, setBusy] = React.useState('')
+        const [feedback, setFeedback] = React.useState({})
+
+        const active = Array.isArray(questions?.active) ? questions.active : EMPTY_DECISIONS
+        const activeKey = active.map((row) => row.callId).join('|')
+        React.useEffect(() => {
+          if (activeKey === '') return
+          const live = new Set(activeKey.split('|'))
+          setDrafts((current) => {
+            const stale = Object.keys(current).filter((callId) => !live.has(callId))
+            if (stale.length === 0) return current
+            const next = { ...current }
+            for (const callId of stale) delete next[callId]
+            return next
+          })
+          setFeedback((current) => {
+            const stale = Object.keys(current).filter((callId) => !live.has(callId))
+            if (stale.length === 0) return current
+            const next = { ...current }
+            for (const callId of stale) delete next[callId]
+            return next
+          })
+        }, [activeKey])
+
+        const notice = (callId, kind, text) => setFeedback((current) => ({ ...current, [callId]: { kind, text } }))
+        const draftOf = (row) => drafts[row.callId] ?? emptyQuestionDraft(row.questions)
+        const patchDraft = (callId, questionsOfRow, mutate) => setDrafts((current) => {
+          const base = current[callId] ?? emptyQuestionDraft(questionsOfRow)
+          return { ...current, [callId]: mutate({ ...base, answers: { ...base.answers } }) }
+        })
+
+        const chooseOption = (row, question, label) => patchDraft(row.callId, row.questions, (draft) => {
+          const entry = draft.answers[question.id] ?? { selected: [], custom: '', mode: '' }
+          if (question.multiSelect === true) {
+            const selected = entry.mode === 'skip' ? [] : [...entry.selected]
+            const index = selected.indexOf(label)
+            if (index >= 0) selected.splice(index, 1)
+            else selected.push(label)
+            draft.answers[question.id] = { ...entry, selected, mode: '' }
+          } else {
+            draft.answers[question.id] = { ...entry, selected: [label], mode: '', customOpen: false }
+          }
+          draft.reviewing = false
+          return draft
+        })
+
+        const markSkip = (row, question) => patchDraft(row.callId, row.questions, (draft) => {
+          const entry = draft.answers[question.id] ?? { selected: [], custom: '', mode: '' }
+          draft.answers[question.id] = { ...entry, selected: [], mode: entry.mode === 'skip' ? '' : 'skip', customOpen: false }
+          draft.reviewing = false
+          return draft
+        })
+
+        const review = (row) => patchDraft(row.callId, row.questions, (draft) => {
+          draft.reviewing = true
+          return draft
+        })
+        const edit = (row) => patchDraft(row.callId, row.questions, (draft) => {
+          draft.reviewing = false
+          return draft
+        })
+
+        const reveal = (row) => {
+          const panels = clientService(ctx, 'userQuestionPanels')
+          if (typeof panels?.reveal !== 'function') return false
+          try {
+            return panels.reveal(sessionId, row.callId) === true
+          } catch {
+            return false
+          }
+        }
+
+        const submit = async (row) => {
+          if (busy !== '') return
+          const draft = draftOf(row)
+          const answers = completeBatch(row.questions, draft)
+          if (answers === undefined) {
+            notice(row.callId, 'error', t('leadDecisionIncomplete'))
+            return
+          }
+          setBusy(row.callId)
+          try {
+            if (row.state === 'open') {
+              const carrier = pending
+              const matches = carrier !== undefined && carrier !== null
+                && carrier.kind === 'question'
+                && carrier.callId === row.callId
+                && carrier.sessionId === sessionId
+              const snapshot = matches ? carrier.snapshot() : undefined
+              if (matches !== true || snapshot === undefined || snapshot.closed === true || snapshot.channel !== 'waterfall') {
+                if (reveal(row)) notice(row.callId, 'notice', t('leadDecisionNeedsReveal'))
+                else notice(row.callId, 'error', t('leadDecisionRevealBlocked'))
+                return
+              }
+              await carrier.answer({ answers })
+              notice(row.callId, 'notice', t('leadDecisionSent'))
+            } else {
+              if (canAnswerLate === false) {
+                notice(row.callId, 'error', t('leadDecisionPermission'))
+                return
+              }
+              const response = await ctx.remote.userQuestions.answer(sessionId, row.callId, { answers })
+              if (response?.ok !== true) throw new Error(response?.error?.message ?? t('leadDecisionError'))
+              if (response.value === false) {
+                notice(row.callId, 'error', t('leadDecisionStale'))
+                return
+              }
+              notice(row.callId, 'notice', queuedReply(inbox, row.callId) ? t('leadDecisionQueued') : t('leadDecisionSent'))
+            }
+            setDrafts((current) => ({ ...current, [row.callId]: emptyQuestionDraft(row.questions) }))
+          } catch (error) {
+            notice(row.callId, 'error', `${t('leadDecisionError')} ${error instanceof Error ? error.message : String(error)}`)
+          } finally {
+            setBusy('')
+          }
+        }
+
+        if (preset !== undefined && preset !== 'team-lead') {
+          return h('div', { style: statusStyles.wrap }, [h('div', { key: 'only', style: statusStyles.quiet }, t('leadStatusOnlyLead'))])
+        }
+
+        const statusLabel = status === null || status === undefined
+          ? (running === true ? t('leadStatusWorkingFirst') : t('leadStatusFirst'))
+          : status.updatedTurn === status.currentTurn && status.currentTurn > 0
+            ? t('leadStatusCurrent')
+            : t('leadStatusPrevious').replace('{turn}', String(status.updatedTurn))
+        const goalText = status?.goal ?? sessionGoal?.objective ?? ''
+        const firstUpdate = goalText === '' && status === null
+        const statusTone = running === true ? 'business' : firstUpdate ? 'idle' : 'success'
+
+        const statusCard = h('section', { key: 'goal', style: statusStyles.section }, [
+          h('div', { key: 'meta', style: statusStyles.meta }, [
+            h('span', { key: 'dot', style: statusStyles.dot(statusTone), 'aria-hidden': true }),
+            h('span', { key: 'label', style: statusStyles.quiet }, statusLabel),
+          ]),
+          h('div', { key: 'goal', style: statusStyles.goal }, goalText === '' ? t('leadStatusNoGoal') : goalText),
+          status?.summary ? h('div', { key: 'summary', style: statusStyles.section }, [
+            h('div', { key: 'eyebrow', style: statusStyles.eyebrow }, t('leadStatusUpdate')),
+            h('div', { key: 'text', style: statusStyles.body }, status.summary),
+          ]) : null,
+          status?.next ? h('div', { key: 'next', style: statusStyles.section }, [
+            h('div', { key: 'eyebrow', style: statusStyles.eyebrow }, t('leadStatusNext')),
+            h('div', { key: 'text', style: statusStyles.body }, status.next),
+          ]) : null,
+        ])
+
+        const decisionCards = active.map((row) => {
+          const draft = draftOf(row)
+          const feedbackForRow = feedback[row.callId]
+          const late = row.state === 'continued'
+          const rows = row.questions.map((question) => {
+            const entry = draft.answers[question.id] ?? { selected: [], custom: '', mode: '', customOpen: false }
+            const options = Array.isArray(question.options) ? question.options : []
+            const chosen = entry.mode === 'skip'
+              ? t('leadDecisionSkipped')
+              : entry.mode === 'custom'
+                ? (entry.custom === '' ? t('leadDecisionCustom') : entry.custom)
+                : entry.selected.join('、')
+            if (draft.reviewing) {
+              return h('div', { key: question.id, style: statusStyles.section }, [
+                h('div', { key: 'q', style: statusStyles.quiet }, question.question),
+                h('div', { key: 'a', style: statusStyles.body }, chosen === '' ? t('leadDecisionChoose') : chosen),
+              ])
+            }
+            return h('div', { key: question.id, style: statusStyles.section }, [
+              h('div', { key: 'q', style: statusStyles.body }, question.question),
+              question.multiSelect === true ? h('div', { key: 'multi', style: statusStyles.quiet }, t('leadDecisionMulti')) : null,
+              ...options.map((option) => {
+                const selected = entry.mode !== 'custom' && entry.selected.includes(option.label)
+                const tradeoff = splitTradeoff(option.description)
+                const parts = [h('span', { key: 'label', style: statusStyles.optionLabel }, [
+                  h('span', { key: 'marks', style: statusStyles.quiet, 'aria-hidden': true }, selected ? '●' : '○'),
+                  h('span', { key: 'text' }, option.label),
+                ])]
+                if (tradeoff.pro !== '' || tradeoff.con !== '') {
+                  parts.push(h('div', { key: 'pro', style: statusStyles.tradeoff }, [
+                    h('span', { key: 'k', style: statusStyles.pro }, t('leadDecisionPro')),
+                    h('span', { key: 'v' }, tradeoff.pro),
+                  ]))
+                  parts.push(h('div', { key: 'con', style: statusStyles.tradeoff }, [
+                    h('span', { key: 'k', style: statusStyles.con }, t('leadDecisionCon')),
+                    h('span', { key: 'v' }, tradeoff.con),
+                  ]))
+                }
+                if (tradeoff.rest !== '') parts.push(h('div', { key: 'rest', style: statusStyles.quiet }, tradeoff.rest))
+                return h('button', {
+                  key: option.label,
+                  type: 'button',
+                  role: question.multiSelect === true ? 'checkbox' : 'radio',
+                  'aria-checked': selected,
+                  onClick: () => chooseOption(row, question, option.label),
+                  style: statusStyles.option(selected),
+                }, parts)
+              }),
+              h('div', { key: 'custom', style: statusStyles.actions }, [
+                h('button', {
+                  key: 'custom-toggle',
+                  type: 'button',
+                  onClick: () => patchDraft(row.callId, row.questions, (next) => {
+                    const current = next.answers[question.id] ?? entry
+                    next.answers[question.id] = {
+                      ...current,
+                      mode: current.mode === 'custom' ? '' : 'custom',
+                      customOpen: current.mode !== 'custom',
+                      selected: current.mode === 'custom' ? current.selected : [],
+                    }
+                    next.reviewing = false
+                    return next
+                  }),
+                  style: entry.mode === 'custom' ? statusStyles.primary : statusStyles.quietButton,
+                }, t('leadDecisionCustom')),
+                h('button', {
+                  key: 'skip',
+                  type: 'button',
+                  onClick: () => markSkip(row, question),
+                  style: entry.mode === 'skip' ? statusStyles.primary : statusStyles.quietButton,
+                  'aria-pressed': entry.mode === 'skip',
+                }, t('leadDecisionSkip')),
+              ]),
+              entry.mode === 'custom'
+                ? h('textarea', {
+                  key: 'custom-text',
+                  value: entry.custom,
+                  placeholder: t('leadDecisionCustomText'),
+                  'aria-label': t('leadDecisionCustomText'),
+                  onChange: (event) => patchDraft(row.callId, row.questions, (next) => {
+                    const current = next.answers[question.id] ?? entry
+                    next.answers[question.id] = { ...current, custom: event.target.value }
+                    return next
+                  }),
+                  style: statusStyles.field,
+                  rows: 2,
+                })
+                : null,
+            ])
+          })
+          const ready = completeBatch(row.questions, draft) !== undefined
+          return h('section', { key: row.callId, style: statusStyles.question }, [
+            h('div', { key: 'head', style: statusStyles.meta }, [
+              h('span', { key: 'dot', style: statusStyles.dot(late ? 'warn' : 'business'), 'aria-hidden': true }),
+              h('span', { key: 'state', style: statusStyles.quiet }, late ? t('leadDecisionLate') : t('leadDecisionOpen')),
+            ]),
+            ...rows,
+            feedbackForRow === undefined ? null : h('div', {
+              key: 'feedback',
+              style: {
+                color: feedbackForRow.kind === 'error' ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-label-secondary)',
+                fontSize: 12,
+                lineHeight: 1.5,
+              },
+            }, feedbackForRow.text),
+            h('div', { key: 'actions', style: statusStyles.actions }, draft.reviewing
+              ? [
+                h('button', {
+                  key: 'confirm',
+                  type: 'button',
+                  disabled: busy !== '' || !ready,
+                  onClick: () => { void submit(row) },
+                  style: { ...statusStyles.primary, opacity: busy !== '' || !ready ? 0.55 : 1 },
+                }, busy === row.callId ? t('leadDecisionSending') : (late ? t('leadDecisionConfirmLate') : t('leadDecisionConfirm'))),
+                h('button', { key: 'edit', type: 'button', onClick: () => edit(row), style: statusStyles.quietButton }, t('leadDecisionEdit')),
+              ]
+              : h('button', {
+                key: 'review',
+                type: 'button',
+                disabled: !ready,
+                onClick: () => review(row),
+                style: { ...statusStyles.quietButton, opacity: ready ? 1 : 0.55 },
+              }, t('leadDecisionReview'))),
+          ])
+        })
+
+        return h('div', { style: statusStyles.wrap }, [
+          statusCard,
+          h('section', { key: 'decisions', style: statusStyles.section }, [
+            h('div', { key: 'title', style: statusStyles.meta }, [
+              h('span', { key: 'label', style: statusStyles.eyebrow }, t('leadDecisionTitle')),
+              active.length === 0 ? null : h('span', { key: 'count', style: statusStyles.quiet }, t('leadDecisionCount').replace('{count}', String(active.length))),
+            ]),
+            active.length === 0
+              ? h('div', { key: 'empty', style: statusStyles.quiet }, t('leadDecisionNone'))
+              : decisionCards,
+          ]),
+        ])
+      }
+    }
+
+    /** Lead-only launcher beside the Team control; the tab lives in the right sidebar. */
+    function createLeadStatusLauncher(ctx, t) {
+      return function LeadStatusLauncher({ sessionId }) {
+        const sidebar = clientService(ctx, 'sidebarRight')
+        if (typeof sidebar?.openTab !== 'function') return null
+        const open = () => {
+          const mounted = typeof sidebar.mounted?.getSnapshot === 'function' ? sidebar.mounted.getSnapshot() : undefined
+          if (mounted !== undefined && mounted !== null && mounted !== sessionId) return
+          try {
+            sidebar.openTab(LEAD_TAB_KIND)
+          } catch {
+            // A collapsing column refuses the open; the next click retries.
+          }
+        }
+        return h('button', {
+          type: 'button',
+          title: t('leadStatusTab'),
+          'aria-label': t('leadStatusTab'),
+          onClick: open,
+          style: {
+            display: 'inline-flex', gap: 5, alignItems: 'center',
+            border: '1px solid var(--dsw-alias-border-l1)',
+            background: 'transparent',
+            color: 'var(--dsw-alias-label-secondary)',
+            borderRadius: 8, padding: '4px 8px', font: 'inherit', fontSize: 12, cursor: 'pointer',
+          },
+        }, [h(LeadStatusIcon, { key: 'icon', size: 15 }), t('leadStatusTab')])
+      }
+    }
+
+    function LeadStatusIcon({ size = 16 }) {
+      return h('svg', {
+        width: size,
+        height: size,
+        viewBox: '0 0 24 24',
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeWidth: 1.8,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+        'aria-hidden': true,
+      }, [
+        h('path', { key: 'a', d: 'M4 15a8 8 0 1 0 16 0' }),
+        h('path', { key: 'b', d: 'M12 13 16 8' }),
+        h('circle', { key: 'c', cx: 12, cy: 15, r: 1.4 }),
+        h('path', { key: 'd', d: 'M4 19h16' }),
+      ])
+    }
+
+    /** Register the tab type and body; profiles without the right sidebar keep the rest working. */
+    function installLeadStatus(ctx, t) {
+      if (typeof ctx.inject !== 'function') return
+      ctx.effect(() => {
+        const disposers = []
+        const fiber = ctx.inject(['slots', 'sidebarRightTabs'], (scope) => {
+          const tabs = scope.sidebarRightTabs
+          if (tabs === undefined || typeof tabs.register !== 'function') return
+          const dispose = tabs.register({
+            id: LEAD_TAB_ID,
+            kind: LEAD_TAB_KIND,
+            title: () => t('leadStatusTab'),
+          })
+          disposers.push(() => { try { dispose() } catch { /* tab type already gone */ } })
+          try {
+            const disposeBody = scope.slots.inject('sidebar.right.pane.tab', () => scope.slots.register({
+              name: 'sidebar.right.pane.tab',
+              key: LEAD_TAB_ID,
+              locale: NS,
+            }, createLeadStatusBody(ctx, t)))
+            if (typeof disposeBody === 'function') disposers.push(disposeBody)
+          } catch {
+            // The sidebar's body seat is unavailable in this host.
+          }
+        })
+        return () => {
+          for (const dispose of disposers.splice(0).reverse()) dispose()
+          try {
+            void fiber?.dispose?.()
+          } catch {
+            // The plugin scope is unwinding.
+          }
+        }
+      }, 'agent-team-roles:lead-status-tab')
+    }
+
     function TeamRolesIcon({ size = 18 }) {
       return h('svg', {
         width: size,
@@ -3856,6 +4475,7 @@ window.__ModuleLoader__.load({
           label: () => t('teamPanel'),
           locale: NS,
         }, createTeamPanel(ctx, t))), 'agent-team-roles:team-control')
+        installLeadStatus(ctx, t)
       },
     }
   },

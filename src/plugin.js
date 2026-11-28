@@ -21,6 +21,7 @@ import { LEAD_ROLE_ID, findRole, mergeRoles, readConfig, roleFallbacks, roleForT
 import { teamApi } from './team-compat.js'
 import { activeMembers, leadCatalog, leadMemoryGuide, leadRoutingGuide, leadWorkflowGuide, memberPersona } from './prompts.js'
 import { leadDelegateReason, leadToolPolicy } from './lead-policy.js'
+import { createLeadStatusTool, LEAD_STATUS_TOOL, leadStatusProjection, leadStatusPrompt } from './lead-status.js'
 import {
   SELF_SERVICE_TOOLS,
   createLeadWorkflowCounter,
@@ -678,6 +679,7 @@ export function apply(ctx, config) {
   let ready = false
   let stopped = false
   let reconciling = false
+  let leadStatusReady = false
 
   /**
    * The install mode one Agent must have right now.
@@ -716,7 +718,8 @@ export function apply(ctx, config) {
   function reconcileScope(agent) {
     const desired = desiredInstallMode(agent)
     const current = installed.get(agent)
-    if (current !== undefined && current.mode === desired) return
+    const withLeadStatus = desired === 'lead' && leadStatusReady
+    if (current?.mode === desired && current.withLeadStatus === withLeadStatus) return
     if (current !== undefined) {
       installed.delete(agent)
       try {
@@ -774,6 +777,7 @@ export function apply(ctx, config) {
     // A tool set admitted before the rebind may still reach the executor.
     const definitions = desired === 'lead' ? tools.lead : [...tools.member, ...tools.codexMember]
     const teamToolNames = new Set(definitions.map((definition) => definition.name))
+    if (withLeadStatus) teamToolNames.add(LEAD_STATUS_TOOL)
     register(scoped.tools.guard((exec) => {
       if (presetMatches() || !teamToolNames.has(exec.name)) return undefined
       return 'Team tools are available only in a Team Lead preset session.'
@@ -782,6 +786,15 @@ export function apply(ctx, config) {
     try {
       if (desired === 'lead') {
         installLead({ scoped: installerScope, register, tools, ctx, config, snapshots, roles: rolesReader, ruleStore, agent, playbook: leadPlaybook, gateSummary: gateSummaryFor, turnOf: () => leadTurns.get(agent.id) ?? 0, routeDecisions })
+        if (withLeadStatus) {
+          const canUpdate = (caller) => active && leadStatusReady && caller === agent && desiredInstallMode(agent) === 'lead'
+          register(scoped.tools.register(createLeadStatusTool(canUpdate), { when: ({ agent: caller }) => canUpdate(caller) }))
+          register(installerScope.systemPrompt.section({
+            name: 'agent-team-roles:lead-status',
+            order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY') + 14,
+            text: () => (canUpdate(agent) ? leadStatusPrompt : ''),
+          }))
+        }
         // The commands service requires a command-injected child of agent.ctx
         // for scoped discovery. Injection activates asynchronously, and fiber
         // teardown is asynchronous too: own the exact registration disposers
@@ -826,6 +839,7 @@ export function apply(ctx, config) {
     const release = scoped.effect(() => dispose, 'agent-team-roles:agent')
     installed.set(agent, {
       mode: desired,
+      withLeadStatus,
       dispose: () => {
         if (typeof release === 'function') release()
         dispose()
@@ -877,6 +891,40 @@ export function apply(ctx, config) {
       }
     }
   }
+
+  // The Lead status projection is optional: a profile without the projection
+  // registry keeps every other surface working. The Lead status tool is
+  // installed only while the unit is live, so the tool and the sidebar read
+  // the same wire key instead of drifting apart.
+  ctx.inject(['sessionProjections'], (scope) => {
+    scope.effect(() => {
+      let disposed = false
+      let handle
+      const registration = Promise.resolve()
+        .then(() => scope.sessionProjections.register(leadStatusProjection))
+        .then((registered) => {
+          handle = registered
+          if (disposed) return
+          leadStatusReady = true
+          reconcileLiveAgents()
+        })
+        .catch((error) => {
+          ctx.logger?.warn(`[agent-team-roles] cannot register the Lead status projection: ${error.message}`)
+        })
+      return async () => {
+        disposed = true
+        const wasReady = leadStatusReady
+        leadStatusReady = false
+        await registration
+        try {
+          await handle?.dispose()
+        } catch {
+          // The registry may already be unwinding with the plugin scope.
+        }
+        if (wasReady) reconcileLiveAgents()
+      }
+    }, 'agent-team-roles:lead-status-projection')
+  })
 
   void snapshots.ready.then(() => {
     ready = true

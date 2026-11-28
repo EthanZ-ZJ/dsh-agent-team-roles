@@ -1,6 +1,6 @@
 {
   "name": "dsh-agent-team-roles",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Role presets and self-updating role memory for DeepSeek Harness Agent Teams.",
   "type": "module",
   "license": "MIT",
@@ -40,12 +40,16 @@
       "inject": [
         "@deepseek-ai/dsh-api-remotes",
         "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-ui-settings"
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
       ]
     }
   },
   "engines": {
     "dsh": ">=0.2.2-rc.1 <0.3.0"
+  },
+  "dependencies": {
+    "zod": "4.6.7"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.1.0",
