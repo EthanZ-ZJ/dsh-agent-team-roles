@@ -221,6 +221,7 @@ window.__ModuleLoader__.load({
       leadDecisionStale: '此问题已无法接收此回答。请在对话中查看最新状态。',
       leadDecisionError: '未能确认回答是否发送。请检查连接，或在对话中查看后重试。',
       leadStatusOnlyLead: '此面板仅用于 Team Lead 会话。',
+      leadStatusGuide: '当前目标、本轮进展与待你决定的事项。',
       leadDecisionChoose: '选择一个选项',
       leadDecisionOpen: '此问题正在等待你在对话中作答。',
       leadDecisionLate: '此问题已超时，仍可补充回答。',
@@ -539,6 +540,7 @@ window.__ModuleLoader__.load({
       leadDecisionStale: 'This question can no longer take this answer. Check the conversation for the latest state.',
       leadDecisionError: 'Could not confirm delivery. Check your connection or look in the conversation before trying again.',
       leadStatusOnlyLead: 'This panel belongs to Team Lead sessions.',
+      leadStatusGuide: 'Current goal, latest progress, and decisions waiting for you.',
       leadDecisionChoose: 'Choose one option',
       leadDecisionOpen: 'This question is waiting for you in the conversation.',
       leadDecisionLate: 'This question timed out and still accepts a follow-up.',
@@ -4400,6 +4402,12 @@ window.__ModuleLoader__.load({
             id: LEAD_TAB_ID,
             kind: LEAD_TAB_KIND,
             title: () => t('leadStatusTab'),
+            guide: [{
+              id: 'lead-status',
+              order: 20,
+              title: () => t('leadStatusTab'),
+              description: () => t('leadStatusGuide'),
+            }],
           })
           disposers.push(() => { try { dispose() } catch { /* tab type already gone */ } })
           try {
